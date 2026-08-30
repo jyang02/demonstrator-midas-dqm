@@ -69,6 +69,11 @@ class Session:
             args.insert(0, "-headless")
         caps = {"capabilities": {"alwaysMatch": {
             "browserName": "firefox",
+            # Do not let the driver dismiss dialogs behind our back. MIDAS uses
+            # dlgAlert() to report real errors ("mhttpd_init() called more than
+            # once", "unknown plot type"), and a harness that silently clicks
+            # them away turns a loud failure into a mystery.
+            "unhandledPromptBehavior": "ignore",
             # A throwaway profile: the user very likely has Firefox open, and
             # sharing a profile makes it refuse to start a second instance.
             "moz:firefoxOptions": {"args": args, "prefs": {
@@ -85,6 +90,17 @@ class Session:
     def script(self, src: str, args=None):
         return rq("POST", f"{self.url}/execute/sync",
                   {"script": src, "args": args or []})["value"]
+
+    def alert_text(self) -> str | None:
+        """The text of an open alert, or None. Never raises."""
+        try:
+            return rq("GET", f"{self.url}/alert/text", timeout=5).get("value")
+        except Exception:
+            return None
+
+    def dismiss_alert(self) -> None:
+        with contextlib.suppress(Exception):
+            rq("POST", f"{self.url}/alert/dismiss", {}, timeout=5)
 
     def screenshot(self) -> bytes:
         return base64.b64decode(rq("GET", f"{self.url}/screenshot", timeout=60)["value"])
@@ -151,6 +167,11 @@ def main() -> int:
         deadline = time.time() + args.timeout
         ok = False
         while time.time() < deadline:
+            alert = s.alert_text()
+            if alert is not None:
+                print(f"error: the page raised a dialog: {alert}", file=sys.stderr)
+                s.dismiss_alert()
+                return 1
             try:
                 if s.script(f"return !!({cond});"):
                     ok = True

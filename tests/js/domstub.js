@@ -40,6 +40,14 @@ class El {
   }
   getAttribute(k) { return this.attrs[k]; }
   appendChild(c) { c.parent = this; this.children.push(c); return c; }
+  insertBefore(c, ref) {
+    c.parent = this;
+    const i = ref ? this.children.indexOf(ref) : -1;
+    if (i < 0) this.children.push(c);
+    else this.children.splice(i, 0, c);
+    return c;
+  }
+  get firstChild() { return this.children.length ? this.children[0] : null; }
   remove() {
     if (!this.parent) return;
     const i = this.parent.children.indexOf(this);
@@ -83,6 +91,17 @@ function makeDocument() {
     getElementsByName: () => [],
     getElementsByClassName: () => [],
     _roots: [],
+    // A page that keeps pulling 33 kB events out of a shared buffer while its
+    // tab is hidden is a bug, so the pages check this and the stub models it.
+    hidden: false,
+    _listeners: {},
+    addEventListener(name, fn) { (this._listeners[name] = this._listeners[name] || []).push(fn); },
+    removeEventListener(name, fn) {
+      const l = this._listeners[name] || [];
+      const i = l.indexOf(fn);
+      if (i >= 0) l.splice(i, 1);
+    },
+    dispatch(name) { (this._listeners[name] || []).forEach((f) => f()); },
   };
   return doc;
 }
@@ -134,13 +153,39 @@ function runPage(scriptPath, responses, opts = {}) {
   g.mhistory_dialog_var = (v, o) => calls.push({ method: "mhistory_dialog_var", params: [v, o] });
   g.dlgOdbEdit = (p) => calls.push({ method: "dlgOdbEdit", params: p });
 
+  // Models mplot.js closely enough to catch API misuse, including the two sharp
+  // edges that bit during development:
+  //   findPlot()   alerts when the label is missing (mplot.js:977) -- it is not
+  //                an existence test, and using it as one puts a modal dialog in
+  //                front of the operator.
+  //   deletePlot() splices findPlot()'s return with no check, so a missing label
+  //                alerts and then removes the LAST plot instead.
+  g.__alerts = [];
+  g.alert = (msg) => { g.__alerts.push(String(msg)); };
   g.MPlotGraph = class {
-    constructor(div, param) { this.div = div; this.param = param; this.plots = []; this.data = []; this.draws = 0; }
-    addPlot(p) { this.plots.push(p); return this.plots.length - 1; }
+    constructor(div, param) {
+      this.div = div;
+      this.param = Object.assign({ plot: [] }, param || {});
+      if (!this.param.plot) this.param.plot = [];
+      this.data = []; this.draws = 0; this.resizes = 0;
+    }
+    get plots() { return this.param.plot; }
+    addPlot(p) { this.param.plot.push(p); return this.param.plot.length - 1; }
+    findPlot(label) {
+      if (typeof label === "string") {
+        for (let i = 0; i < this.param.plot.length; i++) {
+          if (this.param.plot[i].label === label) return i;
+        }
+        g.alert('Plot "' + label + '" not found');
+        return -1;
+      }
+      return label;
+    }
+    deletePlot(label) { this.param.plot.splice(this.findPlot(label), 1); }
     setData(i, x, y, z) { this.data[i] = { x, y, z }; }
     draw() { this.draws++; }
     redraw() { this.draws++; }
-    resize() {}
+    resize() { this.resizes++; }
   };
   g.MhistoryGraph = class {
     constructor(div) { this.div = div; this.panels = []; }

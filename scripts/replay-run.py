@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Replay a recorded MIDAS run file into a live event buffer.
+
+The point is to be able to develop and test everything downstream of the event
+buffer -- the scope page, the analyzer, the histogram plumbing -- on a machine
+with no detector attached, against events that are real rather than synthetic.
+
+    scripts/replay-run.py run00201.mid.lz4 --rate 20 --loop
+
+Reads the file, re-stamps each event's serial number and timestamp so consumers
+see a plausible live stream, and sends it at a chosen rate.
+
+Safety
+------
+This injects events into a shared buffer, so it refuses to run while a run is
+active unless you insist: with the logger recording, replayed events would be
+written into the run file as though they were real data, which is a corrupted
+dataset that nobody would notice until analysis. With the run stopped, mlogger
+is not reading the buffer and nothing reaches disk.
+
+It also declares no equipment and registers no transition callbacks, so it
+cannot delay a run start or stop however wedged it gets.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import signal
+import sys
+import time
+from pathlib import Path
+
+import midas
+import midas.client
+import midas.file_reader
+
+_stop = False
+
+
+def _on_signal(_sig, _frm):
+    global _stop
+    _stop = True
+
+
+def run_state(client) -> int:
+    try:
+        return int(client.odb_get("/Runinfo/State"))
+    except Exception:
+        return -1
+
+
+def replay(path: Path, client, buf, rate: float, limit: int | None,
+           loop: bool, event_ids: set[int] | None, verbose: bool) -> int:
+    """Send events from `path` at `rate` per second. Returns how many were sent."""
+    interval = 1.0 / rate if rate > 0 else 0.0
+    sent = 0
+    serial = 0
+    t_next = time.time()
+
+    while not _stop:
+        # Reopened each pass: MidasFile is a one-shot iterator, and reopening is
+        # also what makes --loop replay the run's first event again, which is
+        # the only event carrying the full DRS calibration table.
+        f = midas.file_reader.MidasFile(str(path))
+        for event in f:
+            if _stop:
+                break
+            # Begin/end-of-run records and messages are midas' own bookkeeping.
+            # Replaying them would announce run transitions that are not
+            # happening.
+            if event.header.is_midas_internal_event():
+                continue
+            if event_ids is not None and event.header.event_id not in event_ids:
+                continue
+
+            serial += 1
+            event.header.serial_number = serial
+            event.header.timestamp = int(time.time())
+            client.send_event(buf, event)
+            sent += 1
+
+            if verbose and sent % 100 == 0:
+                print(f"  sent {sent}", flush=True)
+            if limit is not None and sent >= limit:
+                return sent
+
+            if interval:
+                t_next += interval
+                delay = t_next - time.time()
+                if delay > 0:
+                    time.sleep(delay)
+                else:
+                    # Behind schedule: give up the lost time rather than
+                    # sprinting to catch up, which would defeat the point of
+                    # asking for a rate.
+                    t_next = time.time()
+
+        if not loop:
+            return sent
+        client.communicate(10)
+    return sent
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("run_file", type=Path)
+    ap.add_argument("--experiment", default=os.environ.get("MIDAS_EXPT_NAME"))
+    ap.add_argument("--buffer", default="SYSTEM")
+    ap.add_argument("--client-name", default="wd_replay")
+    ap.add_argument("--rate", type=float, default=20.0,
+                    help="events per second; 0 means as fast as possible")
+    ap.add_argument("--limit", type=int, default=None, help="stop after N events")
+    ap.add_argument("--loop", action="store_true", help="start again at the end")
+    ap.add_argument("--event-id", type=int, action="append", default=None,
+                    help="only replay these event ids (repeatable)")
+    ap.add_argument("--max-event-size", type=int, default=8 * 1024 * 1024)
+    ap.add_argument("--allow-during-run", action="store_true",
+                    help="inject even with a run active -- see the safety note")
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args(argv)
+
+    if not args.run_file.is_file():
+        print(f"error: no such run file: {args.run_file}", file=sys.stderr)
+        return 2
+    if not args.experiment:
+        print("error: no experiment; pass --experiment or set MIDAS_EXPT_NAME",
+              file=sys.stderr)
+        return 2
+
+    signal.signal(signal.SIGINT, _on_signal)
+    signal.signal(signal.SIGTERM, _on_signal)
+
+    with midas.client.MidasClient(args.client_name, expt_name=args.experiment) as client:
+        state = run_state(client)
+        if state == 3 and not args.allow_during_run:
+            print("error: a run is active. Replayed events would be written into the "
+                  "run file as though they were real data.\n"
+                  "       Stop the run, or pass --allow-during-run if you are certain.",
+                  file=sys.stderr)
+            return 1
+
+        buf = client.open_event_buffer(args.buffer, None, args.max_event_size)
+
+        if not args.quiet:
+            ids = "all" if args.event_id is None else args.event_id
+            print(f"replaying {args.run_file.name} into {args.buffer} "
+                  f"of {args.experiment}")
+            print(f"  rate {args.rate or 'unthrottled'} ev/s, event ids {ids}"
+                  f"{', looping' if args.loop else ''}")
+
+        t0 = time.time()
+        sent = replay(args.run_file, client, buf,
+                      args.rate, args.limit, args.loop,
+                      set(args.event_id) if args.event_id else None,
+                      not args.quiet)
+        dt = time.time() - t0
+
+    if not args.quiet:
+        print(f"sent {sent} events in {dt:.1f}s ({sent / dt if dt else 0:.1f} ev/s)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

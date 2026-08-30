@@ -19,7 +19,12 @@ pip install -e .
 mdqm-register-pages --experiment MYEXPT      # writes the /Custom keys
 ```
 
-Then open the experiment's mhttpd and pick **Scalers** from the side menu.
+Then open the experiment's mhttpd and pick **Scalers** or **Scope** from the side menu.
+
+| page | what it shows | needs |
+|---|---|---|
+| **Scalers** | rates, thresholds, trends, DAQ health | nothing — reads the ODB and MIDAS history |
+| **Scope** | live waveforms | nothing — reads the event buffer through mhttpd |
 
 `--list` shows what would be registered, `--dry-run` says what would change,
 `--check` verifies every registered key still resolves to a readable file, and
@@ -83,6 +88,25 @@ worth knowing before touching a handler:
   tick and then silently reverts.
 
 Both of those shipped as bugs during development and are now regression tests.
+
+### Working without a detector
+
+`scripts/replay-run.py` feeds a recorded run file into a live event buffer, so
+everything downstream of the buffer — the scope page, and later the analyzer —
+can be developed and tested against real events on a machine with no hardware
+attached:
+
+```bash
+scripts/replay-run.py run00201.mid.lz4 --rate 15 --loop --event-id 401
+```
+
+It refuses to run while a run is active unless you insist: with the logger
+recording, replayed events would be written into the run file as though they
+were real data, which is a corrupted dataset nobody would notice until analysis.
+With the run stopped, mlogger is not reading the buffer and nothing reaches disk.
+
+`--loop` matters for the time base: the DRS cell-width table rides only the run's
+*first* event, so restarting the file is the only way to see one again.
 
 ### Seeing the page without a browser
 
