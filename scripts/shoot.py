@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import json
 import os
 import shutil
@@ -54,7 +55,7 @@ class Session:
             [driver, "--port", str(self.port), "--log", "fatal"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        for _ in range(100):
+        for _attempt in range(100):
             try:
                 rq("GET", f"{self.base}/status", timeout=1)
                 break
@@ -89,10 +90,10 @@ class Session:
         return base64.b64decode(rq("GET", f"{self.url}/screenshot", timeout=60)["value"])
 
     def close(self):
-        try:
+        # Best effort: if the session is already gone the driver is about to be
+        # killed anyway, and a teardown that raises hides the real failure.
+        with contextlib.suppress(Exception):
             rq("DELETE", self.url, timeout=10)
-        except Exception:
-            pass
         self.proc.terminate()
         try:
             self.proc.wait(timeout=10)

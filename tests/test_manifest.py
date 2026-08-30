@@ -12,13 +12,12 @@ import pytest
 
 from mdqm.install.config_defaults import DEFAULTS
 from mdqm.install.manifest import (
+    ENTRIES,
     FORBIDDEN_CONTENT,
     MAX_KEY_LENGTH,
     RESERVED_SUBSTRINGS,
-    ENTRIES,
     check_entry,
     check_key,
-    pages,
 )
 
 REPO = Path(__file__).resolve().parents[1]

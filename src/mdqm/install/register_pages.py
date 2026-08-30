@@ -45,7 +45,7 @@ def _fail(msg: str) -> None:
 def validate(entries) -> list[str]:
     """Manifest problems that must stop us before we touch the ODB."""
     problems = []
-    for odb_name, path, entry in entries:
+    for _odb_name, path, entry in entries:
         for p in check_entry(entry):
             problems.append(f"{entry.key}: {p}")
         if not path.is_file():
