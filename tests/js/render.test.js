@@ -326,3 +326,161 @@ test("a board with only a rates bank still renders", async () => {
   assert.ok(page.doc.getElementById("rate-Eq-007-0"));
   assert.ok(page.doc.getElementById("rate-Eq-007-1"));
 });
+
+// ---------------------------------------------------------------------------
+// Against a faithful model of mhttpd's refresh loop.
+//
+// These are the tests that catch the bugs a hand-driven onchange() cannot: the
+// framework's contract about *when* handlers fire is where this page is easiest
+// to get wrong, and both bugs found in review were of exactly this shape.
+// ---------------------------------------------------------------------------
+
+const { Refresher } = require("./domstub.js");
+
+function odbValues(rates, ts) {
+  return {
+    "/Equipment/WDScalers/Variables/S036": rates,
+    "/Equipment/WDScalers/Variables/T036": ts,
+    "/Equipment/WDScalers/Variables/X036": 59.4,
+  };
+}
+
+test("values appear on the FIRST refresh, with nothing ever changing", async () => {
+  // The regression: mhttpd stores a watcher's first value silently and fires
+  // onload for it, not onchange (mhttpd.js:2658-2670). A page wired only to
+  // onchange shows nothing at all while the ODB is static -- which is exactly
+  // what happens when the frontend is dead.
+  const page = await boot();
+  const rates = new Array(19).fill(0);
+  rates[0] = 502; rates[5] = -1;
+  const r = new Refresher(page.root, odbValues(rates, ["0x90c1849e", "0x17", "0x0"]));
+
+  r.run();     // one tick, first values, no change
+
+  assert.strictEqual(page.doc.getElementById("rate-WDScalers-036-0").textContent,
+    (502).toLocaleString(), "the first ODB value must render");
+  assert.strictEqual(page.doc.getElementById("rate-WDScalers-036-5").textContent, "masked");
+});
+
+test("a static ODB does not read as live", async () => {
+  // The frontend is down; the keys persist. The page must not date these
+  // numbers as current just because it has only now loaded them.
+  const page = await boot();
+  const r = new Refresher(page.root, odbValues(new Array(19).fill(7),
+                                               ["0x90c1849e", "0x17", "0x0"]));
+  r.run();
+
+  const now = Date.now();
+  const real = Date.now;
+  Date.now = () => now + 40_000;
+  try { for (let i = 0; i < 5; i++) r.run(); page.tick(); } finally { Date.now = real; }
+
+  const chip = page.doc.getElementById("chip-live-WDScalers-036");
+  assert.ok(chip.classList.contains("red"),
+    "an unchanging timestamp means no new reads, however recently we loaded it");
+});
+
+test("an advancing timestamp reads as live across many ticks", async () => {
+  const page = await boot();
+  const values = odbValues(new Array(19).fill(3), ["0x00000000", "0x00000001", "0x0"]);
+  const r = new Refresher(page.root, values);
+  r.run();
+
+  for (let i = 1; i <= 4; i++) {
+    r.set("/Equipment/WDScalers/Variables/T036",
+          ["0x" + (i * 80000000).toString(16), "0x00000001", "0x0"]);
+    r.run();
+  }
+  page.tick();
+
+  const chip = page.doc.getElementById("chip-live-WDScalers-036");
+  assert.ok(!chip.classList.contains("red"), "a moving timestamp is a live board");
+  assert.ok(chip.classList.contains("green") || chip.classList.contains("blue"));
+});
+
+test("a masked cell survives the innerHTML rewrite that happens every tick", async () => {
+  const page = await boot();
+  const rates = new Array(19).fill(0);
+  rates[5] = -1;
+  const r = new Refresher(page.root, odbValues(rates, ["0x1", "0x0", "0x0"]));
+  for (let i = 0; i < 6; i++) r.run();
+  assert.strictEqual(page.doc.getElementById("rate-WDScalers-036-5").textContent, "masked");
+});
+
+test("the rates trend is split so an 80 MHz clock cannot flatten the channels", async () => {
+  const page = await boot();
+  const details = page.root.byTag("details")[0];
+  details.open = true;
+  details.dispatch("toggle");
+  page.flushTimers();
+
+  const graphs = page.root.byClass("mjshistory");
+  const byVars = graphs.map((g) => g.dataset.historyVar.split(","));
+  const channels = byVars.find((v) => v.some((s) => s.endsWith(":ch00")));
+  const special = byVars.find((v) => v.some((s) => s.endsWith(":ext_clk")));
+
+  assert.ok(channels, "no channels graph");
+  assert.ok(special, "no triggers/clock graph");
+  assert.ok(!channels.some((s) => s.endsWith(":ext_clk")),
+    "the external clock reads ~80 MHz; on shared axes every channel becomes a flat line");
+  assert.ok(!channels.some((s) => s.endsWith(":ptrn_trg")));
+  assert.ok(channels.some((s) => s.endsWith(":ch15")));
+});
+
+test("trend graphs suppress the built-in title and the oversized legend", async () => {
+  const page = await boot();
+  const details = page.root.byTag("details")[0];
+  details.open = true;
+  details.dispatch("toggle");
+  page.flushTimers();
+
+  const graphs = page.root.byClass("mjshistory");
+  for (const g of graphs) {
+    // mhistory.js:2753 renders the whole variable list as the title when no
+    // ODB panel is named. We draw our own in a sibling div.
+    assert.strictEqual(g.dataset.showTitle, "0");
+    const n = g.dataset.historyVar.split(",").length;
+    if (n > 6) assert.strictEqual(g.dataset.showValues, "0", "legend would cover the plot");
+  }
+  assert.ok(page.root.byClass("dqm-histtitle").length === graphs.length,
+    "every graph needs its own readable title");
+});
+
+test("the timestamp bank is not trended", async () => {
+  const page = await boot();
+  const details = page.root.byTag("details")[0];
+  details.open = true;
+  details.dispatch("toggle");
+  page.flushTimers();
+
+  for (const g of page.root.byClass("mjshistory")) {
+    assert.ok(!g.dataset.historyVar.includes("T036"),
+      "lsb/msb/stale as a trend is two sawtooths and a flag");
+  }
+});
+
+test("the staleness threshold follows the frontend's poll period", async () => {
+  const page = await boot();
+  const values = Object.assign(
+    odbValues(new Array(19).fill(1), ["0x1", "0x0", "0x0"]),
+    { "/Equipment/WDScalers/Common/Period": 30000 });   // a 30 s poll interval
+  const r = new Refresher(page.root, values);
+  r.run();
+
+  const now = Date.now();
+  const real = Date.now;
+  try {
+    // 40 s: well past the 10 s default, but only 1.3 poll periods.
+    Date.now = () => now + 40_000;
+    page.tick();
+    assert.ok(!page.doc.getElementById("chip-live-WDScalers-036").classList.contains("red"),
+      "a 30 s poll interval must not put the page permanently in the red");
+
+    // 100 s is more than 2.5 periods: now it really has missed reads.
+    Date.now = () => now + 100_000;
+    page.tick();
+    assert.ok(page.doc.getElementById("chip-live-WDScalers-036").classList.contains("red"));
+  } finally {
+    Date.now = real;
+  }
+});

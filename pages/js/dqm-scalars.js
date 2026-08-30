@@ -207,7 +207,11 @@ function equipmentStrip(eq) {
 
 function boardPanel(board) {
   const key = boardKey(board);
-  state[key] = { lastChange: null, ticks: null, stale: 0, rates: [], allZero: false };
+  state[key] = { lastChange: null, ticks: null, stale: 0, rates: [], allZero: false,
+                 periodMs: 0 };
+  // Not null: "we have never seen a value" and "the value has not changed
+  // since we first saw it" are different states, and only the first should
+  // read as "waiting".
 
   const panel = el("div", { class: "dqm-panel" });
   panel.appendChild(el("h2", {}, `${board.equipment} — board ${board.board}`));
@@ -220,7 +224,13 @@ function boardPanel(board) {
     const clock = el("div", { name: "modb" });
     clock.dataset.odbPath =
       `/Equipment/${board.equipment}/Variables/${board.banks.timestamp.name}`;
-    clock.onchange = function () { onTimestamp(board, this.value); };
+    // onload AND onchange, and the pairing is load-bearing: mhttpd stores a
+    // watcher's first value silently and calls onload for it, firing onchange
+    // only on *subsequent* changes (mhttpd.js:2658-2670). A handler wired to
+    // onchange alone therefore never runs at all while the value is static --
+    // which is precisely the case when the frontend is dead, i.e. exactly when
+    // this page most needs to say something.
+    clock.onload = clock.onchange = function () { onTimestamp(board, this.value); };
     panel.appendChild(clock);
   }
 
@@ -237,8 +247,19 @@ function boardPanel(board) {
   // read and an alarm rate all render differently.
   const values = el("div", { name: "modb" });
   values.dataset.odbPath = `/Equipment/${board.equipment}/Variables/${board.banks.rates.name}`;
-  values.onchange = function () { onRates(board, this.value); };
+  values.onload = values.onchange = function () { onRates(board, this.value); };
   panel.appendChild(values);
+
+  // The poll interval is an operator-editable knob, so the staleness threshold
+  // has to follow it rather than be fixed. Watched, not read once, because
+  // changing it from this very page must not leave the page judging by the old
+  // value.
+  const period = el("div", { name: "modb" });
+  period.dataset.odbPath = `/Equipment/${board.equipment}/Common/Period`;
+  period.onload = period.onchange = function () {
+    state[key].periodMs = Number(this.value) || 0;
+  };
+  panel.appendChild(period);
 
   panel.appendChild(chipStrip(board));
   panel.appendChild(el("div", { class: "dqm-diagnosis", id: `diag-${key}` }, ""));
@@ -386,10 +407,8 @@ function historySection(board) {
   details.addEventListener("toggle", function () {
     if (!details.open || built) return;
     built = true;
-    Object.keys(board.banks).forEach(function (role) {
-      const bank = board.banks[role];
-      if (!bank.historyVars || !bank.historyVars.length) return;
-      body.appendChild(historyGraph(bank));
+    historyGroups(board).forEach(function (group) {
+      body.appendChild(historyGraph(group.vars, group.title));
     });
     if (!body.children.length) {
       body.appendChild(el("div", { class: "dqm-note" },
@@ -407,17 +426,72 @@ function historySection(board) {
 // draw -- so any URL someone copies would carry a frozen time window.
 let historyIndex = 1;
 
-function historyGraph(bank) {
+/**
+ * Which trend graphs to build, and what goes on each.
+ *
+ * The rates bank is deliberately split: the external clock reads ~80 MHz when
+ * one is connected, and putting it on the same axes as channels running at a
+ * few hundred Hz makes every real trace a flat line along the bottom. The
+ * trigger counters are an order of magnitude off the channels for the same
+ * reason. This is the same split `create-history-plots.py` makes for the stock
+ * History page, and for the same reason.
+ */
+function historyGroups(board) {
+  const groups = [];
+  const triggers = DQM.asArray(cfg["Trigger Scaler Names"]).filter((x) => x);
+  const clock = cfg["Clock Scaler Name"];
+  const special = (label) => triggers.indexOf(label) >= 0 || label === clock;
+
+  Object.keys(board.banks).forEach(function (role) {
+    const bank = board.banks[role];
+    if (!bank.historyVars || !bank.historyVars.length) return;
+
+    // The timestamp bank is lsb/msb/stale. Trending a 64-bit counter split
+    // across two words plots two sawtooths and a flag, which tells nobody
+    // anything; its value is as a liveness signal, and the chips already use it.
+    if (role === "timestamp") return;
+
+    if (role !== "rates") {
+      groups.push({ title: `${bank.name} — ${role}`, vars: bank.historyVars });
+      return;
+    }
+    const channels = [], others = [];
+    bank.historyVars.forEach(function (v) {
+      const label = v.slice(v.indexOf(":") + 1);
+      (special(label) ? others : channels).push(v);
+    });
+    if (channels.length) groups.push({ title: `${bank.name} — channels`, vars: channels });
+    if (others.length) groups.push({ title: `${bank.name} — triggers and clock`, vars: others });
+  });
+  return groups;
+}
+
+function historyGraph(vars, title) {
+  const wrap = el("div", {});
+  // The title goes in a sibling div rather than into the panel parameters:
+  // MhistoryGraph draws its own title inside the canvas, eating plot area.
+  wrap.appendChild(el("div", { class: "dqm-histtitle" }, title));
+
   const d = el("div", { class: "mjshistory dqm-hist" });
   const base = window.location.href.split("?cmd")[0].split("?")[0];
   d.dataset.baseURL = base + "?cmd=history";
-  d.dataset.historyVar = bank.historyVars.join(",");
+  d.dataset.historyVar = vars.join(",");
+  // Without this MhistoryGraph draws its own title bar containing the entire
+  // comma-separated variable list (mhistory.js:2753), which for sixteen
+  // channels is an unreadable smear across the top. We have a real title in the
+  // sibling div, and suppressing this one gives the plot back 26 px.
+  d.dataset.showTitle = "0";
+  // The legend doubles as a value table, one row per variable, drawn over the
+  // plot area. Past a handful of channels it covers the data it is annotating.
+  if (vars.length > 6) d.dataset.showValues = "0";
+  wrap.appendChild(d);
+
   setTimeout(function () {
     d.mhg = new MhistoryGraph(d, false, false);
     d.mhg.initializePanel(historyIndex++, { "Timescale": cfg["History Timescale"] });
     d.mhg.resize();
   }, 0);
-  return d;
+  return wrap;
 }
 
 function healthPanel() {
@@ -502,12 +576,16 @@ function renderNothingFound(equipment, varsByEq) {
 
 function onTimestamp(board, value) {
   const s = state[boardKey(board)];
-  s.lastChange = Date.now();
-  const v = DQM.asArray(value, board.banks.timestamp.numValues);
-  s.ticks = DQM.asUInt64(v[0], v[1]);
+  const v0 = DQM.asArray(value, board.banks.timestamp.numValues);
+  const ticks = DQM.asUInt64(v0[0], v0[1]);
+  // Only treat this as a fresh read if the timestamp actually moved. The first
+  // callback is the initial ODB value, which may be minutes or days old -- and
+  // dating stale numbers as current is the one thing this page must never do.
+  if (s.ticks === null || ticks !== s.ticks) s.lastChange = Date.now();
+  s.ticks = ticks;
   // The stale flag means the firmware had not recomputed since the last poll,
   // so the rates repeat the previous read rather than being a fresh measurement.
-  s.stale = v.length > 2 ? DQM.asUInt(v[2]) : 0;
+  s.stale = v0.length > 2 ? DQM.asUInt(v0[2]) : 0;
   updateChips(board);
 }
 
@@ -601,7 +679,7 @@ function updateChips(board) {
   const diag = document.getElementById(`diag-${key}`);
   if (!chip || !diag) return;
 
-  const limit = Number(cfg["Stale Seconds"]) || 10;
+  const limit = staleLimit(board);
   const age = s.lastChange === null ? null : (Date.now() - s.lastChange) / 1000;
 
   chip.className = "dqm-chip";
@@ -661,6 +739,21 @@ function updateChips(board) {
     : "";
 }
 
+/**
+ * How long the timestamp may stand still before we stop calling the numbers current.
+ *
+ * The configured value is a floor, not the answer: the frontend's own
+ * Common/Period decides how often a read can possibly happen, and an operator
+ * who sets a 30 s poll interval must not get a page permanently in the red.
+ * Two and a half periods allows one missed read plus jitter.
+ */
+function staleLimit(board) {
+  const configured = Number(cfg["Stale Seconds"]) || 10;
+  const period = state[boardKey(board)].periodMs;
+  if (!period) return configured;
+  return Math.max(configured, 2.5 * period / 1000);
+}
+
 function setRowsStale(board, stale) {
   const key = boardKey(board);
   const rates = board.banks.rates;
@@ -703,7 +796,12 @@ function modb(tag, path, opts) {
   if (o.format) e.dataset.format = o.format;
   if (o.editable) e.dataset.odbEditable = "1";
   if (o.id) e.id = o.id;
-  if (o.onchange) e.setAttribute("onchange", `${o.onchange}(this)`);
+  if (o.onchange) {
+    // Same first-value rule as the watchers above: onload covers the initial
+    // read, onchange every one after it.
+    e.setAttribute("onchange", `${o.onchange}(this)`);
+    e.setAttribute("onload", `${o.onchange}(this)`);
+  }
   return e;
 }
 

@@ -61,7 +61,7 @@ naming scheme is a config change, not a code change.
 ## Development
 
 ```bash
-python -m pytest                                    # 37 tests, no MIDAS needed
+python -m pytest                                    # no MIDAS needed
 MDQM_NODE=/path/to/node python -m pytest            # + the JavaScript tests
 ```
 
@@ -69,6 +69,34 @@ The JS tests run the real page code against fixtures captured verbatim from a
 live ODB, using a small DOM stub in `tests/js/domstub.js` rather than a browser.
 Node is **not** a dependency — the pages have no build step — so those tests skip
 where it is missing.
+
+`tests/js/domstub.js` models mhttpd's refresh loop rather than approximating it,
+because its contract is where this page is easiest to get wrong. Two rules are
+worth knowing before touching a handler:
+
+- **A `modb` watcher's first value fires `onload`, not `onchange`.** mhttpd
+  stores it silently and fires `onchange` only on *subsequent* changes. A
+  handler wired to `onchange` alone never runs while the ODB is static — which
+  is exactly the case when the frontend it is monitoring has died.
+- **A `modbvalue`'s `innerHTML` is rewritten every tick**, but `onchange` fires
+  only on change. Anything that renders text from a handler is correct for one
+  tick and then silently reverts.
+
+Both of those shipped as bugs during development and are now regression tests.
+
+### Seeing the page without a browser
+
+```bash
+scripts/shoot.py "http://localhost:8090/?cmd=custom&page=Scalers" out.png \
+    --wait-for "document.querySelector('#dqm-root h2')" --console
+```
+
+`firefox --screenshot` is not usable here: it fires on the load event, which for
+any MIDAS page is long before the content exists — the stock status page
+photographs as the word "Loading...". `shoot.py` drives geckodriver over plain
+WebDriver HTTP (no selenium dependency), waits for a condition you name, and can
+dump the console and any uncaught exceptions. It exits non-zero if the condition
+never becomes true, so it works as a test and not only as a camera.
 
 ### The one thing that will waste your afternoon
 

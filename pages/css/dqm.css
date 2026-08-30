@@ -45,3 +45,5 @@ table.dqm-table td.alarm   { background: var(--mred, #f88); }
 table.dqm-table tr.stale td { opacity: 0.55; }
 
 .dqm-footnote    { margin-top: 6px; color: var(--mgray, #666); font-size: 90%; }
+
+.dqm-histtitle   { font-weight: 600; margin: 4px 0 2px 2px; }

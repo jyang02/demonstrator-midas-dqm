@@ -167,4 +167,63 @@ function runPage(scriptPath, responses, opts = {}) {
   };
 }
 
-module.exports = { El, runPage, makeDocument };
+/**
+ * Model mhttpd's refresh loop faithfully, because its contract is subtle enough
+ * that guessing at it produces pages that work in a test and not in a browser.
+ *
+ * From mhttpd.js:2651-2733, per tick:
+ *
+ *   modb (invisible watcher)
+ *     first tick : store json_value and value; call onload(); do NOT call onchange()
+ *     later ticks: call onchange() only if JSON.stringify(value) actually changed
+ *
+ *   modbvalue (visible cell)
+ *     every tick : rewrite innerHTML from the ODB value, unconditionally
+ *     first tick : call onload()
+ *     later ticks: call onchange() only if the value changed
+ *
+ * The two traps that follow, and that this models:
+ *   - a watcher whose handler renders anything never renders it at all while
+ *     the value is static -- which is exactly the case when a frontend is down;
+ *   - a modbvalue whose onchange rewrites its text is correct for one tick and
+ *     then reverts, because innerHTML is rewritten every tick regardless.
+ */
+class Refresher {
+  constructor(root, values) {
+    this.root = root;
+    this.values = values;          // {odbPath: value}
+    this.tick = 0;
+  }
+  set(path, value) { this.values[path] = value; }
+  run() {
+    this.tick++;
+    for (const e of this.root.walk()) {
+      const path = e.dataset.odbPath;
+      if (path === undefined) continue;
+      const isWatcher = e.getAttribute("name") === "modb";
+      const isValue = e.classList.contains("modbvalue");
+      const isCheck = e.classList.contains("modbcheckbox");
+      if (!isWatcher && !isValue && !isCheck) continue;
+      if (!(path in this.values)) continue;
+
+      const x = this.values[path];
+      const json = JSON.stringify(x);
+
+      if (isValue) e.innerHTML = String(x);   // unconditional, every tick
+      if (isCheck) e.checked = !!x;
+
+      const first = e._odbLoaded === undefined;
+      const changed = e._json !== undefined && e._json !== json;
+      e._json = json;
+      e.value = x;
+
+      if (!first && changed && typeof e.onchange === "function") e.onchange();
+      if (first) {
+        e._odbLoaded = true;
+        if (typeof e.onload === "function") e.onload();
+      }
+    }
+  }
+}
+
+module.exports = { El, runPage, makeDocument, Refresher };
