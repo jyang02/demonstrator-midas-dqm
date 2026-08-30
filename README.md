@@ -87,7 +87,7 @@ Both of those shipped as bugs during development and are now regression tests.
 ### Seeing the page without a browser
 
 ```bash
-scripts/shoot.py "http://localhost:8090/?cmd=custom&page=Scalers" out.png \
+scripts/shoot.py "http://localhost:8088/?cmd=custom&page=Scalers" out.png \
     --wait-for "document.querySelector('#dqm-root h2')" --console
 ```
 

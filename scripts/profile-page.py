@@ -72,7 +72,7 @@ def measure(pid: int, seconds: float, expt: str, dropped_path: str | None) -> di
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--url", default="http://localhost:8090/?cmd=custom&page=Scalers")
+    ap.add_argument("--url", default="http://localhost:8088/?cmd=custom&page=Scalers")
     ap.add_argument("--process", default="mhttpd", help="process to profile")
     ap.add_argument("--experiment", default="WDSCALERS")
     ap.add_argument("--dropped-path",

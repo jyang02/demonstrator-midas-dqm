@@ -117,7 +117,7 @@ function runPage(scriptPath, responses, opts = {}) {
   g.document = doc;
   g.window = {
     addEventListener: (n, f) => { if (n === "load") loadHandlers.push(f); },
-    location: { href: "http://localhost:8090/?cmd=custom&page=Scalers" },
+    location: { href: "http://localhost:8088/?cmd=custom&page=Scalers" },
   };
   // The page assigns window.dqmTempCell; keep window and globalThis in sync so
   // an inline onchange="dqmTempCell(this)" would resolve the same way.

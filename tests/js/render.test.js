@@ -53,6 +53,44 @@ async function boot(overrides, opts) {
   return page;
 }
 
+/**
+ * The Variables db_ls, with every key's last_written set to `secondsAgo`.
+ *
+ * The captured fixture carries the real timestamp from the day it was taken,
+ * which is now weeks old -- correct data, but it makes "is this board live?"
+ * depend on when the fixture happened to be recorded. Tests that care about
+ * liveness say so explicitly instead.
+ */
+function agedVariables(secondsAgo) {
+  const copy = JSON.parse(JSON.stringify(FX.variables_ls));
+  const stamp = Math.floor(Date.now() / 1000) - secondsAgo;
+  for (const eq of Object.keys(copy)) {
+    for (const k of Object.keys(copy[eq])) {
+      if (k.endsWith("/key")) copy[eq][k].last_written = stamp;
+    }
+  }
+  return copy;
+}
+
+function withAge(secondsAgo, overrides) {
+  const vars = agedVariables(secondsAgo);
+  return Object.assign({
+    db_ls: ({ paths }) => ({
+      data: paths.map((p) => {
+        if (p === "/Equipment") return FX.equipment_ls;
+        const m = /^\/Equipment\/([^/]+)\/(Variables|Settings)$/.exec(p);
+        if (!m) return null;
+        return (m[2] === "Variables" ? vars : FX.settings_ls)[m[1]] || {};
+      }),
+    }),
+  }, overrides || {});
+}
+
+/** Boot with an ODB that was written a second ago: a live board. */
+async function bootFresh(overrides, opts) {
+  return boot(withAge(1, overrides), opts);
+}
+
 // ---------------------------------------------------------------------------
 
 test("the page discovers the board and builds a panel for it", async () => {
@@ -193,7 +231,7 @@ function watcherFor(page, bank) {
 }
 
 async function bootAndFeed(rates, ts) {
-  const page = await boot();
+  const page = await bootFresh();
   const clock = watcherFor(page, "T036");
   clock.value = ts;
   clock.onchange();
@@ -261,7 +299,8 @@ test("a frontend that stops updating turns the page red and dates the values", a
   const chip = page.doc.getElementById(`chip-live-${key}`);
   const diag = page.doc.getElementById(`diag-${key}`);
   assert.ok(chip.classList.contains("red"), "chip must go red");
-  assert.ok(/no new reads for 3[67] s/.test(chip.textContent), chip.textContent);
+  // 37 s of wall time on top of a seed that was already a second old.
+  assert.ok(/no new reads for 3[6-9] s/.test(chip.textContent), chip.textContent);
   assert.ok(diag.textContent.includes("not current"), diag.textContent);
   assert.ok(/last values seen at /.test(diag.textContent),
     "the diagnosis must date the values it is showing");
@@ -350,7 +389,7 @@ test("values appear on the FIRST refresh, with nothing ever changing", async () 
   // onload for it, not onchange (mhttpd.js:2658-2670). A page wired only to
   // onchange shows nothing at all while the ODB is static -- which is exactly
   // what happens when the frontend is dead.
-  const page = await boot();
+  const page = await bootFresh();
   const rates = new Array(19).fill(0);
   rates[0] = 502; rates[5] = -1;
   const r = new Refresher(page.root, odbValues(rates, ["0x90c1849e", "0x17", "0x0"]));
@@ -365,7 +404,7 @@ test("values appear on the FIRST refresh, with nothing ever changing", async () 
 test("a static ODB does not read as live", async () => {
   // The frontend is down; the keys persist. The page must not date these
   // numbers as current just because it has only now loaded them.
-  const page = await boot();
+  const page = await bootFresh();
   const r = new Refresher(page.root, odbValues(new Array(19).fill(7),
                                                ["0x90c1849e", "0x17", "0x0"]));
   r.run();
@@ -381,7 +420,7 @@ test("a static ODB does not read as live", async () => {
 });
 
 test("an advancing timestamp reads as live across many ticks", async () => {
-  const page = await boot();
+  const page = await bootFresh();
   const values = odbValues(new Array(19).fill(3), ["0x00000000", "0x00000001", "0x0"]);
   const r = new Refresher(page.root, values);
   r.run();
@@ -399,7 +438,7 @@ test("an advancing timestamp reads as live across many ticks", async () => {
 });
 
 test("a masked cell survives the innerHTML rewrite that happens every tick", async () => {
-  const page = await boot();
+  const page = await bootFresh();
   const rates = new Array(19).fill(0);
   rates[5] = -1;
   const r = new Refresher(page.root, odbValues(rates, ["0x1", "0x0", "0x0"]));
@@ -460,7 +499,7 @@ test("the timestamp bank is not trended", async () => {
 });
 
 test("the staleness threshold follows the frontend's poll period", async () => {
-  const page = await boot();
+  const page = await bootFresh();
   const values = Object.assign(
     odbValues(new Array(19).fill(1), ["0x1", "0x0", "0x0"]),
     { "/Equipment/WDScalers/Common/Period": 30000 });   // a 30 s poll interval
@@ -483,4 +522,63 @@ test("the staleness threshold follows the frontend's poll period", async () => {
   } finally {
     Date.now = real;
   }
+});
+
+test("a page opened onto a long-dead frontend is red before it finishes drawing", async () => {
+  // The gap this closes: "nothing has changed since I loaded" and "nothing has
+  // changed for twelve days" are indistinguishable from inside a single page
+  // view. Without last_written the page reads green until enough wall time
+  // passes to notice -- which is exactly the case it exists to catch.
+  const page = await boot(withAge(12 * 24 * 3600));
+  const r = new Refresher(page.root, odbValues(new Array(19).fill(7),
+                                               ["0x90c1849e", "0x17", "0x0"]));
+  r.run();
+  page.tick();
+
+  const chip = page.doc.getElementById("chip-live-WDScalers-036");
+  assert.ok(chip.classList.contains("red"),
+    "twelve-day-old values must never render as live, not even briefly");
+  assert.ok(page.doc.getElementById("diag-WDScalers-036").textContent.includes("not current"));
+});
+
+test("a board read one second ago is live from the first paint", async () => {
+  const page = await bootFresh();
+  const r = new Refresher(page.root, odbValues(new Array(19).fill(7),
+                                               ["0x90c1849e", "0x17", "0x0"]));
+  r.run();
+  page.tick();
+  assert.ok(!page.doc.getElementById("chip-live-WDScalers-036").classList.contains("red"),
+    "a genuinely fresh board must not be slandered as dead");
+});
+
+test("a last_written in the future clamps rather than reading as the future", async () => {
+  const page = await boot(withAge(-3600));    // server clock an hour ahead
+  page.tick();
+  const chip = page.doc.getElementById("chip-live-WDScalers-036");
+  assert.ok(!chip.classList.contains("red"), "a clock skew must not fabricate an alarm");
+  assert.ok(!chip.textContent.includes("-"), `negative age leaked: ${chip.textContent}`);
+});
+
+test("a long staleness is reported in units a person can read", async () => {
+  const page = await boot(withAge(12 * 24 * 3600 + 3 * 3600));
+  page.tick();
+  const chip = page.doc.getElementById("chip-live-WDScalers-036");
+  const diag = page.doc.getElementById("diag-WDScalers-036");
+
+  assert.ok(/12 days/.test(chip.textContent), chip.textContent);
+  assert.ok(!/\d{6,} s/.test(chip.textContent),
+    `raw seconds make the reader do arithmetic: ${chip.textContent}`);
+  // A bare time-of-day beside a twelve-day-old reading reads as this afternoon.
+  assert.ok(/\d{4}|\/|-/.test(diag.textContent),
+    `the date must appear once it is not today: ${diag.textContent}`);
+});
+
+test("a staleness of seconds still reads in seconds", async () => {
+  const page = await bootFresh();
+  const r = new Refresher(page.root, odbValues(new Array(19).fill(1), ["0x1", "0x0", "0x0"]));
+  r.run();
+  const now = Date.now(); const real = Date.now;
+  Date.now = () => now + 40_000;
+  try { page.tick(); } finally { Date.now = real; }
+  assert.ok(/\d+ s$/.test(page.doc.getElementById("chip-live-WDScalers-036").textContent));
 });

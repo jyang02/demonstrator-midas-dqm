@@ -147,7 +147,16 @@ function groupBoards(lsByEq, cfg) {
       if (!role) continue;
       const meta = ls[key + "/key"] || {};
       (byBoard[hit.board] = byBoard[hit.board] || { equipment: eq, board: hit.board, banks: {} })
-        .banks[role] = { name: key, numValues: meta.num_values || 1, type: meta.type };
+        .banks[role] = {
+          name: key,
+          numValues: meta.num_values || 1,
+          type: meta.type,
+          // Unix seconds, from db_ls. This is how the page knows on its very
+          // first paint whether the values it is about to show are current --
+          // without it, a page opened onto a frontend that died last week reads
+          // as live until enough time passes to notice nothing is changing.
+          lastWritten: meta.last_written,
+        };
     }
     for (const id of Object.keys(byBoard).sort()) {
       if (byBoard[id].banks.rates) boards.push(byBoard[id]);

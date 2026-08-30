@@ -207,8 +207,8 @@ function equipmentStrip(eq) {
 
 function boardPanel(board) {
   const key = boardKey(board);
-  state[key] = { lastChange: null, ticks: null, stale: 0, rates: [], allZero: false,
-                 periodMs: 0 };
+  state[key] = { lastChange: seedLastChange(board), ticks: null, stale: 0, rates: [],
+                 allZero: false, periodMs: 0, seeded: true };
   // Not null: "we have never seen a value" and "the value has not changed
   // since we first saw it" are different states, and only the first should
   // read as "waiting".
@@ -574,14 +574,39 @@ function renderNothingFound(equipment, varsByEq) {
 // Live behaviour
 // ---------------------------------------------------------------------------
 
+/**
+ * When this board was last read, as far as we can tell at page load.
+ *
+ * Taken from the ODB key's own `last_written` rather than assumed to be now.
+ * That difference is the whole point of the health chips: without it, a page
+ * opened onto a frontend that died last week shows green for the first several
+ * seconds, because "nothing has changed since I loaded" and "nothing has
+ * changed for twelve days" look identical from inside one page view. With it,
+ * the page is red before it has finished drawing.
+ *
+ * `last_written` is server-side unix seconds compared against the browser
+ * clock, so a badly wrong clock skews the answer. That is the same assumption
+ * mhistory.js already makes to draw its time axis, so it is the framework's
+ * assumption rather than a new one -- and it only has to be good to the second
+ * to be useful, because the live watcher takes over from there. Negative ages
+ * (browser behind server) clamp to now rather than reading as the future.
+ */
+function seedLastChange(board) {
+  const bank = board.banks.timestamp || board.banks.rates;
+  const lw = bank && bank.lastWritten;
+  if (!lw) return null;                       // older MIDAS: fall back to watching
+  return Math.min(lw * 1000, Date.now());
+}
+
 function onTimestamp(board, value) {
   const s = state[boardKey(board)];
   const v0 = DQM.asArray(value, board.banks.timestamp.numValues);
   const ticks = DQM.asUInt64(v0[0], v0[1]);
-  // Only treat this as a fresh read if the timestamp actually moved. The first
-  // callback is the initial ODB value, which may be minutes or days old -- and
-  // dating stale numbers as current is the one thing this page must never do.
-  if (s.ticks === null || ticks !== s.ticks) s.lastChange = Date.now();
+  // Only a *moving* timestamp counts as a fresh read. The first callback is the
+  // initial ODB value, whose age we already know from last_written -- treating
+  // its arrival as a read would date stale numbers as current, which is the one
+  // thing this page must never do.
+  if (s.ticks !== null && ticks !== s.ticks) s.lastChange = Date.now();
   s.ticks = ticks;
   // The stale flag means the firmware had not recomputed since the last poll,
   // so the rates repeat the previous read rather than being a fresh measurement.
@@ -597,8 +622,11 @@ function onRates(board, value) {
   const warn = Number(cfg["Rate Warn Hz"]);
   const alarm = Number(cfg["Rate Alarm Hz"]);
 
-  // A board with no timestamp bank has nothing else to date its reads by.
-  if (!board.banks.timestamp) s.lastChange = Date.now();
+  // A board with no timestamp bank has nothing else to date its reads by, so the
+  // rates array itself is the signal -- but again only when it *changes*, not
+  // when the first value arrives.
+  if (!board.banks.timestamp && !s.seeded) s.lastChange = Date.now();
+  s.seeded = false;
 
   const values = DQM.asArray(value, rates.numValues);
   for (let i = 0; i < rates.numValues; i++) {
@@ -686,6 +714,7 @@ function updateChips(board) {
   diag.className = "dqm-diagnosis";
 
   if (age === null) {
+    // Only reachable when the ODB gave us no last_written to seed from.
     chip.textContent = "waiting for first read";
     diag.textContent = "";
     setRowsStale(board, false);
@@ -695,15 +724,14 @@ function updateChips(board) {
   if (age > limit) {
     // The failure that matters, and the one an ODB-driven page will otherwise
     // hide completely: the keys persist, so every number below goes on looking
-    // live forever. Say the age and say the time.
-    const when = new Date(s.lastChange).toLocaleTimeString();
+    // live forever. Say how long, and say when.
     chip.className = "dqm-chip red";
-    chip.textContent = `no new reads for ${Math.round(age)} s`;
+    chip.textContent = `no new reads for ${humanAge(age)}`;
     diag.className = "dqm-diagnosis red";
     diag.textContent =
-      `No new scaler reads for ${Math.round(age)} s. The rates below are the last ` +
-      `values seen at ${when}, not current. Check that the frontend is running and ` +
-      `that the board is reachable.`;
+      `No new scaler reads for ${humanAge(age)}. The rates below are the last values ` +
+      `seen at ${humanWhen(s.lastChange)}, not current. Check that the frontend is ` +
+      `running and that the board is reachable.`;
     setRowsStale(board, true);
     return;
   }
@@ -752,6 +780,36 @@ function staleLimit(board) {
   const period = state[boardKey(board)].periodMs;
   if (!period) return configured;
   return Math.max(configured, 2.5 * period / 1000);
+}
+
+/**
+ * An age a person can read at a glance.
+ *
+ * "1033848 s" is technically the answer and practically useless -- the reader
+ * has to do arithmetic to find out it means twelve days, which is the only part
+ * that matters. Two units is the most that helps.
+ */
+function humanAge(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 90) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 90) return `${m} min ${s % 60} s`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h} h ${m % 60} min`;
+  const d = Math.floor(h / 24);
+  return `${d} days ${h % 24} h`;
+}
+
+/**
+ * When, with the date included once it is not today.
+ *
+ * A bare "1:50:12 PM" beside a twelve-day-old reading is worse than no
+ * timestamp at all: it reads as this afternoon.
+ */
+function humanWhen(ms) {
+  const t = new Date(ms);
+  const sameDay = t.toDateString() === new Date().toDateString();
+  return sameDay ? t.toLocaleTimeString() : t.toLocaleString();
 }
 
 function setRowsStale(board, stale) {
