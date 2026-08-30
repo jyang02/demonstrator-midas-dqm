@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdqm"
+version = "0.1.0"
+description = "MIDAS custom-page DQM: an analyzer client and mhttpd pages, portable across experiments"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+# The WaveDream plugin reuses the decoders in wavedream-scalar-readout rather
+# than vendoring them: that module is the reference implementation, and a copy
+# would fork on the first bug fix.
+wavedream = ["wdscalers>=0.1"]
+dev = ["pytest>=8", "pytest-benchmark>=4", "ruff>=0.5"]
+
+[project.scripts]
+mdqm-analyzer = "mdqm.dqm.analyzer:main"
+mdqm-register-pages = "mdqm.install.register_pages:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.isort]
+known-third-party = ["midas", "numpy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

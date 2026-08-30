@@ -1,0 +1,320 @@
+{
+ "_doc": "Captured verbatim from the live WDSCALERS ODB on 2026-08-30. These are the exact shapes discovery has to survive: a scalar X036 whose /key has no num_values, a T036 of hex strings, and original-case Settings names.",
+ "equipment_ls": {
+  "WDScalers": {},
+  "WDWaveforms": {}
+ },
+ "variables_ls": {
+  "WDScalers": {
+   "S036/key": {
+    "type": 7,
+    "num_values": 19,
+    "notify_count": 1,
+    "access_mode": 7,
+    "last_written": 1787086212
+   },
+   "S036": [
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    210,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    344,
+    344,
+    0
+   ],
+   "T036/key": {
+    "type": 6,
+    "num_values": 3,
+    "notify_count": 1,
+    "access_mode": 7,
+    "last_written": 1787086212
+   },
+   "T036": [
+    "0x90c1849e",
+    "0x00000017",
+    "0x00000000"
+   ],
+   "X036/key": {
+    "type": 9,
+    "notify_count": 1,
+    "access_mode": 7,
+    "last_written": 1787177603
+   },
+   "X036": 59.4375,
+   "D036/key": {
+    "type": 9,
+    "num_values": 16,
+    "notify_count": 1,
+    "access_mode": 7,
+    "last_written": 1787086212
+   },
+   "D036": [
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143,
+    -143
+   ]
+  }
+ },
+ "settings_ls": {
+  "WDScalers": {
+   "Board Enabled/key": {
+    "type": 8,
+    "access_mode": 7,
+    "last_written": 1785344848
+   },
+   "Board Enabled": true,
+   "Board Names/key": {
+    "type": 12,
+    "item_size": 15,
+    "access_mode": 7,
+    "last_written": 1785344848
+   },
+   "Board Names": "192.168.40.110",
+   "Log Trigger Config/key": {
+    "type": 8,
+    "access_mode": 7,
+    "last_written": 1785344848
+   },
+   "Log Trigger Config": true,
+   "Write CSV/key": {
+    "type": 8,
+    "access_mode": 7,
+    "last_written": 1785344848
+   },
+   "Write CSV": true,
+   "CSV Directory/key": {
+    "type": 12,
+    "item_size": 66,
+    "access_mode": 7,
+    "last_written": 1785344848
+   },
+   "CSV Directory": "/media/pioneer/a291f55c-573e-4697-976d-5f0ce3e193c7/wavedream/csv",
+   "Names S036/key": {
+    "type": 12,
+    "num_values": 19,
+    "item_size": 9,
+    "access_mode": 7,
+    "last_written": 1786570176
+   },
+   "Names S036": [
+    "ch00",
+    "ch01",
+    "ch02",
+    "ch03",
+    "ch04",
+    "ch05",
+    "ch06",
+    "ch07",
+    "ch08",
+    "ch09",
+    "ch10",
+    "ch11",
+    "ch12",
+    "ch13",
+    "ch14",
+    "ch15",
+    "ptrn_trg",
+    "ext_trg",
+    "ext_clk"
+   ],
+   "Names T036/key": {
+    "type": 12,
+    "num_values": 3,
+    "item_size": 13,
+    "access_mode": 7,
+    "last_written": 1786570176
+   },
+   "Names T036": [
+    "board_ts_lsb",
+    "board_ts_msb",
+    "stale"
+   ],
+   "Names X036/key": {
+    "type": 12,
+    "item_size": 12,
+    "access_mode": 7,
+    "last_written": 1786570176
+   },
+   "Names X036": "fpga_temp_c",
+   "Names D036/key": {
+    "type": 12,
+    "num_values": 16,
+    "item_size": 5,
+    "access_mode": 7,
+    "last_written": 1786570176
+   },
+   "Names D036": [
+    "ch00",
+    "ch01",
+    "ch02",
+    "ch03",
+    "ch04",
+    "ch05",
+    "ch06",
+    "ch07",
+    "ch08",
+    "ch09",
+    "ch10",
+    "ch11",
+    "ch12",
+    "ch13",
+    "ch14",
+    "ch15"
+   ],
+   "Enabled S036/key": {
+    "type": 8,
+    "num_values": 19,
+    "access_mode": 7,
+    "last_written": 1785344848
+   },
+   "Enabled S036": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  }
+ },
+ "hs_events": [
+  "Run transitions",
+  "System",
+  "Trigger/Buffer",
+  "Trigger/Config busy",
+  "Trigger/Livetime",
+  "Trigger/Thread",
+  "Trigger/Trigger Rate",
+  "WDScalers/D036",
+  "WDScalers/S036",
+  "WDScalers/T036",
+  "WDScalers/X036",
+  "WDWaveforms/Buffer",
+  "WDWaveforms/Config busy",
+  "WDWaveforms/Livetime",
+  "WDWaveforms/Thread",
+  "WDWaveforms/Trigger Rate"
+ ],
+ "hs_tags": [
+  {
+   "name": "WDScalers/S036",
+   "status": 1,
+   "tags": [
+    {
+     "name": "ch00",
+     "type": 7
+    },
+    {
+     "name": "ch01",
+     "type": 7
+    },
+    {
+     "name": "ch02",
+     "type": 7
+    },
+    {
+     "name": "ch03",
+     "type": 7
+    },
+    {
+     "name": "ch04",
+     "type": 7
+    },
+    {
+     "name": "ch05",
+     "type": 7
+    },
+    {
+     "name": "ch06",
+     "type": 7
+    },
+    {
+     "name": "ch07",
+     "type": 7
+    },
+    {
+     "name": "ch08",
+     "type": 7
+    },
+    {
+     "name": "ch09",
+     "type": 7
+    },
+    {
+     "name": "ch10",
+     "type": 7
+    },
+    {
+     "name": "ch11",
+     "type": 7
+    },
+    {
+     "name": "ch12",
+     "type": 7
+    },
+    {
+     "name": "ch13",
+     "type": 7
+    },
+    {
+     "name": "ch14",
+     "type": 7
+    },
+    {
+     "name": "ch15",
+     "type": 7
+    },
+    {
+     "name": "ptrn_trg",
+     "type": 7
+    },
+    {
+     "name": "ext_trg",
+     "type": 7
+    },
+    {
+     "name": "ext_clk",
+     "type": 7
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,47 @@
+/* The little that midas.css does not already cover.
+   Colours come from midas.css custom properties (--mred, --myellow, --mgreen,
+   --mgray) so the page follows the MIDAS theme instead of inventing one. */
+
+.dqm-note        { padding: 8px 12px; color: var(--mgray, #666); font-style: italic; }
+.dqm-error       { padding: 8px 12px; color: var(--mred, #c00); }
+
+.dqm-strip       { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+                   margin: 6px 0 10px 0; }
+.dqm-chip        { display: inline-flex; align-items: baseline; gap: 6px;
+                   padding: 3px 9px; border-radius: 10px; white-space: nowrap;
+                   background: var(--mgray, #ddd); }
+.dqm-chip b      { font-weight: 600; }
+.dqm-chip.green  { background: var(--mgreen,  #8f8); }
+.dqm-chip.yellow { background: var(--myellow, #ff8); }
+.dqm-chip.red    { background: var(--mred,    #f88); }
+.dqm-chip.blue   { background: #9cf; }
+
+/* The diagnosis line. Deliberately full-width prose rather than a tooltip: the
+   whole point is that an operator should not have to know what a grey chip
+   means at 3 a.m. */
+.dqm-diagnosis        { margin: 4px 0 10px 0; padding: 6px 10px;
+                        border-left: 4px solid var(--mgray, #ccc); }
+.dqm-diagnosis.red    { border-left-color: var(--mred, #c00); font-weight: 600; }
+.dqm-diagnosis.yellow { border-left-color: var(--myellow, #cc0); }
+.dqm-diagnosis.blue   { border-left-color: #06c; }
+
+.dqm-panel       { margin-bottom: 18px; }
+.dqm-grid        { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.dqm-plot        { width: 520px; height: 300px; }
+.dqm-hist        { width: 520px; height: 260px; }
+
+table.dqm-table            { border-collapse: collapse; }
+table.dqm-table td,
+table.dqm-table th         { padding: 2px 10px; text-align: right; }
+table.dqm-table th         { text-align: right; font-weight: 600; }
+table.dqm-table td.label,
+table.dqm-table th.label   { text-align: left; }
+table.dqm-table tr.subhead td { padding-top: 10px; font-weight: 600; text-align: left; }
+table.dqm-table td.masked  { color: var(--mgray, #999); font-style: italic; }
+table.dqm-table td.warn    { background: var(--myellow, #ff8); }
+table.dqm-table td.alarm   { background: var(--mred, #f88); }
+/* A value we can no longer vouch for. Not an error -- the number may well
+   still be right -- but it must not read as live. */
+table.dqm-table tr.stale td { opacity: 0.55; }
+
+.dqm-footnote    { margin-top: 6px; color: var(--mgray, #666); font-size: 90%; }
