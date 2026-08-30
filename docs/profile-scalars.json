@@ -1,0 +1,26 @@
+[
+ {
+  "cpu_cores": 0.004799779734188525,
+  "rss_mb": 135.5859375,
+  "dropped_delta": 0,
+  "tabs": 0
+ },
+ {
+  "cpu_cores": 0.008391550557180306,
+  "rss_mb": 135.5859375,
+  "dropped_delta": 0,
+  "tabs": 1
+ },
+ {
+  "cpu_cores": 0.012387771786723475,
+  "rss_mb": 170.66015625,
+  "dropped_delta": 0,
+  "tabs": 2
+ },
+ {
+  "cpu_cores": 0.02477507762947009,
+  "rss_mb": 322.453125,
+  "dropped_delta": 0,
+  "tabs": 5
+ }
+]
