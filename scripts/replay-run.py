@@ -20,6 +20,25 @@ is not reading the buffer and nothing reaches disk.
 
 It also declares no equipment and registers no transition callbacks, so it
 cannot delay a run start or stop however wedged it gets.
+
+If it appears to hang
+---------------------
+``send_event`` ends in ``bm_flush_cache(..., BM_WAIT)``, which blocks until the
+buffer has room -- and blocks *uninterruptibly*, because the signal handler
+cannot run while the interpreter is inside that C call. The cause is almost
+always a **stale buffer client**: a consumer that died without detaching still
+pins the buffer's read pointer, so space is never reclaimed and no amount of
+waiting helps.
+
+Compare ``/System/Buffers/SYSTEM/Clients`` with ``/System/Clients``; a name in
+the first and not the second is a stale reader. ``odbedit -c cleanup`` does not
+remove them. Stopping every MIDAS client (``stop-midas.sh``) and starting again
+does.
+
+Note that ``/System/Buffers/SYSTEM/filled`` is a stale ODB *reflection*, not a
+live measurement -- nothing updates it while the buffer is idle, so a reading of
+99% on a healthy buffer is normal and is not evidence of anything. The check
+below therefore warns rather than refuses.
 """
 
 from __future__ import annotations
@@ -48,6 +67,42 @@ def run_state(client) -> int:
         return int(client.odb_get("/Runinfo/State"))
     except Exception:
         return -1
+
+
+def warn_about_stale_readers(client, buffer_name: str) -> None:
+    """Name any dead client still attached to the buffer, before we block on it.
+
+    A stale reader pins the read pointer, so the buffer fills and send_event
+    blocks forever inside BM_WAIT where the signal handler cannot reach it. That
+    is a confusing way to hang, and the cause is cheap to look up first.
+    """
+    try:
+        attached = set(_client_names(client, f"/System/Buffers/{buffer_name}/Clients"))
+        alive = set(_client_names(client, "/System/Clients"))
+    except Exception:
+        return
+    stale = sorted(n for n in attached - alive if n)
+    if not stale:
+        return
+    print(f"warning: {len(stale)} client(s) are attached to {buffer_name} but are not "
+          f"running: {', '.join(stale)}", file=sys.stderr)
+    print("         A dead reader pins the buffer's read pointer, and send_event will "
+          "block forever waiting for space it will never get.", file=sys.stderr)
+    print("         `odbedit -c cleanup` does not clear these; stop every MIDAS client "
+          "and start again if this hangs.", file=sys.stderr)
+
+
+def _client_names(client, path: str) -> list[str]:
+    """The `Name` of every subdirectory of `path`."""
+    names = []
+    entries = client.odb_get(path) or {}
+    for key, value in entries.items():
+        if key.endswith("/key") or not isinstance(value, dict):
+            continue
+        name = value.get("Name")
+        if isinstance(name, str):
+            names.append(name)
+    return names
 
 
 def replay(path: Path, client, buf, rate: float, limit: int | None,
@@ -142,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         buf = client.open_event_buffer(args.buffer, None, args.max_event_size)
+        warn_about_stale_readers(client, args.buffer)
 
         if not args.quiet:
             ids = "all" if args.event_id is None else args.event_id

@@ -51,3 +51,6 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-scope-plot  { width: 100%; min-width: 640px; height: 480px; margin-top: 6px; }
 .dqm-strip label.dqm-chip { cursor: pointer; }
 .dqm-strip label.dqm-chip input { margin-right: 5px; }
+
+/* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
+.dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
