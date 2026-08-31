@@ -1,0 +1,57 @@
+[
+ {
+  "asked": 100.0,
+  "offered": 101.12462367411545,
+  "processed": 100.93816155301998,
+  "analyzer_cpu": 0.1466835352617778,
+  "mhttpd_cpu": 0.008080025247470528,
+  "analyzer_rss": 102.8828125,
+  "throttled": false,
+  "unanswered": 0,
+  "budget_exhausted": 0
+ },
+ {
+  "asked": 200.0,
+  "offered": 198.4061894921309,
+  "processed": 198.22058968905125,
+  "analyzer_cpu": 0.27283171052706495,
+  "mhttpd_cpu": 0.008042658133454129,
+  "analyzer_rss": 105.046875,
+  "throttled": false,
+  "unanswered": 0,
+  "budget_exhausted": 0
+ },
+ {
+  "asked": 500.0,
+  "offered": 490.6816799015209,
+  "processed": 490.4334848181109,
+  "analyzer_cpu": 0.6546145324938095,
+  "mhttpd_cpu": 0.008686827919348284,
+  "analyzer_rss": 105.328125,
+  "throttled": false,
+  "unanswered": 0,
+  "budget_exhausted": 0
+ },
+ {
+  "asked": 1000.0,
+  "offered": 959.0454063482887,
+  "processed": 628.183049643649,
+  "analyzer_cpu": 0.9108561903327133,
+  "mhttpd_cpu": 0.008616207205849153,
+  "analyzer_rss": 105.41015625,
+  "throttled": false,
+  "unanswered": 0,
+  "budget_exhausted": 8
+ },
+ {
+  "asked": 0.0,
+  "offered": 1334.5237184182085,
+  "processed": 678.7885733073595,
+  "analyzer_cpu": 0.9239764971314162,
+  "mhttpd_cpu": 0.00858372326465731,
+  "analyzer_rss": 105.44921875,
+  "throttled": false,
+  "unanswered": 0,
+  "budget_exhausted": 8
+ }
+]

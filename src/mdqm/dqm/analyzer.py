@@ -257,24 +257,36 @@ class Analyzer:
             self.run_number = number
         self.run_state = state
 
-    def run_once(self, client, buf, budget_s: float = 0.1) -> int:
-        """One cycle: drain the buffer, decode what the bucket and budget allow.
+    #: Decode this many events, then yield to MIDAS before continuing.
+    #:
+    #: The brpc handler shares this interpreter, so it can only run when this
+    #: loop gives up the GIL. Measured at 500 events/s offered: with no yield at
+    #: all, wd::status stopped answering entirely -- the analyzer was decoding
+    #: perfectly and the pages showed an error. Capping the *work* per cycle
+    #: fixed that and cost a third of the throughput (131 ev/s at 39% of a core,
+    #: nowhere near CPU-bound). Yielding periodically fixes the same problem
+    #: without the cap, because the problem was never how much work there was.
+    YIELD_EVERY = 25
 
-        Draining is unbounded because it is cheap and because stopping early
-        would leave the read pointer behind. *Decoding* is bounded by both the
-        token bucket and a wall-clock budget, and the budget is not redundant:
-        with the rate limit raised high, decoding every event in a full buffer
-        can occupy this thread for longer than the cycle, and the brpc handler --
-        which shares the interpreter -- then does not get scheduled in time.
-        mhttpd gives up and the pages show an error while the analyzer is in
-        fact working perfectly. Measured: at 500 events/s offered with no budget,
-        wd::status stopped answering.
+    def run_once(self, client, buf, budget_s: float = 2.0) -> int:
+        """One cycle: drain the buffer and decode what the bucket allows.
+
+        Draining is unbounded: it is cheap, and stopping early would leave the
+        read pointer behind. Decoding is limited by the token bucket, yields to
+        MIDAS every `YIELD_EVERY` events so the RPC handler is serviced, and has
+        a generous wall-clock backstop that should never normally be reached.
         """
         drained = 0
         deadline = time.monotonic() + budget_s
+        since_yield = 0
         decoding = True
         while not _stop:
-            event = client.receive_event(buf, async_flag=True)
+            # use_numpy is not optional at these rates. Without it a 33 kB
+            # TID_BYTE bank arrives as a tuple of 33,000 Python ints and
+            # bank_bytes() has to walk every one of them; wdunpack documents
+            # that shape because the offline file reader hands it over too. With
+            # it, the same bank is an ndarray and the conversion is a memcpy.
+            event = client.receive_event(buf, async_flag=True, use_numpy=True)
             if event is None:
                 break
             drained += 1
@@ -286,9 +298,18 @@ class Analyzer:
             if self.plugin.process(event, run_number=self.run_number):
                 self.processed += 1
                 self._ev_window.append(time.time())
+
+            since_yield += 1
+            if since_yield >= self.YIELD_EVERY:
+                since_yield = 0
+                # Zero timeout: hand control to MIDAS and come straight back.
+                # This is what lets a status or histogram request be answered
+                # while a burst is being decoded.
+                client.communicate(0)
+
             if time.monotonic() > deadline:
-                # Out of budget: keep draining, stop decoding, come back next
-                # cycle. Never break outright -- that would abandon the drain.
+                # The backstop. Keep draining, stop decoding, resume next cycle.
+                # Never break outright -- that would abandon the drain.
                 decoding = False
                 self.budget_exhausted += 1
         return drained
@@ -324,6 +345,9 @@ def main(argv=None) -> int:
                     help="events per second to decode; the buffer is drained regardless")
     ap.add_argument("--max-event-size", type=int, default=8 * 1024 * 1024)
     ap.add_argument("--cycle-ms", type=int, default=200)
+    ap.add_argument("--decode-budget-s", type=float, default=2.0,
+                    help="backstop on how long one decode burst may run; the "
+                         "periodic yield, not this, is what keeps RPC answering")
     args = ap.parse_args(argv)
 
     if not args.experiment:
@@ -380,9 +404,7 @@ def main(argv=None) -> int:
                 while not _stop:
                     analyzer.apply_settings(client)
                     analyzer.poll_run_state(client)
-                    # Half the cycle for decoding, half kept clear so
-                    # communicate() runs and the RPC handler is serviced.
-                    analyzer.run_once(client, buf, budget_s=args.cycle_ms / 2000.0)
+                    analyzer.run_once(client, buf, budget_s=args.decode_budget_s)
                     now = time.time()
                     if now - last_health > 10.0:
                         analyzer.check_daq_health(client)

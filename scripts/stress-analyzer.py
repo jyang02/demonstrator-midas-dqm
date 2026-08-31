@@ -182,9 +182,9 @@ def main() -> int:
     set_odb(args.experiment, "/DQM/Analyzer/Sampling/max events per s", args.limit)
     time.sleep(4)
 
-    print(f"analyzer rate limit set to {args.limit}/s for the test\n")
+    print(f"analyzer rate limit set to {args.limit}/s for the test\n", flush=True)
     print(f"{'asked':>7} {'offered':>9} {'processed':>10} {'lost':>7} "
-          f"{'analyzer':>9} {'mhttpd':>8} {'RSS MB':>8}  notes")
+          f"{'analyzer':>9} {'mhttpd':>8} {'RSS MB':>8}  notes", flush=True)
     results = []
     for rate in args.rates:
         try:
@@ -193,7 +193,7 @@ def main() -> int:
         except NotAnswered as exc:
             label = "max" if rate == 0 else f"{rate:.0f}"
             print(f"{label:>7} {'-':>9} {'-':>10} {'-':>7} {'-':>9} {'-':>8} "
-                  f"{'-':>8}  analyzer did not answer: {exc}")
+                  f"{'-':>8}  analyzer did not answer: {exc}", flush=True)
             continue
         results.append(r)
         lost = max(0.0, r["offered"] - r["processed"])
@@ -204,7 +204,8 @@ def main() -> int:
               f"{r['mhttpd_cpu'] * 100:>7.1f}% {r['analyzer_rss']:>8.1f}"
               + ("  THROTTLED" if r["throttled"] else "")
               + (f"  {r['unanswered']} status calls unanswered" if r["unanswered"] else "")
-              + (f"  budget hit {r['budget_exhausted']}x" if r["budget_exhausted"] else ""))
+              + (f"  budget hit {r['budget_exhausted']}x" if r["budget_exhausted"] else ""),
+              flush=True)
 
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=1))

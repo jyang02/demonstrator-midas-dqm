@@ -449,3 +449,58 @@ def test_status_reports_the_live_binning():
     st = a.status()
     assert st["settings_root"] == "/DQM/Analyzer"
     assert st["binning"]["amplitude max"] == 2.5
+
+
+# --- yielding to MIDAS while decoding ---------------------------------------
+
+def test_decoding_yields_to_midas_periodically():
+    """The brpc handler shares the interpreter and only runs when we let go.
+
+    Measured at 500 ev/s offered: with no yield, wd::status stopped answering
+    while the analyzer decoded perfectly -- so the pages reported an error about
+    a healthy analyzer. Capping the work per cycle fixed that and cost a third of
+    the throughput; yielding fixes it without the cap.
+    """
+    a = _analyzer(rate=100000.0)
+
+    class _Counting(_FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.yields = 0
+
+        def communicate(self, timeout_ms):
+            self.yields += 1
+
+    client = _Counting()
+    client.events = [_Event() for _ in range(100)]
+    a.run_once(client, buf=None)
+
+    assert a.processed == 100
+    expected = 100 // A.Analyzer.YIELD_EVERY
+    assert client.yields >= expected - 1, \
+        f"yielded {client.yields} times decoding 100 events"
+
+
+def test_the_backstop_stops_decoding_but_never_the_drain():
+    a = _analyzer(rate=100000.0)
+    client = _FakeClient()
+    client.events = [_Event() for _ in range(50)]
+    client.communicate = lambda ms: None
+
+    # A budget already spent: nothing should be decoded, everything drained.
+    drained = a.run_once(client, buf=None, budget_s=-1.0)
+
+    assert drained == 50, "the buffer must still be emptied"
+    assert a.processed <= 1, "and decoding must stop almost immediately"
+    assert a.budget_exhausted >= 1
+
+
+def test_a_generous_backstop_is_not_normally_reached():
+    a = _analyzer(rate=100000.0)
+    client = _FakeClient()
+    client.events = [_Event() for _ in range(200)]
+    client.communicate = lambda ms: None
+
+    a.run_once(client, buf=None, budget_s=2.0)
+    assert a.budget_exhausted == 0, "the fake plugin is fast; nothing should trip"
+    assert a.processed == 200
