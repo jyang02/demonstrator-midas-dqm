@@ -35,6 +35,7 @@ import time
 import midas
 import midas.client
 
+from mdqm.dqm import settings as odb_settings
 from mdqm.dqm.hist import HistStore
 from mdqm.dqm.server import Server
 
@@ -99,6 +100,11 @@ class Analyzer:
         self.bucket = TokenBucket(rate)
         self.configured_rate = rate
 
+        self.settings = None
+        self._settings_shape = None
+        self._settings_checked = 0.0
+        self.reconfigures = 0
+
         self.seen = 0
         self.processed = 0
         self.run_number = None
@@ -107,6 +113,7 @@ class Analyzer:
         self.connected_since = None
         self.reconnects = 0
         self.throttle_events = []
+        self.budget_exhausted = 0
         self._dropped_baseline = None
         self._ev_window = []
 
@@ -141,11 +148,62 @@ class Analyzer:
             "configured_rate": self.configured_rate,
             "throttled": self.bucket.rate < self.configured_rate,
             "throttle_events": self.throttle_events[-5:],
+            "budget_exhausted": self.budget_exhausted,
             "histograms": len(self.store),
+            "reconfigures": self.reconfigures,
+            "settings_root": odb_settings.ROOT,
+            "binning": (self.settings or {}).get("Binning", {}),
+            "channel_roles": (self.settings or {}).get("Channel roles", {}),
             "server_calls": self.server.calls,
             "server_last_error": self.server.last_error,
             "plugin": self.plugin.status(),
         }
+
+    # -- live configuration --------------------------------------------------
+
+    def apply_settings(self, client, force: bool = False) -> bool:
+        """Re-read /DQM/Analyzer and adopt any change. Returns True if it did.
+
+        Polled rather than hotlinked. A watch callback would run on the client's
+        thread while the brpc handler may be encoding a histogram from the same
+        store, and the cost of reading a dozen small keys every couple of seconds
+        is far below the cost of getting that locking wrong.
+        """
+        now = time.time()
+        if not force and now - self._settings_checked < 2.0:
+            return False
+        self._settings_checked = now
+
+        try:
+            new = odb_settings.read(client)
+        except Exception:
+            return False
+
+        shape = odb_settings.binning_fingerprint(new)
+        changed_shape = shape != self._settings_shape
+        first = self.settings is None
+        if not first and odb_settings.fingerprint(new) == odb_settings.fingerprint(self.settings):
+            return False
+
+        self.settings = new
+        self._settings_shape = shape
+
+        rate = float(new["Sampling"].get("max events per s", self.configured_rate))
+        if rate != self.configured_rate:
+            self.configured_rate = rate
+            # An operator raising the rate also clears a self-throttle, because
+            # they have said what they want more recently than we did.
+            self.bucket.rate = rate
+        self.plugin.roles = new["Channel roles"]
+
+        if changed_shape and not first and hasattr(self.plugin, "reconfigure"):
+            self.plugin.reconfigure(new["Channel roles"], new["Binning"])
+            self.reconfigures += 1
+            # Best effort: the rebuild has already happened either way.
+            with contextlib.suppress(Exception):
+                client.msg(f"{DEFAULT_CLIENT}: binning changed; rebuilt "
+                           f"{len(self.store)} histograms (counts reset)")
+        return True
 
     # -- the DAQ-safety valve -------------------------------------------------
 
@@ -199,22 +257,40 @@ class Analyzer:
             self.run_number = number
         self.run_state = state
 
-    def run_once(self, client, buf) -> int:
-        """One cycle: drain the buffer, process what the bucket allows."""
+    def run_once(self, client, buf, budget_s: float = 0.1) -> int:
+        """One cycle: drain the buffer, decode what the bucket and budget allow.
+
+        Draining is unbounded because it is cheap and because stopping early
+        would leave the read pointer behind. *Decoding* is bounded by both the
+        token bucket and a wall-clock budget, and the budget is not redundant:
+        with the rate limit raised high, decoding every event in a full buffer
+        can occupy this thread for longer than the cycle, and the brpc handler --
+        which shares the interpreter -- then does not get scheduled in time.
+        mhttpd gives up and the pages show an error while the analyzer is in
+        fact working perfectly. Measured: at 500 events/s offered with no budget,
+        wd::status stopped answering.
+        """
         drained = 0
+        deadline = time.monotonic() + budget_s
+        decoding = True
         while not _stop:
             event = client.receive_event(buf, async_flag=True)
             if event is None:
                 break
             drained += 1
             self.seen += 1
-            if not self.plugin.accepts(event):
+            if not decoding or not self.plugin.accepts(event):
                 continue
             if not self.bucket.take():
                 continue                 # sampled out: draining still matters
             if self.plugin.process(event, run_number=self.run_number):
                 self.processed += 1
                 self._ev_window.append(time.time())
+            if time.monotonic() > deadline:
+                # Out of budget: keep draining, stop decoding, come back next
+                # cycle. Never break outright -- that would abandon the drain.
+                decoding = False
+                self.budget_exhausted += 1
         return drained
 
     def serve(self, client, cmd, args, max_len):
@@ -261,6 +337,8 @@ def main(argv=None) -> int:
     # Outside the reconnect loop: a MIDAS bounce must not lose what has been
     # accumulated, or the operator watching the page sees their plots reset for
     # a reason that has nothing to do with the data.
+    # Built with the defaults; apply_settings() re-reads the ODB and rebuilds
+    # once connected, so the ODB is the authority and --rate only seeds it.
     analyzer = Analyzer(make_plugin_factory(args.plugin),
                         rate=args.rate, buffer_name=args.buffer)
     backoff = Backoff()
@@ -282,6 +360,14 @@ def main(argv=None) -> int:
                 if analyzer.reconnects:
                     print(f"{args.client}: reconnected", flush=True)
 
+                # Seed before anything reads it, so a fresh experiment gets a
+                # settings tree an operator can find and edit.
+                created = odb_settings.seed(client)
+                if created:
+                    print(f"{args.client}: seeded {created} settings key(s) under "
+                          f"{odb_settings.ROOT}", flush=True)
+                analyzer.apply_settings(client, force=True)
+
                 client.register_brpc_callback(analyzer.serve)
                 buf = client.open_event_buffer(args.buffer, None, args.max_event_size)
                 client.register_event_request(
@@ -292,8 +378,11 @@ def main(argv=None) -> int:
                 backoff.reset()
                 last_health = 0.0
                 while not _stop:
+                    analyzer.apply_settings(client)
                     analyzer.poll_run_state(client)
-                    analyzer.run_once(client, buf)
+                    # Half the cycle for decoding, half kept clear so
+                    # communicate() runs and the RPC handler is serviced.
+                    analyzer.run_once(client, buf, budget_s=args.cycle_ms / 2000.0)
                     now = time.time()
                     if now - last_health > 10.0:
                         analyzer.check_daq_health(client)

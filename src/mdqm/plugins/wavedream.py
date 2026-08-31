@@ -196,6 +196,25 @@ class WaveDreamPlugin:
         v = self.roles.get(key, default)
         return v if v is not None else default
 
+    def reconfigure(self, roles: dict, binning: dict) -> None:
+        """Adopt new roles and binning, rebuilding the histograms they define.
+
+        The rebuild *resets* the affected plots, and that is correct rather than
+        unfortunate: a histogram with different bins is a different histogram,
+        and carrying old counts into new bins would silently mix two binnings in
+        one plot -- a plot that looks fine and means nothing. The page shows the
+        entry count, so the reset is visible.
+
+        Plots whose shape did not change are left alone, so moving a channel role
+        does not throw away an afternoon of persistence.
+        """
+        self.roles = roles or {}
+        self.binning = binning or {}
+        for name in self.store.names():
+            if name.startswith("wd/"):
+                self.store.remove(name)
+        self._build()
+
     def _build(self):
         b = self.binning
         chans = list(self._role("waveform channels", [0, 1, 2, 3, 4]))

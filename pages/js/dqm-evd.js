@@ -75,8 +75,10 @@ async function loadRoles() {
     "labels": [],
   };
   try {
-    const rpc = await mjsonrpc_db_get_values(
-      ["/Equipment/WDAnalyzer/Settings/Channel roles"]);
+    // /DQM/Analyzer, not /Equipment/WDAnalyzer: the analyzer registers no
+    // equipment on purpose, so a path under /Equipment would name something that
+    // does not exist. This is the same subtree the analyzer itself reads.
+    const rpc = await mjsonrpc_db_get_values(["/DQM/Analyzer/Channel roles"]);
     const got = rpc.result.data[0];
     if (got && rpc.result.status[0] === 1) {
       for (const key of Object.keys(defaults)) {

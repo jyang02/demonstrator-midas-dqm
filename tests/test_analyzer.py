@@ -292,3 +292,160 @@ def test_the_first_run_number_seen_does_not_clear():
     h.fill([0.5])
     a.poll_run_state(_FakeClient({"/Runinfo/State": 3, "/Runinfo/Run number": 99}))
     assert h.entries == 1
+
+
+# --- live configuration ------------------------------------------------------
+
+class _SettingsClient(_FakeClient):
+    """A fake ODB that supports the settings tree."""
+
+    def __init__(self, values=None):
+        super().__init__()
+        self.tree = dict(values or {})
+        self.messages = []
+
+    def odb_exists(self, path):
+        return path in self.tree
+
+    def odb_get(self, path):
+        if path in self.tree:
+            return self.tree[path]
+        return super().odb_get(path)
+
+    def odb_set(self, path, value):
+        self.tree[path] = value
+
+
+def _seeded_client(**overrides):
+    from mdqm.dqm import settings as S
+
+    c = _SettingsClient()
+    S.seed(c)
+    for k, v in overrides.items():
+        c.tree[f"{S.ROOT}/{k}"] = v
+    return c
+
+
+def test_settings_are_seeded_once_and_not_overwritten():
+    from mdqm.dqm import settings as S
+
+    c = _SettingsClient()
+    created = S.seed(c)
+    assert created > 0
+    c.tree[f"{S.ROOT}/Binning/persistence x bins"] = 999      # operator edit
+
+    assert S.seed(c) == 0, "a second seed must create nothing"
+    assert c.tree[f"{S.ROOT}/Binning/persistence x bins"] == 999, \
+        "seeding must never overwrite what an operator changed"
+
+
+def test_the_odb_is_the_authority_for_binning():
+    a = _analyzer(rate=20.0)
+    c = _seeded_client(**{"Binning/persistence x bins": 64,
+                          "Binning/persistence y bins": 20})
+    a.apply_settings(c, force=True)
+    assert a.settings["Binning"]["persistence x bins"] == 64
+
+
+def test_changing_the_binning_rebuilds_the_histograms():
+    """A histogram with different bins is a different histogram."""
+    from mdqm.plugins.wavedream import WaveDreamPlugin
+
+    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    c = _seeded_client()
+    a.apply_settings(c, force=True)
+
+    pers = a.store.get("wd/persistence_ch00")
+    assert pers.x.n == 256, "the seeded default"
+    pers.fill([1.0], [-0.5])
+    assert pers.entries == 1
+
+    c.tree["/DQM/Analyzer/Binning/persistence x bins"] = 64
+    a._settings_checked = 0
+    assert a.apply_settings(c) is True
+
+    rebuilt = a.store.get("wd/persistence_ch00")
+    assert rebuilt.x.n == 64, "the new binning took effect"
+    assert rebuilt.entries == 0, "old counts must not be carried into new bins"
+    assert a.reconfigures == 1
+    assert any("binning changed" in m for m in c.messages), \
+        "a silent reset would look like data loss"
+
+
+def test_a_role_change_does_not_throw_away_accumulated_plots():
+    from mdqm.plugins.wavedream import WaveDreamPlugin
+
+    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    c = _seeded_client()
+    a.apply_settings(c, force=True)
+
+    a.store.get("wd/persistence_ch00").fill([1.0], [-0.5])
+    assert a.store.get("wd/persistence_ch00").entries == 1
+
+    c.tree["/DQM/Analyzer/Channel roles/rf channel"] = 9
+    a._settings_checked = 0
+    a.apply_settings(c)
+
+    assert a.store.get("wd/persistence_ch00").entries == 1, \
+        "moving the RF channel does not change any histogram's shape"
+    assert a.reconfigures == 0
+    assert a.plugin.roles["rf channel"] == 9, "but the plugin must see it"
+
+
+def test_the_sampling_rate_can_be_changed_live():
+    a = _analyzer(rate=20.0)
+    c = _seeded_client(**{"Sampling/max events per s": 250.0})
+    a.apply_settings(c, force=True)
+    assert a.bucket.rate == 250.0
+    assert a.configured_rate == 250.0
+
+
+def test_raising_the_rate_clears_a_self_throttle():
+    """The operator has said what they want more recently than we did."""
+    a = _analyzer(rate=20.0)
+    c = _seeded_client()
+    a.apply_settings(c, force=True)
+
+    a.bucket.rate = 5.0                     # as the throttle would leave it
+    c.tree["/DQM/Analyzer/Sampling/max events per s"] = 40.0
+    a._settings_checked = 0
+    a.apply_settings(c)
+    assert a.bucket.rate == 40.0
+
+
+def test_settings_are_not_re_read_on_every_cycle():
+    a = _analyzer()
+    c = _seeded_client()
+    a.apply_settings(c, force=True)
+    assert a.apply_settings(c) is False, "a 2 s floor keeps this off the hot path"
+
+
+def test_a_broken_settings_tree_does_not_stop_the_analyzer():
+    """An ODB nobody can read must leave a working analyzer on defaults.
+
+    read() deliberately swallows a per-key failure and substitutes the default,
+    so apply_settings *succeeds* here rather than failing -- it has adopted a
+    known-good configuration, which is the outcome that matters. What must not
+    happen is an exception reaching the run loop.
+    """
+    from mdqm.dqm import settings as S
+
+    class _Broken(_SettingsClient):
+        def odb_get(self, path):
+            raise RuntimeError("ODB unhappy")
+
+    a = _analyzer()
+    a.apply_settings(_Broken(), force=True)          # must not raise
+
+    assert a.settings is not None, "it must end up configured, not unconfigured"
+    assert a.settings["Binning"]["persistence x bins"] == 256, "on the defaults"
+    assert S.read(_Broken())["Binning"]["persistence x bins"] == 256
+
+
+def test_status_reports_the_live_binning():
+    a = _analyzer()
+    c = _seeded_client(**{"Binning/amplitude max": 2.5})
+    a.apply_settings(c, force=True)
+    st = a.status()
+    assert st["settings_root"] == "/DQM/Analyzer"
+    assert st["binning"]["amplitude max"] == 2.5
