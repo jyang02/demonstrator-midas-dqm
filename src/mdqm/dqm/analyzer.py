@@ -153,6 +153,10 @@ class Analyzer:
             "reconfigures": self.reconfigures,
             "settings_root": odb_settings.ROOT,
             "binning": (self.settings or {}).get("Binning", {}),
+            # Read back off the histograms themselves. The settings dict says
+            # what was requested; this says what exists, and the two disagreeing
+            # is exactly the failure this reports.
+            "axes": self.live_axes(),
             "channel_roles": (self.settings or {}).get("Channel roles", {}),
             "server_calls": self.server.calls,
             "server_last_error": self.server.last_error,
@@ -196,14 +200,37 @@ class Analyzer:
             self.bucket.rate = rate
         self.plugin.roles = new["Channel roles"]
 
-        if changed_shape and not first and hasattr(self.plugin, "reconfigure"):
+        # `first` is included, not excluded. The plugin's constructor built its
+        # histograms from code defaults because it had no ODB to read yet, so the
+        # first apply is precisely when the ODB has to be pushed in. Skipping it
+        # left the analyzer running on defaults while *reporting* the ODB values
+        # in its status -- plots that disagreed with the configuration they
+        # claimed, which is worse than plots that are merely wrong.
+        if changed_shape and hasattr(self.plugin, "reconfigure"):
             self.plugin.reconfigure(new["Channel roles"], new["Binning"])
             self.reconfigures += 1
+            if first:
+                print(f"{DEFAULT_CLIENT}: applied binning from {odb_settings.ROOT}",
+                      flush=True)
             # Best effort: the rebuild has already happened either way.
             with contextlib.suppress(Exception):
                 client.msg(f"{DEFAULT_CLIENT}: binning changed; rebuilt "
                            f"{len(self.store)} histograms (counts reset)")
         return True
+
+    def live_axes(self) -> dict:
+        """The binning the histograms actually have, straight from the objects."""
+        out = {}
+        for name in self.store.names():
+            hist = self.store.get(name)
+            meta = getattr(hist, "metadata", None)
+            if meta is None:
+                continue
+            out[name] = [
+                {"bins": ax["bins"], "lo": ax["lo"], "hi": ax["hi"]}
+                for ax in meta()["axes"]
+            ]
+        return out
 
     # -- the DAQ-safety valve -------------------------------------------------
 

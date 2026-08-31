@@ -54,7 +54,10 @@ class _FakeClient:
             return self._dropped.pop(0)
         return self.odb[path]
 
-    def receive_event(self, buf, async_flag=True):
+    def receive_event(self, buf, async_flag=True, use_numpy=False):
+        # use_numpy is accepted because the analyzer passes it: without it a
+        # 33 kB TID_BYTE bank arrives as 33,000 Python ints. A fake that did not
+        # accept it would hide that call site changing.
         return self.events.pop(0) if self.events else None
 
     def msg(self, text, is_error=False):
@@ -360,6 +363,7 @@ def test_changing_the_binning_rebuilds_the_histograms():
     pers.fill([1.0], [-0.5])
     assert pers.entries == 1
 
+    before = a.reconfigures            # startup already applied the ODB once
     c.tree["/DQM/Analyzer/Binning/persistence x bins"] = 64
     a._settings_checked = 0
     assert a.apply_settings(c) is True
@@ -367,7 +371,7 @@ def test_changing_the_binning_rebuilds_the_histograms():
     rebuilt = a.store.get("wd/persistence_ch00")
     assert rebuilt.x.n == 64, "the new binning took effect"
     assert rebuilt.entries == 0, "old counts must not be carried into new bins"
-    assert a.reconfigures == 1
+    assert a.reconfigures == before + 1
     assert any("binning changed" in m for m in c.messages), \
         "a silent reset would look like data loss"
 
@@ -382,13 +386,14 @@ def test_a_role_change_does_not_throw_away_accumulated_plots():
     a.store.get("wd/persistence_ch00").fill([1.0], [-0.5])
     assert a.store.get("wd/persistence_ch00").entries == 1
 
+    before = a.reconfigures
     c.tree["/DQM/Analyzer/Channel roles/rf channel"] = 9
     a._settings_checked = 0
     a.apply_settings(c)
 
     assert a.store.get("wd/persistence_ch00").entries == 1, \
         "moving the RF channel does not change any histogram's shape"
-    assert a.reconfigures == 0
+    assert a.reconfigures == before, "no shape changed, so nothing was rebuilt"
     assert a.plugin.roles["rf channel"] == 9, "but the plugin must see it"
 
 
@@ -504,3 +509,49 @@ def test_a_generous_backstop_is_not_normally_reached():
     a.run_once(client, buf=None, budget_s=2.0)
     assert a.budget_exhausted == 0, "the fake plugin is fast; nothing should trip"
     assert a.processed == 200
+
+
+def test_the_odb_binning_is_applied_at_startup_not_only_on_change():
+    """The bug: the first apply skipped the rebuild.
+
+    The plugin's constructor builds its histograms from code defaults, having no
+    ODB to read yet, so the first apply is exactly when the ODB has to be pushed
+    in. Skipping it left the analyzer running on defaults while reporting the ODB
+    values in its status -- caught on real cosmic data, where the persistence
+    plot stayed at the default 110 bins over [-1.0, 0.1] after the ODB had been
+    set to 180 over [-1.6, 0.2], and the status claimed the new numbers.
+    """
+    from mdqm.plugins.wavedream import WaveDreamPlugin
+
+    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    assert a.store.get("wd/persistence_ch00").y.n == 110, "the code default"
+
+    c = _seeded_client(**{"Binning/persistence y bins": 180,
+                          "Binning/persistence y min": -1.6,
+                          "Binning/persistence y max": 0.2})
+    a.apply_settings(c, force=True)
+
+    pers = a.store.get("wd/persistence_ch00")
+    assert pers.y.n == 180, "the ODB must win at startup, not just on a later edit"
+    assert pers.y.lo == -1.6
+    assert pers.y.hi == 0.2
+
+
+def test_status_reports_the_binning_the_histograms_actually_have():
+    """So a disagreement between config and reality is visible, not hidden."""
+    from mdqm.plugins.wavedream import WaveDreamPlugin
+
+    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    c = _seeded_client(**{"Binning/persistence y bins": 44})
+    a.apply_settings(c, force=True)
+
+    axes = a.status()["axes"]
+    assert "wd/persistence_ch00" in axes
+    y = axes["wd/persistence_ch00"][1]
+    assert y["bins"] == 44, "read off the histogram, not off the request"
+
+
+def test_startup_with_an_unseeded_odb_keeps_the_code_defaults():
+    a = _analyzer()
+    a.apply_settings(_SettingsClient(), force=True)     # nothing seeded
+    assert a.settings["Binning"]["persistence y bins"] == 110
