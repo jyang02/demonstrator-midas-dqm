@@ -6,11 +6,15 @@
 // midas.js decodes the bank structure, dqm-wdbanks.js turns DRSV into volts, and
 // mplot.js draws. No analyzer, no extra port, no daemon.
 //
-// The one limitation worth knowing (MIDAS elog 2391): mhttpd holds ONE event
-// buffer read pointer shared by every browser connection, so two people running
-// this at once steal events from each other. That is fine for an operator
-// watching traces and disqualifying for anything accumulating or shared, which
-// is exactly where the analyzer takes over.
+// On the shared read pointer (MIDAS elog 2391): mhttpd holds ONE event-buffer
+// read pointer for the whole process. That sounds like two browsers would steal
+// events from each other, and with get_recent:false they would. With
+// get_recent:true each poll drains the buffer and returns the newest event via a
+// process-global stash, so measured with two viewers at 2 Hz against 30 ev/s,
+// each received every poll's worth -- 50 events, no empty polls -- with only one
+// serial number in common. Nobody is starved; the two screens simply show
+// different events. Making them agree needs a shared source, which is what the
+// analyzer client is for.
 //
 // Shape of the loop is Stefan Ritt's, from the WaveDREAM browser scope this is
 // modelled on: a chained setTimeout re-armed *from the response* rather than a
@@ -289,8 +293,9 @@ function build() {
   root.appendChild(el("div", { class: "dqm-scope-plot", id: "dqm-scope-plot" }));
   root.appendChild(el("div", { class: "dqm-footnote" },
     "Reads the SYSTEM buffer directly through mhttpd — no analyzer, no extra process. " +
-    "mhttpd shares one buffer read pointer across all browsers, so two people watching " +
-    "at once will each see roughly half the events."));
+    "mhttpd shares one buffer read pointer across all browsers, but with get_recent " +
+    "that costs nothing: two people watching at once each see events at the full poll " +
+    "rate, just not the same ones."));
 }
 
 function buildChannelControls() {
