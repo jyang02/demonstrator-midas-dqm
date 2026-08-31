@@ -18,6 +18,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from mdqm.dqm import framing
+from mdqm.dqm.framing import VOLTS_SCALE
 from mdqm.dqm.hist import Axis, Hist1D, Hist2D
 
 # --- tuned constants, from the retired plugin --------------------------------
@@ -177,6 +179,7 @@ class WaveDreamPlugin:
 
     def __init__(self, store, roles: dict | None = None, binning: dict | None = None):
         self.store = store
+        self.last_rf = None
         self.roles = roles or {}
         self.binning = binning or {}
         self.widths = None            # the run's DRS cell-width table
@@ -314,6 +317,76 @@ class WaveDreamPlugin:
         if h2 is not None:
             h2.fill([result.phase_deg], [result.s1_amplitude])
         self.last_rf = result
+
+    # -- the scope frame -----------------------------------------------------
+
+    def scope_frame(self, run_active: bool = False) -> bytes | None:
+        """The most recent event, with the quantities derived from *that* event.
+
+        One reply, deliberately. An event display is a thing people point at --
+        "channel 3 looks odd on this one" -- so the traces and the phase printed
+        beside them must come from the same event, and every screen must show the
+        same event as every other. Both hold by construction with a single frame
+        and by nothing at all if the page fetches traces and numbers separately.
+
+        Samples go back as the int16 they arrived as. `decode_drsv` divided them
+        by 1e4 to get volts, so multiplying back and rounding recovers them
+        exactly -- an int16 is exactly representable in float32, so the division
+        is the only rounding and it is undone. Sending float32 instead would
+        double the payload to say the same thing.
+        """
+        f = self.frame
+        if f is None:
+            return None
+
+        channels = []
+        for ch in sorted(f.waveforms):
+            volts = f.waveforms[ch]
+            samples = None
+            if volts is not None:
+                samples = np.rint(np.asarray(volts, dtype=np.float64) / VOLTS_SCALE)
+                samples = samples.astype(np.int16)
+            channels.append({
+                "channel": int(ch),
+                "first_bin": int(f.first_bin.get(ch, 0)),
+                "samples": samples,
+                # 0 is the plain mode; anything else is why samples is None.
+                "encoding": 0 if volts is not None else 11,
+                "scale": VOLTS_SCALE,
+            })
+
+        derived = {}
+        rf = getattr(self, "last_rf", None)
+        if rf is not None and rf.valid:
+            derived["rf_phase_deg"] = rf.phase_deg
+            derived["rf_period_smp"] = rf.period_samples
+            derived["s1_time_smp"] = rf.s1_time
+            derived["s1_amp_v"] = rf.s1_amplitude
+        # Per-channel amplitude, so the panels can be labelled without the page
+        # re-deriving anything and possibly disagreeing with the histograms.
+        for ch in list(self._role("waveform channels", [0, 1, 2, 3, 4]))[:8]:
+            volts = f.waveforms.get(ch)
+            if volts is None:
+                continue
+            pulse = leading_edge(np.asarray(volts, dtype=np.float64))
+            if pulse is not None:
+                derived[f"amp_ch{int(ch):02d}"] = pulse.amplitude
+
+        return framing.encode_scope_frame(
+            channels,
+            frame_seq=self.decoded,
+            run_number=self.widths_from_run or 0,
+            event_number=f.event_number or 0,
+            trigger_number=f.trigger_number or 0,
+            timestamp_ticks=f.timestamp_ticks or 0,
+            board_temp_c=f.temperature_c or 0.0,
+            nominal_ps=(f.nominal_width_s or 0.0) * 1e12,
+            board_id=f.board_id or 0,
+            have_widths=f.cell_widths is not None,
+            widths_cached=False,
+            run_active=run_active,
+            derived=derived,
+        )
 
     # -- reporting -----------------------------------------------------------
 

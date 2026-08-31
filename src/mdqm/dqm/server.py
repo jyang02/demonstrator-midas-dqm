@@ -30,10 +30,11 @@ class Server:
     why the command set is easy to trust.
     """
 
-    def __init__(self, store, status_fn=None, defs_fn=None):
+    def __init__(self, store, status_fn=None, defs_fn=None, scope_fn=None):
         self.store = store
         self._status_fn = status_fn or (lambda: {})
         self._defs_fn = defs_fn or (lambda: {})
+        self._scope_fn = scope_fn or (lambda: None)
         self.calls = 0
         self.last_error: str | None = None
 
@@ -60,6 +61,8 @@ class Server:
             return self._metadata(args)
         if cmd == "dqm::clear":
             return self._clear(args)
+        if cmd == "wd::scope":
+            return self._scope()
         if cmd == "wd::status":
             return self._json(self._status_fn())
         if cmd == "wd::defs":
@@ -106,6 +109,14 @@ class Server:
         cleared = self.store.clear(selector)
         return self._json({"cleared": cleared, "selector": selector,
                            "at": time.time()})
+
+    def _scope(self) -> bytes:
+        blob = self._scope_fn()
+        if blob is None:
+            # Not an error: with no run there are simply no waveform events, and
+            # the page has to be able to say so rather than show a stale trace.
+            return framing.envelope(framing.TAG_JSON, b'{"no_frame": true}')
+        return framing.envelope(framing.TAG_SCOPE, blob)
 
     def _json(self, obj) -> bytes:
         return framing.envelope(framing.TAG_JSON, json.dumps(obj, default=str).encode())

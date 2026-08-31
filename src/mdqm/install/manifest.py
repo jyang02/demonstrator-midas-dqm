@@ -106,12 +106,14 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("Scalers", "scalars.html", True, "scaler rates, thresholds and trends (no backend)"),
     Entry("Scope", "scope.html", True, "live waveforms from the event buffer (no backend)"),
     Entry("Waveforms", "waveforms.html", True, "accumulated plots (needs the analyzer)"),
+    Entry("EventDisplay", "evd.html", True, "one event, every channel (needs the analyzer)"),
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
     Entry("dqm-scalars.js", "js/dqm-scalars.js", False, "scaler page"),
     Entry("dqm-wdbanks.js", "js/dqm-wdbanks.js", False, "WaveDream bank decoding in the browser"),
     Entry("dqm-scope.js", "js/dqm-scope.js", False, "scope page"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
     Entry("dqm-waveforms.js", "js/dqm-waveforms.js", False, "accumulated plots page"),
+    Entry("dqm-evd.js", "js/dqm-evd.js", False, "event display page"),
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
 )
 

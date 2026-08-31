@@ -110,9 +110,16 @@ class Analyzer:
         self._dropped_baseline = None
         self._ev_window = []
 
-        self.server = Server(self.store, status_fn=self.status,
-                             defs_fn=lambda: {"plugin": self.plugin.name,
-                                              "histograms": self.store.names()})
+        self.server = Server(
+            self.store,
+            status_fn=self.status,
+            defs_fn=lambda: {"plugin": self.plugin.name,
+                             "histograms": self.store.names()},
+            # The plugin owns the frame; the server only forwards it. Guarded
+            # because a plugin need not offer one -- only detector-specific
+            # plugins have traces to show.
+            scope_fn=lambda: (self.plugin.scope_frame(self.run_state == 3)
+                              if hasattr(self.plugin, "scope_frame") else None))
 
     # -- status --------------------------------------------------------------
 

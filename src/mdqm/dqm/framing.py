@@ -60,6 +60,7 @@ TAG_LIST = b"list"
 TAG_HIST = b"hist"
 TAG_META = b"meta"
 TAG_JSON = b"json"
+TAG_SCOPE = b"scop"
 TAG_ERROR = b"err "
 
 #: Index into musip's ``PlotCollection::object_type`` variant. Only the ones we
@@ -222,4 +223,154 @@ def decode_histogram(payload: bytes) -> dict:
         "high_edge": hi_edges,
         "entries": entries,
         "counts": data.reshape(shape),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scope frames
+# ---------------------------------------------------------------------------
+#
+# One triggered event: every channel's samples plus the quantities derived from
+# *that* event, in a single reply.
+#
+# The single reply is the whole point. An event display exists to be pointed at
+# -- "channel 3 looks odd on this one" -- so the traces on screen and the phase
+# printed beside them have to come from the same event, and every screen has to
+# be showing the same event as every other. Both are guaranteed by construction
+# if there is one frame, and by nothing at all if the page assembles traces from
+# one source and numbers from another.
+#
+# Samples travel as the native int16 they came off the wire as, with the volts
+# scale in the channel header. That is 32 kB for sixteen channels against about
+# 150 kB of JSON, and the browser does one multiply while copying into a
+# Float32Array instead of parsing.
+
+SCOPE_HEADER = struct.Struct("<IIQIIIIQffIIII")
+"""64 bytes: version, nChannels, frameSeq, run, event, trigger, triggerType,
+timestampTicks, boardTempC, nominalPs, flags, nDerived, boardId, reserved."""
+
+CHANNEL_HEADER = struct.Struct("<HHHBBfI")
+"""16 bytes: channel, firstBin, nSamples, encoding, decoded, scale, pad."""
+
+DERIVED_ENTRY = struct.Struct("<16sd")
+"""24 bytes: a NUL-padded name and a float64."""
+
+SCOPE_VERSION = 1
+
+#: `flags` bits.
+SCOPE_HAVE_WIDTHS = 1 << 0
+SCOPE_RUN_ACTIVE = 1 << 1
+SCOPE_WIDTHS_CACHED = 1 << 2
+
+VOLTS_SCALE = 1e-4
+"""Encoding mode 0: sample * this = volts. Matches wdunpack's VOLTAGE_SCALE."""
+
+
+def encode_scope_frame(
+    channels: list[dict],
+    *,
+    frame_seq: int = 0,
+    run_number: int = 0,
+    event_number: int = 0,
+    trigger_number: int = 0,
+    trigger_type: int = 0,
+    timestamp_ticks: int = 0,
+    board_temp_c: float = 0.0,
+    nominal_ps: float = 0.0,
+    board_id: int = 0,
+    have_widths: bool = False,
+    widths_cached: bool = False,
+    run_active: bool = False,
+    derived: dict[str, float] | None = None,
+) -> bytes:
+    """Encode one event.
+
+    Each entry of `channels` is
+    ``{"channel", "first_bin", "samples" (int16 array or None), "encoding"}``;
+    a `samples` of None means the channel could not be decoded, which is
+    carried through rather than dropped so the page can grey that panel out
+    instead of silently omitting it.
+    """
+    derived = derived or {}
+    flags = 0
+    if have_widths:
+        flags |= SCOPE_HAVE_WIDTHS
+    if run_active:
+        flags |= SCOPE_RUN_ACTIVE
+    if widths_cached:
+        flags |= SCOPE_WIDTHS_CACHED
+
+    buf = bytearray()
+    buf.extend(SCOPE_HEADER.pack(
+        SCOPE_VERSION, len(channels), int(frame_seq),
+        int(run_number), int(event_number),
+        int(trigger_number), int(trigger_type),
+        int(timestamp_ticks),
+        float(board_temp_c), float(nominal_ps),
+        flags, len(derived), int(board_id), 0))
+
+    for ch in channels:
+        samples = ch.get("samples")
+        decoded = samples is not None
+        arr = np.ascontiguousarray(samples, dtype="<i2") if decoded else np.empty(0, "<i2")
+        buf.extend(CHANNEL_HEADER.pack(
+            int(ch["channel"]) & 0xFFFF,
+            int(ch.get("first_bin", 0)) & 0xFFFF,
+            int(arr.size) & 0xFFFF,
+            int(ch.get("encoding", 0)) & 0xFF,
+            1 if decoded else 0,
+            float(ch.get("scale", VOLTS_SCALE)),
+            0))
+        buf.extend(arr.tobytes())
+        _align(buf, 8)
+
+    for name, value in derived.items():
+        buf.extend(DERIVED_ENTRY.pack(name.encode()[:16], float(value)))
+
+    return bytes(buf)
+
+
+def decode_scope_frame(payload: bytes) -> dict:
+    """Decode `encode_scope_frame`. A Python mirror, for tests and for reuse."""
+    (version, n_channels, frame_seq, run_number, event_number,
+     trigger_number, trigger_type, timestamp_ticks,
+     board_temp_c, nominal_ps, flags, n_derived, board_id,
+     _reserved) = SCOPE_HEADER.unpack_from(payload, 0)
+    if version != SCOPE_VERSION:
+        raise ValueError(f"unknown scope frame version {version}")
+
+    off = SCOPE_HEADER.size
+    channels = []
+    for _ in range(n_channels):
+        (channel, first_bin, n_samples, encoding, decoded, scale,
+         _pad) = CHANNEL_HEADER.unpack_from(payload, off)
+        off += CHANNEL_HEADER.size
+        samples = None
+        if decoded:
+            samples = np.frombuffer(payload, dtype="<i2", count=n_samples, offset=off)
+        off += n_samples * 2
+        rem = off % 8
+        if rem:
+            off += 8 - rem
+        channels.append({
+            "channel": channel, "first_bin": first_bin, "encoding": encoding,
+            "decoded": bool(decoded), "scale": scale, "samples": samples,
+        })
+
+    derived = {}
+    for _ in range(n_derived):
+        raw_name, value = DERIVED_ENTRY.unpack_from(payload, off)
+        off += DERIVED_ENTRY.size
+        derived[raw_name.rstrip(b"\x00").decode()] = value
+
+    return {
+        "frame_seq": frame_seq, "run_number": run_number,
+        "event_number": event_number, "trigger_number": trigger_number,
+        "trigger_type": trigger_type, "timestamp_ticks": timestamp_ticks,
+        "board_temp_c": board_temp_c, "nominal_ps": nominal_ps,
+        "board_id": board_id,
+        "have_widths": bool(flags & SCOPE_HAVE_WIDTHS),
+        "run_active": bool(flags & SCOPE_RUN_ACTIVE),
+        "widths_cached": bool(flags & SCOPE_WIDTHS_CACHED),
+        "channels": channels, "derived": derived,
     }

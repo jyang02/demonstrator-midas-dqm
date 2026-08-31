@@ -254,3 +254,101 @@ def test_delta_t_rebaselines_when_the_counter_is_zeroed():
     f.timestamp_ticks = 8_000_500
     plugin._fill_deltat(f)
     assert store.get("wd/deltat").entries == 2, "and it carries on from the new baseline"
+
+
+# --- the scope frame ---------------------------------------------------------
+
+@pytest.mark.skipif(not RUN_FILE.exists(), reason="no run file on this machine")
+def test_the_scope_frame_carries_traces_and_their_own_derived_values():
+    """One reply, so the numbers on screen belong to the traces on screen."""
+    import midas.file_reader
+
+    from mdqm.dqm import framing
+
+    store = HistStore()
+    plugin = WaveDreamPlugin(store, roles={"waveform channels": [0, 1, 2, 3, 4],
+                                           "s1 channel": 0, "rf channel": 5})
+    assert plugin.scope_frame() is None, "no event yet means no frame, not an empty one"
+
+    n = 0
+    for event in midas.file_reader.MidasFile(str(RUN_FILE)):
+        if plugin.accepts(event) and plugin.process(event, run_number=201):
+            n += 1
+        if n >= 3:
+            break
+
+    blob = plugin.scope_frame(run_active=True)
+    assert blob is not None
+    frame = framing.decode_scope_frame(blob)
+
+    assert frame["run_number"] == 201
+    assert frame["board_id"] == 36
+    assert frame["run_active"] is True
+    assert frame["have_widths"] is True, "the run's first event carried the table"
+    assert len(frame["channels"]) == 16
+    assert frame["nominal_ps"] > 0, "needed for the uniform-ns axis"
+
+    ch0 = frame["channels"][0]
+    assert ch0["decoded"] is True
+    assert len(ch0["samples"]) == 1024
+    # Per-channel amplitudes ride along, so the page never re-derives them and
+    # cannot disagree with the histograms.
+    assert "amp_ch00" in frame["derived"]
+
+
+@pytest.mark.skipif(not RUN_FILE.exists(), reason="no run file on this machine")
+def test_the_adc_counts_survive_the_round_trip_exactly():
+    """decode_drsv divides by 1e4; the frame multiplies back and rounds.
+
+    The claim being tested is about the *integers*: an int16 is exactly
+    representable in float32, so the division is the only rounding and rounding
+    back undoes it. If that failed, the display would disagree with the analysis
+    by a least-significant ADC count, silently.
+
+    The volts themselves cannot agree exactly and are not expected to: the
+    originals are float32 and the scale is a float32 of 1e-4
+    (9.99999974e-05), so the reconstruction differs by a few times 1e-8 V --
+    about 0.0003 of one ADC count. Asserting equality there would be asserting
+    something untrue about floating point.
+    """
+    import midas.file_reader
+
+    from mdqm.dqm import framing
+
+    store = HistStore()
+    plugin = WaveDreamPlugin(store)
+    for event in midas.file_reader.MidasFile(str(RUN_FILE)):
+        if plugin.accepts(event) and plugin.process(event, run_number=201):
+            break
+
+    frame = framing.decode_scope_frame(plugin.scope_frame())
+    checked = 0
+    for ch in frame["channels"]:
+        if not ch["decoded"]:
+            continue
+        original = np.asarray(plugin.frame.waveforms[ch["channel"]], dtype=np.float64)
+        # What the integers should have been, straight from the original volts.
+        expected_counts = np.rint(original / 1e-4).astype(np.int64)
+        assert np.array_equal(ch["samples"].astype(np.int64), expected_counts), \
+            f"channel {ch['channel']}: ADC counts changed"
+        # And the volts agree to well within one count.
+        recovered = ch["samples"].astype(np.float64) * ch["scale"]
+        assert np.max(np.abs(recovered - original)) < 1e-6, \
+            f"channel {ch['channel']}: volts drifted by more than 1% of a count"
+        checked += 1
+    assert checked == 16
+
+
+def test_an_undecodable_channel_is_carried_through_not_dropped():
+    """Silently omitting it would make the panel vanish with no explanation."""
+    from mdqm.dqm import framing
+
+    blob = framing.encode_scope_frame([
+        {"channel": 0, "first_bin": 0, "samples": np.zeros(8, dtype=np.int16)},
+        {"channel": 1, "first_bin": 3, "samples": None, "encoding": 11},
+    ])
+    frame = framing.decode_scope_frame(blob)
+    assert len(frame["channels"]) == 2
+    assert frame["channels"][1]["decoded"] is False
+    assert frame["channels"][1]["encoding"] == 11
+    assert frame["channels"][1]["first_bin"] == 3, "metadata survives even with no samples"

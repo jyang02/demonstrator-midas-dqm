@@ -54,3 +54,17 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
+
+/* Event display. The asymmetry is deliberate: the first few channels carry
+   pulses you read, the rest tell you whether something fired. */
+.dqm-evd-columns    { display: flex; gap: 14px; align-items: flex-start; }
+.dqm-evd-bigcol     { flex: 0 0 55%; }
+.dqm-evd-smallcol   { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.dqm-evd-panel-big  { margin-bottom: 6px; }
+.dqm-evd-panel-big  .dqm-evd-plot { width: 100%; height: 150px; }
+.dqm-evd-panel-small           { width: 48%; }
+.dqm-evd-panel-small .dqm-evd-plot { width: 100%; height: 96px; }
+.dqm-evd-title      { font-size: 90%; font-weight: 600; margin: 2px 0 1px 2px; }
+.dqm-evd-panel-small .dqm-evd-title { font-size: 84%; font-weight: normal; }
+.undecoded          { opacity: 0.5; }
+.undecoded .dqm-evd-title { font-style: italic; }

@@ -254,3 +254,108 @@ root.BRPC = BRPC;
 if (typeof module !== "undefined" && module.exports) module.exports = BRPC;
 
 })(typeof globalThis !== "undefined" ? globalThis : this);
+
+// ---------------------------------------------------------------------------
+// Scope frames
+// ---------------------------------------------------------------------------
+//
+// Mirror of mdqm/dqm/framing.py's encode_scope_frame. Keep the two in step; the
+// cross-language test in tests/js/scopeframe.test.js decodes Python's bytes with
+// this function, so a divergence fails rather than misdraws.
+
+(function (root) {
+"use strict";
+
+const SCOPE_VERSION = 1;
+const SCOPE_HEADER_BYTES = 64;
+const CHANNEL_HEADER_BYTES = 16;
+const DERIVED_BYTES = 24;
+
+const FLAG_HAVE_WIDTHS = 1 << 0;
+const FLAG_RUN_ACTIVE = 1 << 1;
+const FLAG_WIDTHS_CACHED = 1 << 2;
+
+function decodeScopeFrame(arraybuffer) {
+  const dv = new DataView(arraybuffer);
+  const LE = true;
+  let at = 0;
+
+  const version = dv.getUint32(at, LE); at += 4;
+  if (version !== SCOPE_VERSION) throw new Error(`unknown scope frame version ${version}`);
+  const nChannels = dv.getUint32(at, LE); at += 4;
+  const frameSeq = Number(dv.getBigUint64(at, LE)); at += 8;
+  const runNumber = dv.getUint32(at, LE); at += 4;
+  const eventNumber = dv.getUint32(at, LE); at += 4;
+  const triggerNumber = dv.getUint32(at, LE); at += 4;
+  const triggerType = dv.getUint32(at, LE); at += 4;
+  const timestampTicks = Number(dv.getBigUint64(at, LE)); at += 8;
+  const boardTempC = dv.getFloat32(at, LE); at += 4;
+  const nominalPs = dv.getFloat32(at, LE); at += 4;
+  const flags = dv.getUint32(at, LE); at += 4;
+  const nDerived = dv.getUint32(at, LE); at += 4;
+  const boardId = dv.getUint32(at, LE); at += 4;
+  at += 4;                                  // reserved
+  if (at !== SCOPE_HEADER_BYTES) throw new Error(`header drift: ${at} bytes`);
+
+  const channels = [];
+  for (let c = 0; c < nChannels; c++) {
+    const channel = dv.getUint16(at, LE);
+    const firstBin = dv.getUint16(at + 2, LE);
+    const nSamples = dv.getUint16(at + 4, LE);
+    const encoding = dv.getUint8(at + 6);
+    const decoded = dv.getUint8(at + 7) !== 0;
+    const scale = dv.getFloat32(at + 8, LE);
+    at += CHANNEL_HEADER_BYTES;
+
+    let volts = null;
+    if (decoded && nSamples) {
+      // The samples are int16 ADC counts; one multiply gives volts. Copying
+      // into a Float32Array here rather than parsing JSON is most of why the
+      // frame is 32 kB instead of 150 kB.
+      volts = new Float32Array(nSamples);
+      for (let i = 0; i < nSamples; i++) volts[i] = dv.getInt16(at + i * 2, LE) * scale;
+    }
+    at += nSamples * 2;
+    const rem = at % 8;
+    if (rem) at += 8 - rem;
+
+    channels.push({ channel, firstBin, nSamples, encoding, decoded, scale, volts });
+  }
+
+  const derived = {};
+  for (let d = 0; d < nDerived; d++) {
+    let name = "";
+    for (let i = 0; i < 16; i++) {
+      const b = dv.getUint8(at + i);
+      if (b === 0) break;
+      name += String.fromCharCode(b);
+    }
+    derived[name] = dv.getFloat64(at + 16, LE);
+    at += DERIVED_BYTES;
+  }
+
+  return {
+    frameSeq, runNumber, eventNumber, triggerNumber, triggerType,
+    timestampTicks, boardTempC, nominalPs, boardId, channels, derived,
+    haveWidths: !!(flags & FLAG_HAVE_WIDTHS),
+    runActive: !!(flags & FLAG_RUN_ACTIVE),
+    widthsCached: !!(flags & FLAG_WIDTHS_CACHED),
+  };
+}
+
+/** Ask an analyzer for its latest event. Returns null when there is none. */
+async function scope(client) {
+  const { tag, payload } = await root.BRPC.call(client, "wd::scope", "", 2 * 1024 * 1024);
+  if (tag === "err") throw new Error(root.BRPC.textOf(payload));
+  if (tag === "json") return null;          // {"no_frame": true}
+  return decodeScopeFrame(payload);
+}
+
+root.BRPC.decodeScopeFrame = decodeScopeFrame;
+root.BRPC.scope = scope;
+if (typeof module !== "undefined" && module.exports) {
+  module.exports.decodeScopeFrame = decodeScopeFrame;
+  module.exports.scope = scope;
+}
+
+})(typeof globalThis !== "undefined" ? globalThis : this);
