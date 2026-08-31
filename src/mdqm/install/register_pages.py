@@ -95,6 +95,40 @@ def register(client, entries, pages_dir: Path, replace: bool, dry_run: bool) -> 
     return EXIT_REFUSED if refused else EXIT_OK
 
 
+def prune(client, entries, pages_dir: Path, dry_run: bool) -> int:
+    """Remove /Custom keys that are ours but no longer wanted.
+
+    Without this, changing the menu prefix leaves the old entries behind: they
+    still point at real files, so they still work, and the side menu grows a
+    duplicate of every page. Renaming should not litter.
+
+    Only keys whose value points into our checkout are considered, so another
+    tenant's entries are never touched, and only those absent from the manifest
+    we just wrote -- so this cannot remove what it has just registered.
+    """
+    wanted = {odb_name for odb_name, _p, _e in entries}
+    removed = 0
+    try:
+        existing = client.odb_get("/Custom") or {}
+    except Exception:
+        return 0
+
+    for key, value in existing.items():
+        if key.endswith("/key") or not isinstance(value, str):
+            continue
+        if key in wanted or key == "Path":
+            continue
+        if not _is_ours(value, pages_dir):
+            continue
+        if dry_run:
+            print(f"  - {key:22s} stale, ours   (dry run)")
+        else:
+            client.odb_delete(f"/Custom/{key}")
+            print(f"  - {key:22s} stale, ours")
+        removed += 1
+    return removed
+
+
 def _is_ours(value: str, pages_dir: Path) -> bool:
     """True if an existing value points into any checkout of this repo.
 
@@ -225,8 +259,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.remove:
             return unregister(client, entries, pages_dir, args.dry_run)
         rc = register(client, entries, pages_dir, args.replace, args.dry_run)
-        if rc == EXIT_OK and not args.no_config:
-            seed_config(client, CONFIG_ROOT, args.dry_run)
+        if rc == EXIT_OK:
+            prune(client, entries, pages_dir, args.dry_run)
+            if not args.no_config:
+                seed_config(client, CONFIG_ROOT, args.dry_run)
         return rc
 
 

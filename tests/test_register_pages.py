@@ -19,7 +19,13 @@ PAGES_DIR = REPO / "pages"
 
 
 class FakeClient:
-    """Just enough midas.client.MidasClient to exercise register_pages."""
+    """Just enough midas.client.MidasClient to exercise register_pages.
+
+    `odb_get` models a *directory* read as well as a leaf read, because that is
+    what MIDAS does and what prune() relies on: reading "/Custom" returns its
+    children rather than raising. A fake that only did leaves made prune look
+    like it worked when it had in fact found nothing.
+    """
 
     def __init__(self, initial=None):
         self.odb = dict(initial or {})
@@ -30,7 +36,14 @@ class FakeClient:
         return path in self.odb
 
     def odb_get(self, path):
-        return self.odb[path]
+        if path in self.odb:
+            return self.odb[path]
+        prefix = path.rstrip("/") + "/"
+        children = {k[len(prefix):]: v for k, v in self.odb.items()
+                    if k.startswith(prefix) and "/" not in k[len(prefix):]}
+        if children:
+            return children
+        raise KeyError(path)
 
     def odb_set(self, path, value):
         self.odb[path] = value
@@ -158,3 +171,62 @@ def test_check_reports_unreadable_and_missing(entries, capsys):
     c.odb[f"/Custom/{odb_name}"] = "/nonexistent/scalars.html"
     assert rp.check(c, entries) == rp.EXIT_REFUSED
     assert "UNREADABLE" in capsys.readouterr().out
+
+
+class TestPruningStaleKeys:
+    """Renaming must not leave the old entries behind.
+
+    Changing the menu prefix used to orphan every page key: they still pointed at
+    real files, so they still worked, and the side menu grew a duplicate of each.
+    """
+
+    def _client_with(self, extra):
+        c = FakeClient()
+        rp.register(c, pages(PAGES_DIR), PAGES_DIR, replace=False, dry_run=False)
+        c.odb.update(extra)
+        c.writes.clear()
+        return c
+
+    def test_a_stale_key_of_ours_is_removed(self):
+        entries = pages(PAGES_DIR)
+        stale = str(entries[0][1])            # a real file in our checkout
+        c = self._client_with({"/Custom/OldName": stale})
+
+        assert rp.prune(c, entries, PAGES_DIR, dry_run=False) == 1
+        assert "/Custom/OldName" not in c.odb
+
+    def test_another_tenant_s_key_is_never_touched(self):
+        entries = pages(PAGES_DIR)
+        c = self._client_with({"/Custom/Quads": "Quads/quad_basics.html",
+                               "/Custom/Path": "/home/musip/musip/custom"})
+
+        assert rp.prune(c, entries, PAGES_DIR, dry_run=False) == 0
+        assert c.odb["/Custom/Quads"] == "Quads/quad_basics.html"
+        assert c.odb["/Custom/Path"] == "/home/musip/musip/custom"
+
+    def test_what_was_just_registered_is_kept(self):
+        entries = pages(PAGES_DIR)
+        c = self._client_with({})
+        assert rp.prune(c, entries, PAGES_DIR, dry_run=False) == 0
+        for odb_name, _p, _e in entries:
+            assert f"/Custom/{odb_name}" in c.odb
+
+    def test_dry_run_removes_nothing(self):
+        entries = pages(PAGES_DIR)
+        stale = str(entries[0][1])
+        c = self._client_with({"/Custom/OldName": stale})
+        assert rp.prune(c, entries, PAGES_DIR, dry_run=True) == 1
+        assert "/Custom/OldName" in c.odb
+
+    def test_a_prefix_change_leaves_exactly_the_new_names(self):
+        """The scenario this exists for."""
+        unprefixed = pages(PAGES_DIR)
+        c = FakeClient()
+        rp.register(c, unprefixed, PAGES_DIR, replace=False, dry_run=False)
+
+        prefixed = [((("WD" + n) if e.menu else n), p, e) for n, p, e in unprefixed]
+        rp.register(c, prefixed, PAGES_DIR, replace=False, dry_run=False)
+        rp.prune(c, prefixed, PAGES_DIR, dry_run=False)
+
+        menu = sorted(k.rsplit("/", 1)[1] for k in c.odb if not k.endswith("!"))
+        assert all(m.startswith("WD") for m in menu), menu
