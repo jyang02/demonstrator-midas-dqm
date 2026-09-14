@@ -129,6 +129,30 @@ def test_the_js_defaults_literal_is_strict_json():
     _js_defaults()
 
 
+@pytest.mark.parametrize("entry", [e for e in ENTRIES if e.menu], ids=lambda e: e.key)
+def test_every_page_boots_its_own_name(entry):
+    """The inline boot call is invisible to the src/href scan above.
+
+    A page that boots under another page's name is the worst kind of wrong: it
+    renders perfectly, from the wrong catalogue entry, and nothing says so.
+    """
+    text = entry.resolve(REPO / "pages").read_text()
+    want = f'DQMPage.boot("{entry.key}")'
+    assert want in text, f"{entry.path} does not contain {want}"
+
+
+@pytest.mark.parametrize("entry", [e for e in ENTRIES if e.menu], ids=lambda e: e.key)
+def test_every_asset_reference_carries_a_cache_buster(entry):
+    """mhttpd stamps Expires:+24h on assets; a reference with no ?v= is a day stale."""
+    text = entry.resolve(REPO / "pages").read_text()
+    ours = {e.key for e in ENTRIES if not e.menu}
+    for ref in re.findall(r'(?:src|href)="([^"]+)"', text):
+        name = ref.split("?")[0]
+        if name not in ours:
+            continue                      # a stock MIDAS resource; not ours to bust
+        assert "?v=" in ref, f"{entry.path} loads {name} with no ?v= cache buster"
+
+
 def test_js_and_python_defaults_cover_the_same_roots():
     js = _js_defaults()
     assert set(js) == set(DEFAULTS), (

@@ -8,9 +8,8 @@ repository. Two failure modes follow, and each gets a test here:
   that repo uses for its own extracted vocabulary: a sibling checkout may not
   exist, and its absence must not fail a suite;
 * a field is carried into the shipped asset that nothing reads -- caught
-  hermetically by ``test_no_carried_field_is_unread``, which arrives with the
-  renderer that does the reading. An unread field is precisely the rot the
-  generator exists to prevent.
+  hermetically by ``test_no_carried_field_is_unread``. An unread field is
+  precisely the rot the generator exists to prevent.
 
 Everything except the first two tests runs with no sibling checkout at all.
 """
@@ -141,6 +140,24 @@ def test_every_note_has_a_body():
 
 def test_the_element_count_is_what_the_spec_said():
     assert len(_elements()) == EXPECTED_ELEMENTS
+
+
+@pytest.mark.parametrize("field", sorted(
+    {k for p in _catalogue() for e in p["elements"] for k in e}))
+def test_no_carried_field_is_unread(field):
+    """Every field in the shipped catalogue is read by the renderer or a page.
+
+    A field carried "in case it is useful" is the rot the generator exists to
+    prevent: nothing validates it, nothing renders it, and it drifts silently.
+    """
+    js = "".join(f.read_text() for f in sorted((REPO / "pages" / "js").glob("*.js"))
+                 if f.name != "dqm-panels.js")
+    # Word-bounded: a bare `.odb` must not be satisfied by `.odbPath`, which is
+    # a different thing entirely and would let an unread field pass.
+    read = re.search(rf"\.{re.escape(field)}\b", js) or f'["{field}"]' in js
+    assert read, (
+        f"nothing in pages/js reads the {field!r} field; either use it or stop "
+        f"carrying it in scripts/gen-panels.py's PANEL_FIELDS")
 
 
 def test_the_sketch_vocabulary_is_known():

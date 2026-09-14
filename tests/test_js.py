@@ -32,8 +32,15 @@ def test_js_helpers():
     if not node:
         pytest.skip("no node on PATH; set $MDQM_NODE to run the JS tests")
 
+    # The files by name rather than the directory: node 22 resolves a bare
+    # directory argument through the module loader and fails with
+    # MODULE_NOT_FOUND, where node 18 and 20 walked it. Naming them works on all
+    # three, and makes a suite that was silently not running visible.
+    suites = sorted(p.name for p in (REPO / "tests" / "js").glob("*.test.js"))
+    assert suites, "no JS suites found; tests/js/*.test.js is empty"
+
     proc = subprocess.run(
-        [node, "--test", "tests/js/"],
+        [node, "--test", *(f"tests/js/{name}" for name in suites)],
         cwd=REPO, capture_output=True, text=True, timeout=120,
     )
     if proc.returncode != 0:

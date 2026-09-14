@@ -136,7 +136,7 @@ function runPage(scriptPath, responses, opts = {}) {
   g.document = doc;
   g.window = {
     addEventListener: (n, f) => { if (n === "load") loadHandlers.push(f); },
-    location: { href: "http://localhost:8088/?cmd=custom&page=Scalers" },
+    location: { href: "http://localhost:8088/?cmd=custom&page=" + (opts.boot || "") },
   };
   // The page assigns window.dqmTempCell; keep window and globalThis in sync so
   // an inline onchange="dqmTempCell(this)" would resolve the same way.
@@ -196,7 +196,16 @@ function runPage(scriptPath, responses, opts = {}) {
   g.setTimeout = (fn) => { timers.push(fn); return timers.length; };
   g.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
 
+  // The scripts, in the order the page's <head> lists them. Order is not
+  // cosmetic: a page file calls DQMPage.register() at load, so dqm-page.js has
+  // to have run first, exactly as in the browser.
   new Function(fs.readFileSync(scriptPath, "utf8"))();
+  for (const extra of (opts.also || [])) new Function(fs.readFileSync(extra, "utf8"))();
+
+  // The page's own inline <script>: one boot call naming the page. Modelled
+  // rather than parsed out of the HTML; tests/test_manifest.py separately
+  // asserts that each page file contains exactly this call for its own key.
+  if (opts.boot) loadHandlers.push(() => g.DQMPage.boot(opts.boot));
 
   return {
     doc, root, calls, timers, intervals,

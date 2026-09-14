@@ -38,6 +38,9 @@ const DEFAULTS = {
   "Common": {
     "Analyzer Client": "mdqm_analyzer",
     "Refresh ms": 1000
+  },
+  "Channels": {
+    "Histograms": [""]
   }
 };
 

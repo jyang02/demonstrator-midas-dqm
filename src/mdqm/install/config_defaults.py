@@ -35,4 +35,10 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Analyzer Client": "mdqm_analyzer",
         "Refresh ms": 1000,
     },
+
+    # --- the analyzer pages ----------------------------------------------
+    # Empty until somebody writes an analyzer and decides what it publishes.
+    # The page asks it for its list and names what it did not find, rather than
+    # hardcoding a histogram nobody has agreed to.
+    "Channels": {"Histograms": [""]},
 }

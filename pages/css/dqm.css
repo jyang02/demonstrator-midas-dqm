@@ -68,3 +68,48 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-evd-panel-small .dqm-evd-title { font-size: 84%; font-weight: normal; }
 .undecoded          { opacity: 0.5; }
 .undecoded .dqm-evd-title { font-style: italic; }
+
+/* --------------------------------------------------------------------------
+   Panels rendered from the catalogue.
+
+   The mockups in demonstrator-shifter-ui lay tiles out on a 1240 px canvas by
+   shelf-packing absolute positions, because they were drawn as a picture of a
+   web application that has since been retired. That geometry is deliberately
+   not ported: it does not reflow, it does not fit inside #mmain beside the
+   sidenav, and it is not this experiment's to own. What carries over is the
+   size the design asked for, as a maximum width.
+   -------------------------------------------------------------------------- */
+
+.dqm-tile        { border-left: 3px solid var(--mgray, #ddd); padding-left: 10px;
+                   margin-bottom: 18px; }
+.dqm-tile-s      { max-width: 420px; }
+.dqm-tile-m      { max-width: 660px; }
+.dqm-tile-l      { max-width: 100%; }
+
+/* The left border is the page's only at-a-glance signal, so it says the one
+   thing a shifter needs before reading: can this panel be believed right now.
+   Blue for proposed has no midas.css token to ride; #06c is the literal
+   .dqm-diagnosis.blue above already uses, so the file stays internally
+   consistent even where the theme has nothing to offer. */
+.dqm-tile[data-status="blocked"]  { border-left-color: var(--myellow, #cc0); }
+.dqm-tile[data-status="proposed"] { border-left-color: #06c; }
+.dqm-tile[data-status="dropped"]  { border-left-color: var(--mgray, #ccc); opacity: 0.65; }
+.dqm-tile[data-status="live"]     { border-left-color: var(--mgreen, #8f8); }
+
+.dqm-tile-title  { margin: 0 0 2px 0; font-size: 105%; }
+.dqm-tile-title .dqm-chip { margin-left: 8px; font-size: 80%; vertical-align: middle; }
+
+/* The shift question, always above whatever answers it. */
+.dqm-tile-q      { color: var(--mgray, #666); margin-bottom: 6px; }
+
+/* The honest empty state. A dashed box and a sentence, never an empty axis:
+   a silhouette that has replaced its reason is a shape that can be mistaken
+   for a measurement, which is the one failure this page set exists to avoid. */
+.dqm-empty       { border: 1px dashed var(--mgray, #bbb); border-radius: 3px;
+                   padding: 10px 12px; margin: 4px 0; }
+.dqm-empty-what  { color: var(--mgray, #666); font-style: italic; margin-bottom: 4px; }
+.dqm-empty-why   { color: var(--mgray, #555); }
+.dqm-empty .mbutton { margin-left: 6px; }
+
+.dqm-pagehead    { margin-bottom: 4px; }
+.dqm-pagehead h2 { margin-bottom: 0; }
