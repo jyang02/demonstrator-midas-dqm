@@ -104,6 +104,8 @@ class Entry:
 # broken stops trusting the whole set. Later stages append here.
 ENTRIES: tuple[Entry, ...] = (
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
+    Entry("dqm-panels.js", "js/dqm-panels.js", False,
+          "the panel catalogue, generated from demonstrator-shifter-ui's spec"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
 )
