@@ -103,8 +103,20 @@ class Entry:
 # does anything is worse than no page: an operator who opens it and finds it
 # broken stops trusting the whole set. Later stages append here.
 ENTRIES: tuple[Entry, ...] = (
+    Entry("Rates", "rates.html", True,
+          "event rates, and the trigger settings they are divided by"),
+    Entry("Scope", "scope.html", True,
+          "one event, waveforms and position (needs fesampic and a bank document)"),
     Entry("Channels", "channels.html", True,
           "is every channel behaving (needs an analyzer; none exists)"),
+    Entry("Pulses", "pulses.html", True,
+          "what a pulse looks like and what it is worth (needs an analyzer)"),
+    Entry("Physics", "physics.html", True,
+          "does this look like stopped muons (needs an analyzer)"),
+    Entry("SlowControls", "slowcontrols.html", True,
+          "temperature, bias, leakage and position, straight from the ODB"),
+    Entry("Retired", "retired.html", True,
+          "what the retired webapp carried that these pages do not"),
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
     Entry("dqm-panels.js", "js/dqm-panels.js", False,
           "the panel catalogue, generated from demonstrator-shifter-ui's spec"),

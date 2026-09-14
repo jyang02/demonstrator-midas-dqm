@@ -39,8 +39,41 @@ const DEFAULTS = {
     "Analyzer Client": "mdqm_analyzer",
     "Refresh ms": 1000
   },
+  "Rates": {
+    "Rate Equipment": [""],
+    "Trigger Settings Path": "/Equipment/Trigger/Settings",
+    "Trigger Settings Keys": ["Mode", "Prescale", "Coincidence window"],
+    "Threshold Path": "/Equipment/SAMPIC/Settings/Threshold",
+    "Expected Prescale": 1,
+    "History Timescale": "10m"
+  },
+  "Scope": {
+    "Event Rate Hz": 1.0,
+    "Event ID": 1,
+    "Waveform Bank": "AD00",
+    "Hit Time Bank": "AT00"
+  },
   "Channels": {
     "Histograms": [""]
+  },
+  "Pulses": {
+    "Histograms": [""]
+  },
+  "Physics": {
+    "Histograms": [""]
+  },
+  "SlowControls": {
+    "Temperature Path": "/Equipment/ATAR_SC/Variables/Temperature",
+    "Light Path": "/Equipment/ATAR_SC/Variables/Light level",
+    "Leakage Path": "/Equipment/ATAR_HV/Variables/Current",
+    "Measured Path": "/Equipment/ATAR_HV/Variables/Measured",
+    "Demand Path": "/Equipment/ATAR_HV/Settings/Demand",
+    "Position Path": "/Equipment/Motion/Variables/Position",
+    "Motion Settings": "/Equipment/Motion/Settings",
+    "Bias Tolerance V": 5.0,
+    "Leakage Warn uA": 2.0,
+    "Temp Warn C": 30.0,
+    "History Timescale": "1h"
   }
 };
 

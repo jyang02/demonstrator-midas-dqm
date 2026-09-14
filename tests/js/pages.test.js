@@ -27,7 +27,12 @@ globalThis.BRPC = require(path.join(JS, "dqm-brpc.js"));
 
 //: Every page the manifest registers. Kept here rather than derived from the
 //: catalogue so that a page silently vanishing from one of them is a failure.
-const PAGES = ["Channels"];
+const PAGES = ["Rates", "Scope", "Channels", "Pulses", "Physics", "SlowControls", "Retired"];
+
+//: Which pages load dqm-brpc.js, and therefore probe for an analyzer. The three
+//: mechanism-C pages and no others: a page whose panels wait on a frontend
+//: rather than on an analyzer must not blame the analyzer.
+const PROBES = new Set(["Channels", "Pulses", "Physics"]);
 
 //
 // A bare experiment: no /DQM subtree, no equipment, no history, no analyzer.
@@ -178,6 +183,20 @@ test("a page with no catalogue entry says so rather than rendering nothing", asy
 });
 
 // --- the analyzer probe -----------------------------------------------------
+
+test("only the analyzer-backed pages probe for an analyzer", async () => {
+  // The page opts in by loading dqm-brpc.js; nothing else gates it. Assert the
+  // HTML actually matches, because the gate is invisible from the JS side.
+  const fs = require("node:fs");
+  const HTML = path.join(__dirname, "..", "..", "pages");
+  const file = { Rates: "rates", Scope: "scope", Channels: "channels", Pulses: "pulses",
+                 Physics: "physics", SlowControls: "slowcontrols", Retired: "retired" };
+  for (const name of PAGES) {
+    const text = fs.readFileSync(path.join(HTML, `${file[name]}.html`), "utf8");
+    assert.strictEqual(text.includes("dqm-brpc.js"), PROBES.has(name),
+      `${name} loads dqm-brpc.js when it should${PROBES.has(name) ? "" : " not"}`);
+  }
+});
 
 test("with no analyzer answering, the panels say which name was tried", async () => {
   const page = bootPage("Channels");

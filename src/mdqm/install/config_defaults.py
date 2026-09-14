@@ -36,9 +36,67 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Refresh ms": 1000,
     },
 
+    # --- Rates: ODB and history, needs only a frontend -------------------
+    "Rates": {
+        # Empty means "every equipment". Naming some is faster and stops the
+        # page describing equipment nobody wants on it.
+        "Rate Equipment": [""],
+        # The four keys the trigger-settings panel reads. None of them exists
+        # yet: there is no fetrigger and no fesampic. The panel renders a row
+        # per key either way, so a partial deployment is visible rather than
+        # silently half-right.
+        "Trigger Settings Path": "/Equipment/Trigger/Settings",
+        "Trigger Settings Keys": ["Mode", "Prescale", "Coincidence window"],
+        "Threshold Path": "/Equipment/SAMPIC/Settings/Threshold",
+        # A rate divided by an unexpected prescale is the failure this page
+        # exists to catch. 0 disables the check.
+        "Expected Prescale": 1,
+        "History Timescale": "10m",
+    },
+
+    # --- Scope: one event through mhttpd, decoded in the browser ---------
+    # No renderer reads these yet -- there is no ATAR bank and no document
+    # describing one, which is exactly what the page says. They are what the
+    # page's note reports, so it states its configured cadence and bank names
+    # rather than a number frozen in prose.
+    "Scope": {
+        "Event Rate Hz": 1.0,
+        "Event ID": 1,
+        "Waveform Bank": "AD00",
+        "Hit Time Bank": "AT00",
+    },
+
     # --- the analyzer pages ----------------------------------------------
     # Empty until somebody writes an analyzer and decides what it publishes.
-    # The page asks it for its list and names what it did not find, rather than
-    # hardcoding a histogram nobody has agreed to.
+    # The pages ask it for its list and name what they did not find, rather
+    # than hardcoding a histogram nobody has agreed to.
     "Channels": {"Histograms": [""]},
+    "Pulses": {"Histograms": [""]},
+    "Physics": {"Histograms": [""]},
+
+    # --- SlowControls: ODB and history, needs only a frontend ------------
+    "SlowControls": {
+        "Temperature Path": "/Equipment/ATAR_SC/Variables/Temperature",
+        "Light Path": "/Equipment/ATAR_SC/Variables/Light level",
+        "Leakage Path": "/Equipment/ATAR_HV/Variables/Current",
+        "Measured Path": "/Equipment/ATAR_HV/Variables/Measured",
+        # A Setting, not a Variable: the demand is what somebody asked for.
+        # Comparing it against the readback beside it is the whole panel, and
+        # nothing anywhere currently does that comparison.
+        "Demand Path": "/Equipment/ATAR_HV/Settings/Demand",
+        "Position Path": "/Equipment/Motion/Variables/Position",
+        "Motion Settings": "/Equipment/Motion/Settings",
+        # These three are the thresholds frontend_requirements.md names for
+        # MIDAS alarms. The panels use the same numbers deliberately: the
+        # screen and the alarm system must not disagree about what "high"
+        # means.
+        "Bias Tolerance V": 5.0,
+        "Leakage Warn uA": 2.0,
+        "Temp Warn C": 30.0,
+        "History Timescale": "1h",
+    },
+
+    # Retired has no configuration and declares none, so no subtree is created
+    # for it. A /DQM key nobody reads is a key somebody will eventually edit
+    # expecting something to happen.
 }

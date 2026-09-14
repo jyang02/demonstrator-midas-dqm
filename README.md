@@ -10,9 +10,9 @@ which is the same architecture proven at a different experiment. `main` still
 holds that state, so `git log main..demonstrator-pages` is the whole diff. What
 carried over is the framework; what left is WaveDream's own pages and plugin.
 
-The page set is specified in `demonstrator-shifter-ui` (`spec/dqm_shifter.json`).
-No page has landed yet: this commit is the fork, carrying the framework and
-nothing that was WaveDream's.
+The page set is specified in `demonstrator-shifter-ui` (`spec/dqm_shifter.json`),
+and `pages/js/dqm-panels.js` is generated from it — see **Regenerating the panel
+catalogue** below.
 
 Two halves, kept apart on purpose:
 
@@ -27,6 +27,41 @@ Two halves, kept apart on purpose:
 pip install -e .
 mdqm-register-pages --experiment pim1        # writes the /Custom keys
 ```
+
+Then open the experiment's mhttpd and pick a page from the side menu.
+
+| page | asks | mechanism | waiting on |
+|---|---|---|---|
+| **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
+| **Scope** | What does this event look like? | event buffer | an ATAR bank, and a **document** describing its layout |
+| **Channels** | Is every channel behaving? | analyzer | the bank, and the analyzer client nobody has started |
+| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above, plus an energy calibration with an owner |
+| **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding |
+| **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
+| **Retired** | What did the webapp carry that these pages do not? | — | nothing; it records three decisions so they are not re-argued |
+
+Forty-one of the forty-four panels are blocked, and **every one of them says so
+in the panel**, naming what it is waiting for. That is the point of registering
+them: a shifter who opens Channels at 3am and finds eleven titled panels each
+explaining its own absence has been told the state of the experiment. One who
+finds a blank page has not, and stops trusting the menu.
+
+The three pages backed by an analyzer check for one at load rather than
+asserting its absence, so the reason they show is about this experiment now.
+
+## Regenerating the panel catalogue
+
+Every panel's title, question, blocked-reason and alarm sentence comes from the
+spec, via a generated asset:
+
+```bash
+scripts/gen-panels.py --spec ~/demonstrator-shifter-ui/spec/dqm_shifter.json
+```
+
+Then bump the `?v=` on `dqm-panels.js` in every page that loads it. `--check`
+diffs without writing and exits non-zero when the committed file is stale;
+`tests/test_panels.py` calls the same code path, and skips when that checkout is
+not present.
 
 `--list` shows what would be registered, `--dry-run` says what would change,
 `--check` verifies every registered key still resolves to a readable file, and
