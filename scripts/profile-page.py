@@ -74,7 +74,7 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://localhost:8088/?cmd=custom&page=Scalers")
     ap.add_argument("--process", default="mhttpd", help="process to profile")
-    ap.add_argument("--experiment", default="WDSCALERS")
+    ap.add_argument("--experiment", default="pim1")
     ap.add_argument("--dropped-path",
                     default="/Equipment/WDWaveforms/Variables/Thread/DroppedPackets",
                     help="the DAQ's own loss counter; the gate that matters")

@@ -162,8 +162,8 @@ def main() -> int:
     ap.add_argument("--rates", type=float, nargs="+",
                     default=[20, 100, 200, 500, 1000, 0])
     ap.add_argument("--seconds", type=float, default=20.0)
-    ap.add_argument("--client", default="wd_analyzer")
-    ap.add_argument("--experiment", default="WDSCALERS")
+    ap.add_argument("--client", default="mdqm_analyzer")
+    ap.add_argument("--experiment", default="pim1")
     ap.add_argument("--port", type=int, default=8088)
     ap.add_argument("--limit", type=float, default=5000.0,
                     help="analyzer rate limit to set for the test, via the ODB")

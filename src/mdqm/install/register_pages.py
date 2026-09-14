@@ -2,7 +2,7 @@
 """Register the DQM pages into a MIDAS experiment's ``/Custom``.
 
 Knows nothing about any particular experiment: an installation that has never
-heard of wavedream-scalar-readout must still be able to run this. It needs only
+heard of this experiment must still be able to run it. It needs only
 ``midas.client`` on ``PYTHONPATH`` and an experiment to talk to.
 
     mdqm-register-pages --list
@@ -183,22 +183,31 @@ def check(client, entries) -> int:
 
 
 def seed_config(client, config_root: str, dry_run: bool) -> None:
-    """Create the page config subtree, create-if-absent, never overwriting.
+    """Create the page config subtrees, create-if-absent, never overwriting.
 
-    The page works without this -- it falls back to the same values as built-in
-    defaults and says so. Seeding just makes them editable from the ODB browser.
+    The pages work without this -- they fall back to the same values as built-in
+    defaults and say so. Seeding just makes them editable from the ODB browser,
+    which is the point: every /Equipment path in there is proposed rather than
+    deployed, and correcting one at PSI should not need a patch.
+
+    Leaf at a time, by full path, for the same reason the /Custom writes are:
+    odb_set on a subtree carries remove_unspecified_keys=True and would delete
+    whatever an operator had added beside ours. A page whose defaults are empty
+    creates no subtree at all.
     """
     from mdqm.install.config_defaults import DEFAULTS
 
-    for key, value in DEFAULTS.items():
-        full = f"{config_root}/{key}"
-        if client.odb_exists(full):
-            continue
-        if dry_run:
-            print(f"  + {full} = {value!r}   (dry run)")
-        else:
-            client.odb_set(full, value)
-            print(f"  + {full} = {value!r}")
+    for subtree in sorted(DEFAULTS):
+        base = config_root if subtree == "Common" else f"{config_root}/{subtree}"
+        for key, value in DEFAULTS[subtree].items():
+            full = f"{base}/{key}"
+            if client.odb_exists(full):
+                continue
+            if dry_run:
+                print(f"  + {full} = {value!r}   (dry run)")
+            else:
+                client.odb_set(full, value)
+                print(f"  + {full} = {value!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -222,6 +231,9 @@ def main(argv: list[str] | None = None) -> int:
 
     pages_dir = Path(args.pages_dir).resolve() if args.pages_dir else None
     entries = pages(pages_dir)
+    if not entries:
+        print("the manifest is empty; there is nothing to register", file=sys.stderr)
+        return EXIT_BAD_MANIFEST
     pages_dir = pages_dir or entries[0][1].parents[1]
 
     # Apply the prefix to menu entries only. Assets are fetched by the literal

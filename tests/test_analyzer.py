@@ -12,17 +12,50 @@ import inspect
 import time
 
 from mdqm.dqm import analyzer as A
-from mdqm.dqm.hist import HistStore
+from mdqm.dqm.hist import Axis, Hist2D, HistStore
 
 
 class _FakePlugin:
+    """A plugin that is only what the analyzer requires one to be.
+
+    It builds a histogram from code defaults in its constructor and rebuilds it
+    from the ODB in ``reconfigure``, because that sequence -- not any particular
+    physics -- is the contract ``apply_settings`` implements and the thing the
+    binning tests below are about. There is no built-in plugin on this
+    experiment (``analyzer.PLUGINS`` is empty), so this stands in for the one
+    somebody will eventually write.
+    """
+
     name = "fake"
     event_ids = frozenset({401})
 
-    def __init__(self, store):
+    #: What the constructor uses having no ODB to read yet.
+    DEFAULT_BINNING = {"persistence x bins": 256, "persistence y bins": 110,
+                       "persistence y min": -1.0, "persistence y max": 0.1}
+
+    def __init__(self, store, roles=None, binning=None):
         self.store = store
         self.processed = []
         self.runs = []
+        self.roles = dict(roles or {})
+        self.binning = dict(binning or self.DEFAULT_BINNING)
+        self._build()
+
+    def _build(self):
+        b = self.binning
+        self.store.add(Hist2D(
+            "fake/persistence",
+            Axis(int(b["persistence x bins"]), 0.0, 1024.0, "sample"),
+            Axis(int(b["persistence y bins"]), float(b["persistence y min"]),
+                 float(b["persistence y max"]), "V"),
+        ))
+
+    def reconfigure(self, roles, binning):
+        """A histogram with different bins is a different histogram."""
+        self.roles = dict(roles or {})
+        self.binning = dict(binning or {})
+        self.store.remove("fake/persistence")
+        self._build()
 
     def accepts(self, event):
         return event.header.event_id in self.event_ids
@@ -33,7 +66,8 @@ class _FakePlugin:
         return True
 
     def status(self):
-        return {"plugin": self.name, "decoded": len(self.processed)}
+        return {"plugin": self.name, "decoded": len(self.processed),
+                "binning": dict(self.binning)}
 
 
 class _Event:
@@ -352,13 +386,11 @@ def test_the_odb_is_the_authority_for_binning():
 
 def test_changing_the_binning_rebuilds_the_histograms():
     """A histogram with different bins is a different histogram."""
-    from mdqm.plugins.wavedream import WaveDreamPlugin
-
-    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    a = _analyzer(rate=20.0)
     c = _seeded_client()
     a.apply_settings(c, force=True)
 
-    pers = a.store.get("wd/persistence_ch00")
+    pers = a.store.get("fake/persistence")
     assert pers.x.n == 256, "the seeded default"
     pers.fill([1.0], [-0.5])
     assert pers.entries == 1
@@ -368,7 +400,7 @@ def test_changing_the_binning_rebuilds_the_histograms():
     a._settings_checked = 0
     assert a.apply_settings(c) is True
 
-    rebuilt = a.store.get("wd/persistence_ch00")
+    rebuilt = a.store.get("fake/persistence")
     assert rebuilt.x.n == 64, "the new binning took effect"
     assert rebuilt.entries == 0, "old counts must not be carried into new bins"
     assert a.reconfigures == before + 1
@@ -377,21 +409,19 @@ def test_changing_the_binning_rebuilds_the_histograms():
 
 
 def test_a_role_change_does_not_throw_away_accumulated_plots():
-    from mdqm.plugins.wavedream import WaveDreamPlugin
-
-    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    a = _analyzer(rate=20.0)
     c = _seeded_client()
     a.apply_settings(c, force=True)
 
-    a.store.get("wd/persistence_ch00").fill([1.0], [-0.5])
-    assert a.store.get("wd/persistence_ch00").entries == 1
+    a.store.get("fake/persistence").fill([1.0], [-0.5])
+    assert a.store.get("fake/persistence").entries == 1
 
     before = a.reconfigures
     c.tree["/DQM/Analyzer/Channel roles/rf channel"] = 9
     a._settings_checked = 0
     a.apply_settings(c)
 
-    assert a.store.get("wd/persistence_ch00").entries == 1, \
+    assert a.store.get("fake/persistence").entries == 1, \
         "moving the RF channel does not change any histogram's shape"
     assert a.reconfigures == before, "no shape changed, so nothing was rebuilt"
     assert a.plugin.roles["rf channel"] == 9, "but the plugin must see it"
@@ -521,17 +551,15 @@ def test_the_odb_binning_is_applied_at_startup_not_only_on_change():
     plot stayed at the default 110 bins over [-1.0, 0.1] after the ODB had been
     set to 180 over [-1.6, 0.2], and the status claimed the new numbers.
     """
-    from mdqm.plugins.wavedream import WaveDreamPlugin
-
-    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
-    assert a.store.get("wd/persistence_ch00").y.n == 110, "the code default"
+    a = _analyzer(rate=20.0)
+    assert a.store.get("fake/persistence").y.n == 110, "the code default"
 
     c = _seeded_client(**{"Binning/persistence y bins": 180,
                           "Binning/persistence y min": -1.6,
                           "Binning/persistence y max": 0.2})
     a.apply_settings(c, force=True)
 
-    pers = a.store.get("wd/persistence_ch00")
+    pers = a.store.get("fake/persistence")
     assert pers.y.n == 180, "the ODB must win at startup, not just on a later edit"
     assert pers.y.lo == -1.6
     assert pers.y.hi == 0.2
@@ -539,15 +567,13 @@ def test_the_odb_binning_is_applied_at_startup_not_only_on_change():
 
 def test_status_reports_the_binning_the_histograms_actually_have():
     """So a disagreement between config and reality is visible, not hidden."""
-    from mdqm.plugins.wavedream import WaveDreamPlugin
-
-    a = A.Analyzer(lambda s: WaveDreamPlugin(s), rate=20.0)
+    a = _analyzer(rate=20.0)
     c = _seeded_client(**{"Binning/persistence y bins": 44})
     a.apply_settings(c, force=True)
 
     axes = a.status()["axes"]
-    assert "wd/persistence_ch00" in axes
-    y = axes["wd/persistence_ch00"][1]
+    assert "fake/persistence" in axes
+    y = axes["fake/persistence"][1]
     assert y["bins"] == 44, "read off the histogram, not off the request"
 
 

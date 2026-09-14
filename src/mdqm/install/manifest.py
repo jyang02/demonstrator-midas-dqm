@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 #: Repository root, derived rather than hardcoded -- the checkout lives in a
-#: different place on every machine (``~/josh`` here, ``~/software/wavedream-
+#: different place on every machine (``~/jyang`` here, ``~/software/demonstrator-
 #: frontends`` on Pinky), and the ODB values are absolute, per-machine state.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PAGES_DIR = REPO_ROOT / "pages"
@@ -103,26 +103,23 @@ class Entry:
 # does anything is worse than no page: an operator who opens it and finds it
 # broken stops trusting the whole set. Later stages append here.
 ENTRIES: tuple[Entry, ...] = (
-    Entry("Scalers", "scalars.html", True, "scaler rates, thresholds and trends (no backend)"),
-    Entry("Scope", "scope.html", True, "live waveforms from the event buffer (no backend)"),
-    Entry("Waveforms", "waveforms.html", True, "accumulated plots (needs the analyzer)"),
-    Entry("EventDisplay", "evd.html", True, "one event, every channel (needs the analyzer)"),
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
-    Entry("dqm-scalars.js", "js/dqm-scalars.js", False, "scaler page"),
-    Entry("dqm-wdbanks.js", "js/dqm-wdbanks.js", False, "WaveDream bank decoding in the browser"),
-    Entry("dqm-scope.js", "js/dqm-scope.js", False, "scope page"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
-    Entry("dqm-waveforms.js", "js/dqm-waveforms.js", False, "accumulated plots page"),
-    Entry("dqm-evd.js", "js/dqm-evd.js", False, "event display page"),
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
 )
 
-#: Config subtree for the pages themselves. Deliberately *not* under /Custom --
-#: mhttpd renders any /Custom subdirectory as a sidenav submenu, unconditionally,
-#: with no way to hide it. And deliberately not under /Equipment/<eq>/Settings --
-#: the pages must be able to describe equipment they do not own, and to keep
-#: working when that equipment is absent entirely.
-CONFIG_ROOT = "/DQM/Scalars"
+#: Config root for the pages. One subtree per page beneath it; see
+#: config_defaults.DEFAULTS.
+#:
+#: Deliberately *not* under /Custom -- mhttpd renders any /Custom subdirectory
+#: as a sidenav submenu, unconditionally, with no way to hide it. And
+#: deliberately not under /Equipment/<eq>/Settings -- the pages must be able to
+#: describe equipment they do not own, and to keep working when that equipment
+#: is absent entirely, which on this experiment is all of it.
+#:
+#: Note that /DQM/Analyzer is the analyzer's own settings tree (dqm/settings.py),
+#: so a page named "Analyzer" would collide with it.
+CONFIG_ROOT = "/DQM"
 
 _KEY_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
 

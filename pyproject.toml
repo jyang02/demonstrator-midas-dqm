@@ -5,15 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mdqm"
 version = "0.1.0"
-description = "MIDAS custom-page DQM: an analyzer client and mhttpd pages, portable across experiments"
+description = "Demonstrator shifter DQM: the ATAR8 shift screens as mhttpd custom pages"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
-# The WaveDream plugin reuses the decoders in wavedream-scalar-readout rather
-# than vendoring them: that module is the reference implementation, and a copy
-# would fork on the first bug fix.
-wavedream = ["wdscalers>=0.1"]
+# A per-experiment plugin would declare its decoder package here. There is no
+# plugin yet: the demonstrator has no documented bank to decode, which is why
+# every analyzer-backed panel says it is waiting for one.
 dev = ["pytest>=8", "pytest-benchmark>=4", "ruff>=0.5"]
 
 [project.scripts]

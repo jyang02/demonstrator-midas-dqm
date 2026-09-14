@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The DQM analyzer: a MIDAS client that samples events and serves histograms.
 
-    mdqm-analyzer --experiment WDSCALERS --plugin wavedream
+    mdqm-analyzer --experiment pim1 --plugin <none are built in yet>
 
 What it deliberately does NOT do, because a monitoring process must never be
 able to affect data taking:
@@ -39,7 +39,14 @@ from mdqm.dqm import settings as odb_settings
 from mdqm.dqm.hist import HistStore
 from mdqm.dqm.server import Server
 
-DEFAULT_CLIENT = "wd_analyzer"
+DEFAULT_CLIENT = "mdqm_analyzer"
+
+#: The DAQ-stress counter this client watches so it can throttle itself. Named
+#: after the WaveDream frontend it was written against; the demonstrator's
+#: equivalent is whatever fesampic ends up calling its dropped-packet counter.
+#: A missing counter is handled, not fatal -- check_daq_health() returns
+#: quietly -- so this is safe to leave pointing at an equipment that does not
+#: exist, and --dropped-path overrides it without a rebuild.
 DROPPED_PATH = "/Equipment/WDWaveforms/Variables/Thread/DroppedPackets"
 
 _stop = False
@@ -354,11 +361,22 @@ class Analyzer:
         return midas.status_codes["SUCCESS"], ctypes.create_string_buffer(blob, len(blob))
 
 
+#: Plugin name -> a callable taking (store, roles, binning). Empty on purpose.
+#:
+#: The demonstrator has no analyzer, because it has no documented bank to
+#: decode. That is not an oversight to be papered over with a stub: every
+#: mechanism-C panel on Channels, Pulses and Physics is blocked precisely
+#: because this registry is empty, and those pages check it at load rather than
+#: assert it. A plugin lands here the day somebody writes one.
+PLUGINS: dict = {}
+
+
 def make_plugin_factory(name, roles=None, binning=None):
-    if name == "wavedream":
-        from mdqm.plugins.wavedream import WaveDreamPlugin
-        return lambda store: WaveDreamPlugin(store, roles=roles, binning=binning)
-    raise SystemExit(f"unknown plugin {name!r}; known: wavedream")
+    factory = PLUGINS.get(name)
+    if factory is None:
+        known = ", ".join(sorted(PLUGINS)) or "none are built in yet"
+        raise SystemExit(f"unknown plugin {name!r}; known: {known}")
+    return lambda store: factory(store, roles=roles, binning=binning)
 
 
 def main(argv=None) -> int:
@@ -366,7 +384,8 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--experiment", default=os.environ.get("MIDAS_EXPT_NAME"))
     ap.add_argument("--client", default=DEFAULT_CLIENT)
-    ap.add_argument("--plugin", default="wavedream")
+    ap.add_argument("--plugin", default=None,
+                    help="which analysis plugin to run; none are built in yet")
     ap.add_argument("--buffer", default="SYSTEM")
     ap.add_argument("--rate", type=float, default=20.0,
                     help="events per second to decode; the buffer is drained regardless")

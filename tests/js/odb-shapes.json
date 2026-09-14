@@ -1,5 +1,5 @@
 {
- "_doc": "Captured verbatim from the live WDSCALERS ODB on 2026-08-30. These are the exact shapes discovery has to survive: a scalar X036 whose /key has no num_values, a T036 of hex strings, and original-case Settings names.",
+ "_doc": "Captured verbatim from a live MIDAS ODB (the WDSCALERS experiment, 2026-08-30). Kept after that experiment's pages left this repo because what it records is not WaveDream but MIDAS: the exact shapes any discovery code has to survive -- a scalar whose /key carries no num_values, a bank of TID_DWORD hex strings, and Settings names in their original case where db_get_values would have lower-cased them. These are the traps the demonstrator pages would otherwise re-learn the hard way.",
  "equipment_ls": {
   "WDScalers": {},
   "WDWaveforms": {}

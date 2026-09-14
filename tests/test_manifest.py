@@ -5,7 +5,9 @@ Nothing here needs MIDAS running.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -108,22 +110,49 @@ def test_html_references_only_registered_assets():
             )
 
 
-def test_js_defaults_match_python_defaults():
-    """The JS copy is what runs when /DQM/Scalars is absent, so it must agree."""
-    import json
-    import re
+def _js_defaults():
+    """The DEFAULTS literal out of dqm-common.js, parsed as strict JSON.
 
+    The regex is anchored on a closing ``};`` at column 0, which only the outer
+    object has -- the per-page objects inside close as ``  },``. A reformat that
+    indents that brace breaks this silently, which is why the JS file says so in
+    a comment above the literal.
+    """
     text = (REPO / "pages" / "js" / "dqm-common.js").read_text()
-    m = re.search(r"const DEFAULTS = (\{.*?\n\});", text, re.S)
+    m = re.search(r"\nconst DEFAULTS = (\{.*?\n\});\n", text, re.S)
     assert m, "could not find `const DEFAULTS = {...};` in dqm-common.js"
-    js = json.loads(re.sub(r",(\s*\})", r"\1", m.group(1)))
+    return json.loads(m.group(1))
 
+
+def test_the_js_defaults_literal_is_strict_json():
+    """No comments, no trailing commas. The assertion is that this does not raise."""
+    _js_defaults()
+
+
+def test_js_and_python_defaults_cover_the_same_roots():
+    js = _js_defaults()
     assert set(js) == set(DEFAULTS), (
         f"only in JS: {set(js) - set(DEFAULTS)}; only in Python: {set(DEFAULTS) - set(js)}"
     )
-    for key, want in DEFAULTS.items():
+
+
+@pytest.mark.parametrize("root", sorted(DEFAULTS))
+def test_js_defaults_match_python_defaults(root):
+    """The JS copy is what runs when /DQM is absent, so it must agree key for key."""
+    js, py = _js_defaults()[root], DEFAULTS[root]
+    assert set(js) == set(py), (
+        f"{root}: only in JS {set(js) - set(py)}; only in Python {set(py) - set(js)}"
+    )
+    for key, want in py.items():
         got = js[key]
         if isinstance(want, float):
-            assert float(got) == pytest.approx(want), key
+            assert float(got) == pytest.approx(want), f"{root}/{key}"
         else:
-            assert got == want, key
+            assert got == want, f"{root}/{key}"
+
+
+def test_every_config_root_is_a_registered_page():
+    """A /DQM subtree nobody's page reads is a subtree nobody edits correctly."""
+    menu = {e.key for e in ENTRIES if e.menu}
+    orphans = set(DEFAULTS) - {"Common"} - menu
+    assert not orphans, f"config subtrees with no page: {sorted(orphans)}"

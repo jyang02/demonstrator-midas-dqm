@@ -1,30 +1,32 @@
-# midas-dqm
+# demonstrator-midas-dqm
 
-Data-quality monitoring for MIDAS experiments, built as **mhttpd custom pages**
-plus (later) one analyzer client. No nginx, no node, no ROOT, no ZMQ, no second
-web stack: the pages are plain HTML and JavaScript served by the mhttpd the
+The shifter screens for the ATAR8 demonstrator campaign at PSI πM1, built as
+**mhttpd custom pages**. No nginx, no node, no ROOT, no ZMQ, no second web
+stack: the pages are plain HTML and JavaScript served by the mhttpd the
 experiment already runs, on the port operators already have open.
+
+Forked from [wavedream-midas-dqm](https://github.com/jlabounty/wavedream-midas-dqm),
+which is the same architecture proven at a different experiment. `main` still
+holds that state, so `git log main..demonstrator-pages` is the whole diff. What
+carried over is the framework; what left is WaveDream's own pages and plugin.
+
+The page set is specified in `demonstrator-shifter-ui` (`spec/dqm_shifter.json`).
+No page has landed yet: this commit is the fork, carrying the framework and
+nothing that was WaveDream's.
 
 Two halves, kept apart on purpose:
 
-| generic — works at any MIDAS experiment | experiment-specific |
+| generic — works at any MIDAS experiment | this experiment |
 |---|---|
-| `src/mdqm/dqm/`, `src/mdqm/install/` | `src/mdqm/plugins/` |
-| `pages/js/dqm-common.js` | `pages/js/dqm-scalars.js` and friends |
+| `src/mdqm/dqm/`, `src/mdqm/install/` | `src/mdqm/plugins/` (empty — no plugin yet) |
+| `pages/js/dqm-common.js`, `dqm-brpc.js` | `pages/js/dqm-panels.js` and the page files |
 
 ## Install
 
 ```bash
 pip install -e .
-mdqm-register-pages --experiment MYEXPT      # writes the /Custom keys
+mdqm-register-pages --experiment pim1        # writes the /Custom keys
 ```
-
-Then open the experiment's mhttpd and pick **Scalers** or **Scope** from the side menu.
-
-| page | what it shows | needs |
-|---|---|---|
-| **Scalers** | rates, thresholds, trends, DAQ health | nothing — reads the ODB and MIDAS history |
-| **Scope** | live waveforms | nothing — reads the event buffer through mhttpd |
 
 `--list` shows what would be registered, `--dry-run` says what would change,
 `--check` verifies every registered key still resolves to a readable file, and
@@ -54,14 +56,20 @@ checkout, and says what it found. It never writes `/Custom` as a subtree.
 
 ## Configuration
 
-The scaler page discovers boards, banks, labels and history events from the ODB
-at load; nothing is compiled in. Optional overrides live in `/DQM/Scalars`,
-seeded by the installer. With that subtree absent the page uses identical
-built-in defaults and says so, so it works on an experiment nobody has set up.
+Every page reads its configuration from the ODB at load; nothing is compiled in.
+Overrides live under `/DQM` — `/DQM/<Page>` for one page's own keys, `/DQM`
+itself for what they all share — seeded by the installer. With a subtree absent
+the page uses identical built-in defaults and says so, so it works on an
+experiment nobody has set up.
 
-The one key worth knowing about is `Bank Pattern` — capture 1 is the role
-letter, capture 2 the board id. Pointing the page at a different experiment's
-naming scheme is a config change, not a code change.
+This matters more here than it did upstream. Every `/Equipment` path these pages
+name is **proposed**, not deployed: `demonstrator-shifter-ui`'s
+`docs/frontend_requirements.md` says out loud that only the bank names and the
+run-parameter key names are the collaboration's, and that the equipment names,
+paths and types want confirming against the build actually running at PSI.
+Correcting one has to be an ODB edit during a shift, not a patch — so every
+panel that comes up empty because a configured path did not resolve offers a
+button that opens that key in the ODB editor.
 
 ## Development
 
@@ -92,9 +100,9 @@ Both of those shipped as bugs during development and are now regression tests.
 ### Working without a detector
 
 `scripts/replay-run.py` feeds a recorded run file into a live event buffer, so
-everything downstream of the buffer — the scope page, and later the analyzer —
-can be developed and tested against real events on a machine with no hardware
-attached:
+everything downstream of the buffer — the Scope page, and the analyzer when one
+exists — can be developed and tested against real events on a machine with no
+hardware attached:
 
 ```bash
 scripts/replay-run.py run00201.mid.lz4 --rate 15 --loop --event-id 401
@@ -111,8 +119,8 @@ With the run stopped, mlogger is not reading the buffer and nothing reaches disk
 ### Seeing the page without a browser
 
 ```bash
-scripts/shoot.py "http://localhost:8088/?cmd=custom&page=Scalers" out.png \
-    --wait-for "document.querySelector('#dqm-root h2')" --console
+scripts/shoot.py "http://localhost:8088/?cmd=custom&page=Rates" out.png \
+    --wait-for "document.querySelectorAll('#dqm-root .dqm-tile').length === 9" --console
 ```
 
 `firefox --screenshot` is not usable here: it fires on the load event, which for
