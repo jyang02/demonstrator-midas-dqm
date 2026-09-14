@@ -123,6 +123,12 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("dqm-page.js", "js/dqm-page.js", False,
           "the shared panel renderer, the page boot and the renderer registry"),
     Entry("dqm-rates.js", "js/dqm-rates.js", False, "the live panels on the Rates page"),
+    # Not "dqm-slowcontrols.js": that contains "controls.js" as a substring,
+    # which mhttpd's interprete() intercepts before /Custom is ever consulted,
+    # so the key would be unreachable and the page would silently receive stock
+    # controls.js instead. check_key() catches it; this is what the rule is for.
+    Entry("dqm-slow.js", "js/dqm-slow.js", False,
+          "the five ODB panels on the SlowControls page"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
 )

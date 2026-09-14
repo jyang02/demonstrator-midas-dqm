@@ -111,5 +111,10 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-empty-why   { color: var(--mgray, #555); }
 .dqm-empty .mbutton { margin-left: 6px; }
 
+/* Values we can no longer vouch for: shown, because knowing the last reading is
+   useful, but they must not read as live. Same treatment tr.stale gets above,
+   applied to a whole panel body. */
+.dqm-tile-body.dqm-stale { opacity: 0.55; }
+
 .dqm-pagehead    { margin-bottom: 4px; }
 .dqm-pagehead h2 { margin-bottom: 0; }
