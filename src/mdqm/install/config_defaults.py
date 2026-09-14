@@ -67,6 +67,14 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Event ID": 1,
         "Waveform Bank": "AD00",
         "Hit Time Bank": "AT00",
+        # Not in the bank, and this is the one number here that is a guess. The
+        # period lives in the SAMPIC .bin header (1e3 / sampling_freq_msps ns)
+        # and does not survive into MIDAS, so the page has to be told it. The
+        # default is 6400 MS/s, the rate run 108 was taken at. Set it to 0 and
+        # the page draws in samples and says so, which is better than an axis
+        # labelled ns that is wrong by a factor.
+        "Sample Period ns": 0.15625,
+        "Buffer": "SYSTEM",
     },
 
     # --- the analyzer pages ----------------------------------------------

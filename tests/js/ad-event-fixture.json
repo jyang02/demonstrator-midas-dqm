@@ -1,0 +1,378 @@
+{
+ "_doc": "Real MIDAS events from sampic-to-midas/triumf_run108.mid (TRIUMF run 108, SAMPIC data re-packaged by that repo's converter), captured 2026-09-14. The raw bank bytes are here beside what mdqm.dqm.sampic decodes from them, so tests/js/adbank.test.js checks the browser decoder against bytes nobody in this repo wrote. Pulses are negative-going and tot_value is the -1 sentinel throughout, which is what that converter's .bin source carries.",
+ "source": "sampic-to-midas triumf_run108.mid",
+ "events": [
+  {
+   "event_id": 1,
+   "serial": 0,
+   "time": 1768180469,
+   "banks_b64": {
+    "AD00": "AAAAAAUAAAAAAAAAAAAAAAUAAABAAAAAAQAAAAEAAAAAAAAAAAAAACIAAADLoUU/HclFP3S1RT/PZkU/XW1FP73jRD+940Q/7zhFP0YlRT8GgUU/9P1EP2b3RD+PU0Q/gLdAP5VlOD9kXSw/LbIdPy9uEz8OvhA/odYUP8DsHj+DwCo/z/czP3WTOD9Mpjo/+n46P166OT/swDk/mgg7P/FjPD8/xjw/LbI9P2iRPT82PD0/LbI9P+0NPj9yij4/ZDs/P86qPz97gz8/l5A/PwAAQD/FIEA/NxpAP+58Pz8OTz8/MlVAP3ctQT+zDEE/EoNAP9xoQD/caEA/QBNBP/ypQT8Ab0E/8x9CP5huQj+TqUI/BaNCP2FUQj/Kw0I/Di1CPxzrQj/P90M///8AAAAAgL90Axy+OrU3P120ED8AAAAAAAAAAPf8YUEAAAAAAAAAqvb8YUEAAAAABgAAAAEAAAAAAAAABgAAAEAAAAABAAAAAQAAAAAAAAAAAAAAIwAAAMoyRD9Pr0Q/mExFPwaBRT+Uh0U/odZEP2q8RD8U0EQ/KxhFP/T9RD/9h0Q/ryVEPwpoQj8/NT4/kKA4P3icMj97FC4/0ZEsP6mkLj8ldTI/4lg3P2PuOj9WDj0/xEI9Py2yPT87cD4/SS4/P0CkPz/ysEA/16NAP7MMQT83iUE/095AP7yWQD8bDUA/hXxAPwU0QT/Fj0E/N4lBP8pUQT/pJkE/XCBBP+kmQT8py0A/dy1BP1OWQT9KDEI/Lv9BPyo6Qj/XEkI/eJxCP9NNQj98YUI/j+RCP6rxQj9PQEM/ak1DP/OOQz/4U0M/ZohDPzMzQz+GWkM/5j9EPxiVRD///wAAAACAv6jGib3oxT0/E40sPwAAAAAAAAAA9/xhQQAAAAAAAACv9vxhQQ==",
+    "AT00": "teePAAAAAAACAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+   },
+   "decoded": {
+    "nhits": 2,
+    "channels": [
+     5,
+     6
+    ],
+    "timing": {
+     "timestamp_ns": 9430965,
+     "nhits": 2,
+     "nparents": 2
+    },
+    "hits": [
+     {
+      "channel": 5,
+      "sampic_index": 0,
+      "channel_index": 5,
+      "data_size": 64,
+      "hit_number": 0,
+      "baseline": 0.7176090478897095,
+      "amplitude": -0.15235692262649536,
+      "peak": 0.5652521252632141,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 9430965.3125,
+      "waveform_head": [
+       0.772,
+       0.7726,
+       0.7723,
+       0.7711,
+       0.7712,
+       0.7691,
+       0.7691,
+       0.7704
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 6,
+      "sampic_index": 0,
+      "channel_index": 6,
+      "data_size": 64,
+      "hit_number": 1,
+      "baseline": 0.7413010597229004,
+      "amplitude": -0.06727343797683716,
+      "peak": 0.6740276217460632,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 9430965.46875,
+      "waveform_head": [
+       0.7664,
+       0.7683,
+       0.7707,
+       0.7715,
+       0.7716,
+       0.7689,
+       0.7685,
+       0.7688
+      ],
+      "waveform_len": 64
+     }
+    ]
+   }
+  },
+  {
+   "event_id": 1,
+   "serial": 1,
+   "time": 1768180469,
+   "banks_b64": {
+    "AD00": "AAAAAAEAAAACAAAAAAAAAAEAAABAAAAAAQAAAAEAAAAAAAAAAAAAADYAAAArGEU/XW1FPwtGRT94ekU/eHpFP+tzRT9m90Q/pptEP8GoRD/0/UQ/DwtFP4qORD+lLEM/8kE/P0I+OD9XWzE/utoqPz0KJz9+HSg/yActP3RGND8Mkzk/exQ+PxsNQD/caEA/wFtAP6kTQD+pE0A/UidAPy6QQD+qgkE/nDNCPwpoQj88vUI/k6lCP662Qj84+EI/ZohDPxNhQz+hZ0M/uK9DP7PqQz/vyUM/eAtEP8/3Qz84Z0Q/VHREP2q8RD+4HkU/JlNFP9jwRD+940Q/S+pEP6abRD+GyUQ/1CtFPwaBRT8CvEU/+TFGP3S1RT8ZBEY/whdGP+LpRT9Cz0Y///8AAAAAgL9AOa69nqc8P3bgJj8AAAAAAAAAYEwqYkEAAAAAAAAADkwqYkEAAAAABQAAAAMAAAAAAAAABQAAAEAAAAABAAAAAQAAAAAAAAAAAAAAOAAAAPjCRD90RkQ/xm1EPx1aRD9YOUQ/qmBEP+Y/RD89LEQ/PSxEP4bJRD+qYEQ/xf5CP7fRQD9Ivz0/Awk6P+cdNz+dgDY/OUU3P0dyOT/jpTs/LbI9P2kAPz+EDT8/5IM+P7IuPj8JGz4/aJE9P3/ZPT/pSD4/pN8+PwXFPz8bDUA/4C1AP4C3QD8bDUA/qRNAP1InQD8Sg0A/5WFBP7wFQj9KDEI/4JxBP4XrQT/qlUI/XI9CPwHeQj+utkI/7lpCP0GCQj9hVEI/WMpCPy9uQz/F/kI/JuRDPy9uQz/F/kI/ih9DPw+cQz8m5EM/4XpEPzhnRD8K10M/eAtEP6pgRD///wAAAACAvyDMFb1c2T8/mnw2PwAAAAAAAABgTCpiQQAAAAAAAAAYTCpiQQ==",
+    "AT00": "YFKRAAAAAAACAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+   },
+   "decoded": {
+    "nhits": 2,
+    "channels": [
+     1,
+     5
+    ],
+    "timing": {
+     "timestamp_ns": 9523808,
+     "nhits": 2,
+     "nparents": 2
+    },
+    "hits": [
+     {
+      "channel": 1,
+      "sampic_index": 0,
+      "channel_index": 1,
+      "data_size": 64,
+      "hit_number": 2,
+      "baseline": 0.736932635307312,
+      "amplitude": -0.08507013320922852,
+      "peak": 0.6518625020980835,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 9523808.4375,
+      "waveform_head": [
+       0.7699,
+       0.7712,
+       0.7706,
+       0.7714,
+       0.7714,
+       0.7713,
+       0.7694,
+       0.768
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 5,
+      "sampic_index": 0,
+      "channel_index": 5,
+      "data_size": 64,
+      "hit_number": 3,
+      "baseline": 0.7494103908538818,
+      "amplitude": -0.036571621894836426,
+      "peak": 0.7128387689590454,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 9523808.75,
+      "waveform_head": [
+       0.7686,
+       0.7667,
+       0.7673,
+       0.767,
+       0.7665,
+       0.7671,
+       0.7666,
+       0.7663
+      ],
+      "waveform_len": 64
+     }
+    ]
+   }
+  },
+  {
+   "event_id": 1,
+   "serial": 3,
+   "time": 1768180469,
+   "banks_b64": {
+    "AD00": "AAAAAAcAAAAHAAAAAAAAAAcAAABAAAAAAQAAAAEAAAAAAAAAAAAAADcAAAC4HkU/63NFP+auRT+L/UU/S+pEPy/dRD9qvEQ/63NFP+84RT+4HkU/nRFFP1g5RD/4U0M/toQ8P0XYMD/u6yA/eJwSP0jhCj/Jdg4/fowZP/5lJz9hwzM/w2Q6Pw1xPD86kjs/nl45Pz55OD+M2zg/qFc6P2RdPD9kzD0/liE+P8RCPT924Dw/lrI8P5p3PD/fTz0/tvM9P3ZPPj/EsT4/TfM+P5LLPz9y+T8/93VAP9ejQD8lBkE/93VAP1InQD8AAEA/16NAP84ZQT+h+EE/QYJCP28SQz+utkI/9+RBP65HQT9q3kE/ZRlCP09AQz+4r0M/3EZDP4ZaQz990EM///8AAAAAgL98Fyy+6Ls1Pwm2Cj8AAAAAAAAAILLEb0EAAAAAAAAA07HEb0EAAAAACAAAAAgAAAAAAAAACAAAAEAAAAABAAAAAQAAAAAAAAAAAAAAOAAAABiVRD8YlUQ/hslEP8oyRD/P90M/ryVEPyEfRD+KjkQ/WDlEP+F6RD/qBEQ/PL1CP4lBQD/bij0/mgg7P8cpOj+jkjo/ETY8PztwPj9OYkA/pb1BP+CcQT9KDEI/YVRCP+XQQj8hsEI/BaNCP/MfQj+h+EE/U5ZBPwBvQT+lvUE/Lv9BP/MfQj9TBUM/WMpCPxgmQz+BlUM/xf5CP662Qj8OLUI/fGFCP3PXQj/BOUM/QfFDP33QQz+hZ0M/3EZDP9xGQz9vEkM/T0BDP2pNQz9PQEM/ak1DPw+cQz8zM0M/ZohDP7ivQz8m5EM/wahEP8ZtRD8GEkQ/PSxEP8ZtRD///wAAAACAvyDC3bw9GkE/LCw6PwAAAAAAAAAgssRvQQAAAAAAAADYscRvQQAAAAAGAAAABgAAAAAAAAAGAAAAQAAAAAEAAAABAAAAAAAAAAAAAAA5AAAAl/9AP7ivQz9B8UM/fdBDP49TRD/vyUM/BhJEP5jdQz/GbUQ/9P1EPwFNRD/qlUI/bjRAP0i/PT+jATw/mgg7PzbNOz+IYz0/QKQ/P9ejQD9XW0E/3NdBP7N7Qj/l0EI/qvFCP2aIQz9GtkM/vHRDP8rDQj98YUI/KjpCP3PXQj8Fo0I//BhDPxgmQz+BlUM/E2FDP28SQz/F/kI/QYJCP+5aQj/TTUI/+FNDP7PqQz9Pr0Q/+MJEPx1aRD/YgUM/UwVDP3PXQj9PQEM/YcNDP9iBQz+Y3UM/JuRDPy9uQz/cRkM/fdBDP2q8RD9vgUQ/S+pEP50RRT+BBEU/tFlFP///AAAAAIC/APjIvDFSQT9xCjs/AAAAAAAAACCyxG9BAAAAAAAAAN2xxG9B",
+    "AT00": "jyX+AAAAAAADAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+   },
+   "decoded": {
+    "nhits": 3,
+    "channels": [
+     6,
+     7,
+     8
+    ],
+    "timing": {
+     "timestamp_ns": 16655759,
+     "nhits": 3,
+     "nparents": 3
+    },
+    "hits": [
+     {
+      "channel": 7,
+      "sampic_index": 0,
+      "channel_index": 7,
+      "data_size": 64,
+      "hit_number": 7,
+      "baseline": 0.7098984718322754,
+      "amplitude": -0.1680583357810974,
+      "peak": 0.541840136051178,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 16655758.59375,
+      "waveform_head": [
+       0.77,
+       0.7713,
+       0.7722,
+       0.7734,
+       0.7692,
+       0.769,
+       0.7685,
+       0.7713
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 8,
+      "sampic_index": 0,
+      "channel_index": 8,
+      "data_size": 64,
+      "hit_number": 8,
+      "baseline": 0.7543066143989563,
+      "amplitude": -0.02707010507583618,
+      "peak": 0.7272365093231201,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 16655758.75,
+      "waveform_head": [
+       0.7679,
+       0.7679,
+       0.7687,
+       0.7664,
+       0.7655,
+       0.7662,
+       0.7661,
+       0.7678
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 6,
+      "sampic_index": 0,
+      "channel_index": 6,
+      "data_size": 64,
+      "hit_number": 6,
+      "baseline": 0.755160391330719,
+      "amplitude": -0.024532318115234375,
+      "peak": 0.7306280732154846,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 16655758.90625,
+      "waveform_head": [
+       0.7539,
+       0.7644,
+       0.7654,
+       0.7649,
+       0.7669,
+       0.7648,
+       0.7659,
+       0.7651
+      ],
+      "waveform_len": 64
+     }
+    ]
+   }
+  },
+  {
+   "event_id": 1,
+   "serial": 12,
+   "time": 1768180469,
+   "banks_b64": {
+    "AD00": "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",
+    "AT00": "hd8xAgAAAAAFAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+   },
+   "decoded": {
+    "nhits": 5,
+    "channels": [
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "timing": {
+     "timestamp_ns": 36822917,
+     "nhits": 5,
+     "nparents": 5
+    },
+    "hits": [
+     {
+      "channel": 6,
+      "sampic_index": 0,
+      "channel_index": 6,
+      "data_size": 64,
+      "hit_number": 23,
+      "baseline": 0.7062765955924988,
+      "amplitude": -0.1783527135848999,
+      "peak": 0.5279238820075989,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 36822916.71875,
+      "waveform_head": [
+       0.7684,
+       0.7685,
+       0.7693,
+       0.7681,
+       0.7684,
+       0.7685,
+       0.7689,
+       0.7681
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 4,
+      "sampic_index": 0,
+      "channel_index": 4,
+      "data_size": 64,
+      "hit_number": 26,
+      "baseline": 0.7362444996833801,
+      "amplitude": -0.08109092712402344,
+      "peak": 0.6551535725593567,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 36822916.875,
+      "waveform_head": [
+       0.7688,
+       0.7712,
+       0.7712,
+       0.7712,
+       0.7702,
+       0.7689,
+       0.7699,
+       0.7694
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 3,
+      "sampic_index": 0,
+      "channel_index": 3,
+      "data_size": 64,
+      "hit_number": 25,
+      "baseline": 0.7443912029266357,
+      "amplitude": -0.0548282265663147,
+      "peak": 0.689562976360321,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 36822917.03125,
+      "waveform_head": [
+       0.7705,
+       0.7688,
+       0.7666,
+       0.7653,
+       0.7667,
+       0.7674,
+       0.7705,
+       0.7721
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 7,
+      "sampic_index": 0,
+      "channel_index": 7,
+      "data_size": 64,
+      "hit_number": 24,
+      "baseline": 0.7537067532539368,
+      "amplitude": -0.02834528684616089,
+      "peak": 0.7253614664077759,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 36822917.34375,
+      "waveform_head": [
+       0.769,
+       0.7678,
+       0.7677,
+       0.768,
+       0.7668,
+       0.7661,
+       0.7662,
+       0.7659
+      ],
+      "waveform_len": 64
+     },
+     {
+      "channel": 5,
+      "sampic_index": 0,
+      "channel_index": 5,
+      "data_size": 64,
+      "hit_number": 27,
+      "baseline": 0.7566075921058655,
+      "amplitude": -0.025225341320037842,
+      "peak": 0.7313822507858276,
+      "tot_value": -1.0,
+      "first_cell_timestamp": 36822917.34375,
+      "waveform_head": [
+       0.7674,
+       0.7679,
+       0.7698,
+       0.7681,
+       0.7681,
+       0.7698,
+       0.7688,
+       0.7703
+      ],
+      "waveform_len": 64
+     }
+    ]
+   }
+  }
+ ]
+}

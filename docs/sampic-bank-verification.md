@@ -62,11 +62,12 @@ headers it mirrors (`sampic/EventBankUnpacker.hh`,
 * Bank framing is `bk_init32a` (`flags = 0x31`), banks zero-padded to 8-byte
   alignment, `tid = TID_BYTE`.
 
-A browser decoder for this is therefore writable today, which is what the Scope
-page's mechanism (one event through `mhttpd`, decoded in the browser) needs. It
-is not written here: what is still missing is a frontend putting these banks
-into a live event buffer, so a decoder would have nothing to decode outside a
-replay.
+A browser decoder for this is therefore writable today, and
+`pages/js/dqm-adbanks.js` **is** it, with `src/mdqm/dqm/sampic.py` as its Python
+twin so the two cannot drift. `tests/js/adbank.test.js` checks it against both
+generated cases and `tests/js/ad-event-fixture.json`, which holds four real
+events out of this run — so the claim "the layout is right" is not one this repo
+checks only against itself.
 
 ## The catalogue's run-108 reference checks out
 
@@ -90,8 +91,23 @@ that nothing currently shows anyone.
 
 ## What is still missing for Scope
 
-1. a `fesampic` frontend writing `AD00`/`AT00` into a live event buffer;
+1. a `fesampic` frontend writing `AD00`/`AT00` into a live event buffer. Until
+   one exists the page has nothing to decode outside a replay — `scripts/
+   replay-run.py` will feed it this very file;
 2. the channel-to-strip map, which `frontend_requirements.md` puts in that
-   frontend's `Settings` and which wants checking against the cabling.
+   frontend's `Settings` and which wants checking against the cabling. That is
+   what `event_display_position` waits on, and why that panel has no renderer
+   while the raw waveforms do.
 
-Neither is a DQM task. The bank document is no longer one of them.
+Neither is a DQM task, and the bank document is no longer one of them.
+
+## One number here is still a guess
+
+The sampling period. It lives in the SAMPIC `.bin` header
+(`1e3 / sampling_freq_msps` ns) and does **not** survive into MIDAS, so nothing
+in the bank carries it. `/DQM/Scope/Sample Period ns` defaults to `0.15625`,
+which is 6400 MS/s — the rate this run was taken at, not a rate anyone has
+promised for the demonstrator. Set it to `0` and the Scope page plots against
+sample index and says so in its status line, which is the honest failure: an
+axis labelled ns that is wrong by a factor is the kind of plot that gets
+believed.

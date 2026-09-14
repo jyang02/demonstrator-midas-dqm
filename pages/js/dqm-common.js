@@ -51,7 +51,9 @@ const DEFAULTS = {
     "Event Rate Hz": 1.0,
     "Event ID": 1,
     "Waveform Bank": "AD00",
-    "Hit Time Bank": "AT00"
+    "Hit Time Bank": "AT00",
+    "Sample Period ns": 0.15625,
+    "Buffer": "SYSTEM"
   },
   "Channels": {
     "Histograms": [""]

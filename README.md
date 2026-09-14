@@ -33,7 +33,7 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | page | asks | mechanism | waiting on |
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
-| **Scope** | What does this event look like? | event buffer | a frontend writing `AD00`/`AT00` into a live buffer (the bank *layout* is documented — see below) |
+| **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
 | **Channels** | Is every channel behaving? | analyzer | the bank, and the analyzer client nobody has started |
 | **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above, plus an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding |
@@ -48,6 +48,10 @@ finds a blank page has not, and stops trusting the menu.
 
 The three pages backed by an analyzer check for one at load rather than
 asserting its absence, so the reason they show is about this experiment now.
+
+Scope is the exception, and the reason is below: its bank layout turned out to
+be documented, so the browser decoder is written and tested against real bytes.
+Point it at a replay of an existing run and it draws today.
 
 One blocker has since moved. `docs/sampic-bank-verification.md` records what
 `~/sampic-to-midas` settles: the physics event id, both bank names and the full
@@ -171,7 +175,7 @@ T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
 scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
-scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 5"
+scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 3"
 scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 11"
 scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
@@ -179,8 +183,11 @@ scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$
 scripts/shoot.py "$B=Retired"      /tmp/retired.png      --console --wait-for "$T === 3"
 ```
 
-The `$W` counts are the useful ones to watch: SlowControls drops from 6 to 5 the
-day `featar_sc` exists, and that invocation failing is the signal to update it.
+The `$W` counts are the useful ones to watch, because they say how many panels
+are still explaining themselves. SlowControls drops from 6 to 5 the day
+`featar_sc` exists; Scope is already at 3 of 5 because its waveform and
+raw-event panels are built. Those invocations failing is the signal to update
+them.
 
 ### Seeing the page without a browser
 

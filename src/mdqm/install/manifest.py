@@ -106,7 +106,7 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("Rates", "rates.html", True,
           "event rates, and the trigger settings they are divided by"),
     Entry("Scope", "scope.html", True,
-          "one event, waveforms and position (needs fesampic and a bank document)"),
+          "one event, decoded in the browser (needs a frontend writing AD00)"),
     Entry("Channels", "channels.html", True,
           "is every channel behaving (needs an analyzer; none exists)"),
     Entry("Pulses", "pulses.html", True,
@@ -123,6 +123,9 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("dqm-page.js", "js/dqm-page.js", False,
           "the shared panel renderer, the page boot and the renderer registry"),
     Entry("dqm-rates.js", "js/dqm-rates.js", False, "the live panels on the Rates page"),
+    Entry("dqm-adbanks.js", "js/dqm-adbanks.js", False,
+          "SAMPIC AD00/AT00 bank decoding in the browser"),
+    Entry("dqm-scope.js", "js/dqm-scope.js", False, "the live panels on the Scope page"),
     # Not "dqm-slowcontrols.js": that contains "controls.js" as a substring,
     # which mhttpd's interprete() intercepts before /Custom is ever consulted,
     # so the key would be unreachable and the page would silently receive stock
