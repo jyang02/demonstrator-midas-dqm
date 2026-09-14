@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Scope &mdash; offline preview</title>
+<style>
+/* A stand-in for midas.css: only the four custom properties dqm.css rides, plus
+   the two classes it borrows. The real page inherits all of this from MIDAS. */
+:root { --mred:#c00; --myellow:#cc8800; --mgreen:#4a4; --mgray:#666; }
+body { font:14px system-ui,sans-serif; margin:0; background:#fff; color:#111; }
+#mmain { padding:16px 20px; max-width:1100px; }
+.mbutton { font:inherit; padding:2px 10px; border:1px solid #999; border-radius:3px;
+           background:#f4f4f4; cursor:pointer; }
+table.mtable { border-collapse:collapse; }
+table.mtable td, table.mtable th { border:1px solid #ddd; padding:2px 8px; }
+.preview { background:#222; color:#eee; padding:8px 20px; font-size:13px; }
+.preview b { color:#fff; }
+__DQMCSS__
+</style></head><body>
+<div class="preview"><b>Offline preview</b> &mdash; the real page code, running against
+__N__ real events, looping. MIDAS is stubbed and the plot widget is a minimal stand-in
+for mplot.js, so judge the layout, the decoded numbers and the empty states, not the
+plot's styling.</div>
+<div id="mheader"></div><div id="msidenav"></div>
+<div id="mmain"><div id="dqm-root"><div class="dqm-note">Building&hellip;</div></div></div>
+
+<script>
+// --- the MIDAS surface these pages use, stubbed ---------------------------
+const EVENTS = __EVENTS__;
+const CFG = __CFG__;
+let next = 0;
+function mhttpd_init(){} function mhttpd_set_refresh_interval(){}
+function mhttpd_getParameterByName(n){ return n === "page" ? "Scope" : ""; }
+function dlgOdbEdit(p){ alert("Would open " + p + " in the ODB editor."); }
+function b64(s){ const t=atob(s), a=new Uint8Array(t.length);
+  for(let i=0;i<t.length;i++) a[i]=t.charCodeAt(i); return a; }
+function mjsonrpc_db_get_values(paths){
+  return Promise.resolve({result:{
+    data: paths.map(p => p.endsWith("/Scope") ? CFG.Scope : null),
+    status: paths.map(p => p.endsWith("/Scope") ? 1 : 312)}});
+}
+function mjsonrpc_call(method){
+  if (method !== "bm_receive_event") return Promise.resolve({result:{}});
+  if (next >= EVENTS.length) next = 0;                     // loop, like --loop
+  const ev = EVENTS[next++];
+  return Promise.resolve({__event:{
+    event_id: ev.event_id, trigger_mask: 0, serial_number: ev.serial_number,
+    time_stamp: ev.time_stamp,
+    bank: Object.entries(ev.banks).map(([name,s]) => ({name, array: b64(s)})),
+  }});
+}
+function bkToObj(rpc){ return rpc.__event; }
+
+// A minimal canvas plotter standing in for mplot.js, with the surface the page
+// uses: param.plot, draw, redraw, resize. Deliberately crude -- it exists so the
+// page has somewhere to put traces, not to reproduce mplot.
+class MPlotGraph {
+  constructor(div, param){ this.div=div; this.param=Object.assign({plot:[]},param||{});
+    this.c=document.createElement("canvas"); this.c.width=1000; this.c.height=380;
+    this.c.style.maxWidth="100%"; div.appendChild(this.c); }
+  resize(){} draw(){ this.redraw(); }
+  redraw(){
+    const ctx=this.c.getContext("2d"), W=this.c.width, H=this.c.height, P=44;
+    ctx.clearRect(0,0,W,H);
+    const ps=this.param.plot.filter(p=>p.yData&&p.yData.length);
+    ctx.strokeStyle="#bbb"; ctx.strokeRect(P,10,W-P-10,H-P-10);
+    ctx.fillStyle="#666"; ctx.font="12px system-ui";
+    ctx.fillText((this.param.yAxis&&this.param.yAxis.title.text)||"", 6, 20);
+    ctx.fillText((this.param.xAxis&&this.param.xAxis.title.text)||"", W/2, H-8);
+    if(!ps.length){ ctx.fillText("no data", W/2-20, H/2); return; }
+    let lo=Infinity, hi=-Infinity, xl=Infinity, xh=-Infinity;
+    ps.forEach(p=>{ p.yData.forEach(v=>{ if(v<lo)lo=v; if(v>hi)hi=v; });
+                    p.xData.forEach(v=>{ if(v<xl)xl=v; if(v>xh)xh=v; }); });
+    const pad=(hi-lo)*0.1||0.01; lo-=pad; hi+=pad;
+    const X=v=>P+(v-xl)/((xh-xl)||1)*(W-P-10);
+    const Y=v=>10+(hi-v)/((hi-lo)||1)*(H-P-10);
+    [lo,(lo+hi)/2,hi].forEach(v=>{ ctx.fillStyle="#666"; ctx.fillText(v.toFixed(2),4,Y(v)+4); });
+    ctx.fillText(xl.toFixed(1), P, H-24); ctx.fillText(xh.toFixed(1), W-50, H-24);
+    let leg=P+6;
+    ps.forEach(p=>{ const col=(p.line&&p.line.color)||"#1f77b4";
+      ctx.strokeStyle=col; ctx.lineWidth=1.2; ctx.beginPath();
+      p.yData.forEach((v,i)=>{ const x=X(p.xData[i]), y=Y(v); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+      ctx.stroke(); ctx.fillStyle=col; ctx.fillText(p.label, leg, 24);
+      leg+=ctx.measureText(p.label).width+14; });
+  }
+}
+</script>
+<script>__COMMON__</script>
+<script>__PANELS__</script>
+<script>__PAGE__</script>
+<script>__ADBANKS__</script>
+<script>__SCOPE__</script>
+<script>window.addEventListener("load", function(){ DQMPage.boot("Scope"); });</script>
+</body></html>

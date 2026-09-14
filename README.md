@@ -144,6 +144,12 @@ worth knowing before touching a handler:
 
 Both of those shipped as bugs during development and are now regression tests.
 
+### Seeing it run
+
+`docs/replay-and-view.md` is the end-to-end recipe: which MIDAS to use, how to
+stand up an experiment that cannot disturb one already running, and how to
+replay a recorded run into it so the Scope page has events to draw.
+
 ### Working without a detector
 
 `scripts/replay-run.py` feeds a recorded run file into a live event buffer, so
