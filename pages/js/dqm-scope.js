@@ -41,17 +41,18 @@ const state = {
   seen: 0,
   emptyPolls: 0,
   error: null,
+  busy: false,
   lastAt: null,
-  selected: null,          // null until the first event says what exists
+  excluded: null,          // channels the operator has explicitly unticked
   graph: null,
   cfg: null,
 };
 
 const STORE = "dqm-scope-settings";
 
-//: How many channels to overlay before it stops being a plot and starts being a
-//: smear with a legend over it.
-const MAX_OVERLAY = 8;
+//: Past this many traces at once the plot is a smear with a legend over it, and
+//: the page says so rather than silently dropping any.
+const BUSY_OVERLAY = 8;
 
 // ---------------------------------------------------------------------------
 // atar_raw_waveforms -- the traces
@@ -188,40 +189,47 @@ function onEvent(event) {
   state.emptyPolls = 0;
   state.lastAt = Date.now();
 
-  if (state.selected === null) pickChannels(decoded);
   renderChannelPicker();
   draw();
   update();
   updateRawEvent();
 }
 
-/** What the frontend is actually sending, learned from the first event. */
-function pickChannels(decoded) {
-  const saved = restore().selected;
-  state.selected = new Set();
-  if (saved && saved.length) {
-    saved.forEach((c) => state.selected.add(Number(c)));
+/**
+ * Everything in the event draws unless the operator said otherwise.
+ *
+ * This is an opt-*out* set, and the distinction matters on this detector. SAMPIC
+ * is hit-based: a typical event carries two or three hits drawn from thirty-two
+ * channels, and which three differ every event. Picking a channel set from the
+ * first event -- which is what a fixed-readout scope does, and what this page
+ * did first -- means most events afterwards are drawn only in part, with no
+ * indication that anything is missing. Measured against 500 real events from
+ * run 108: one trace shown out of three hits.
+ */
+function excluded() {
+  if (state.excluded === null) {
+    state.excluded = new Set((restore().excluded || []).map(Number));
   }
-  if (!state.selected.size) {
-    decoded.channels.slice(0, MAX_OVERLAY).forEach((c) => state.selected.add(c));
-  }
+  return state.excluded;
 }
 
 function renderChannelPicker() {
   const host = document.getElementById("scope-channels");
   if (!host || !state.event) return;
-  // Rebuilt only when the channel set changes: an event on a new channel should
-  // add a box, but rebuilding every second would fight the operator's clicks.
-  const key = state.event.channels.join(",");
+  // Every channel seen so far, not just this event's: a box that vanishes when
+  // its channel happens not to fire is a box nobody can untick.
+  state.event.channels.forEach((c) => known.add(c));
+  const key = Array.from(known).sort((a, b) => a - b).join(",");
+  // Rebuilt only when the set grows, so it does not fight the operator's clicks.
   if (host.dataset.channels === key) return;
   host.dataset.channels = key;
   host.innerHTML = "";
 
-  state.event.channels.forEach(function (ch) {
+  key.split(",").filter((x) => x !== "").map(Number).forEach(function (ch) {
     const box = el("input", { type: "checkbox" });
-    box.checked = state.selected.has(ch);
+    box.checked = !excluded().has(ch);
     box.addEventListener("change", function () {
-      if (this.checked) state.selected.add(ch); else state.selected.delete(ch);
+      if (this.checked) excluded().delete(ch); else excluded().add(ch);
       save();
       draw();
     });
@@ -229,6 +237,9 @@ function renderChannelPicker() {
     host.appendChild(label);
   });
 }
+
+//: Channels seen since the page loaded, so the picker only ever grows.
+const known = new Set();
 
 // ---------------------------------------------------------------------------
 // Drawing
@@ -250,7 +261,7 @@ function draw() {
   const drawn = [];
 
   state.event.hits.forEach(function (hit) {
-    if (!state.selected.has(hit.channel)) return;
+    if (excluded().has(hit.channel)) return;
     // With no period configured, plot against sample index rather than a row of
     // zeros: an honest axis in the wrong unit beats every point stacked at x=0.
     const xs = dt ? ADBanks.sampleTimes(hit, dt)
@@ -273,11 +284,12 @@ function draw() {
     // draws no axes either, and a panel with no axes reads as broken rather
     // than as "no channel selected".
     state.graph.param.plot.push({
-      label: "no channel selected", type: "scatter",
+      label: "every channel unticked", type: "scatter",
       line: { draw: true, width: 1 }, marker: { draw: false },
       xData: [], yData: [],
     });
   }
+  state.busy = drawn.length > BUSY_OVERLAY;
   state.graph.redraw();
 }
 
@@ -330,6 +342,11 @@ function update() {
     status.className = "dqm-diagnosis red";
     bits.push(`AT00 claims ${state.event.timing.nhits} hits but AD00 carries `
               + `${state.event.hits.length}.`);
+  }
+  // Said rather than truncated. A page that drops traces to stay readable is
+  // hiding hits, and on a hit-based detector the hits are the measurement.
+  if (state.busy) {
+    bits.push(`${BUSY_OVERLAY}+ traces overlaid; untick channels above to read them.`);
   }
   if (!Number(state.cfg["Sample Period ns"])) {
     bits.push("No sample period is configured, so the time axis is in samples, "
@@ -403,7 +420,7 @@ function restore() {
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      selected: state.selected ? Array.from(state.selected) : [],
+      excluded: Array.from(excluded()),
     }));
   } catch (e) { /* a preference that cannot be saved is not worth an alert */ }
 }

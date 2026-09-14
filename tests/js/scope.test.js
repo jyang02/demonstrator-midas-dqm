@@ -139,7 +139,7 @@ test("with no sample period the axis is samples, and the page says so", async ()
   assert.strictEqual(graphOf(page).param.plot[0].xData[5], 5);
 });
 
-test("unchecking a channel drops its trace and is remembered", async () => {
+test("unticking a channel drops its trace and is remembered", async () => {
   const ev = REAL.events[3];
   const page = await boot([ev, ev]);
   await pump(page, 2);
@@ -147,11 +147,35 @@ test("unchecking a channel drops its trace and is remembered", async () => {
 
   const boxes = page.doc.getElementById("scope-channels").byTag("input");
   assert.strictEqual(boxes.length, 5);
+  assert.ok(boxes.every((b) => b.checked), "everything in the event draws by default");
+
   boxes[0].checked = false;
   boxes[0].dispatch("change");
-
   assert.strictEqual(graphOf(page).param.plot.length, 4);
-  assert.match(globalThis.localStorage.getItem("dqm-scope-settings"), /selected/);
+  assert.match(globalThis.localStorage.getItem("dqm-scope-settings"), /excluded/);
+});
+
+test("a channel that fires only in a later event still draws", async () => {
+  // The bug this replaces: selection fixed from the first event. SAMPIC is
+  // hit-based, so which channels fire differs every event -- measured over 500
+  // real events, that showed one trace out of three hits and said nothing.
+  const first = REAL.events[0];          // channels 5, 6
+  const later = REAL.events[3];          // channels 3, 4, 5, 6, 7
+  const page = await boot([first]);
+  await pump(page, 2);
+  assert.strictEqual(graphOf(page).param.plot.length, first.decoded.nhits,
+    "the first event draws all of its own hits");
+
+  page.queue.push(later);
+  await pump(page, 2);
+  const labels = graphOf(page).param.plot.map((p) => p.label);
+  later.decoded.channels.forEach(function (ch) {
+    assert.ok(labels.some((l) => l.startsWith(`ch ${ch}`)), `ch ${ch} was not drawn`);
+  });
+
+  // And the picker only grows, so a box never vanishes out from under a click.
+  const boxes = page.doc.getElementById("scope-channels").byTag("input");
+  assert.strictEqual(boxes.length, 5);
 });
 
 test("the empty buffer says nothing is writing the bank, and names it", async () => {
