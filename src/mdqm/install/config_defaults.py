@@ -55,10 +55,13 @@ DEFAULTS: dict[str, dict[str, object]] = {
     },
 
     # --- Scope: one event through mhttpd, decoded in the browser ---------
-    # No renderer reads these yet -- there is no ATAR bank and no document
-    # describing one, which is exactly what the page says. They are what the
-    # page's note reports, so it states its configured cadence and bank names
-    # rather than a number frozen in prose.
+    # No renderer reads these yet -- there is no frontend putting these banks
+    # into a live event buffer. But unlike every other path in this file, these
+    # four are *confirmed* rather than proposed: see
+    # docs/sampic-bank-verification.md, which reads them out of
+    # sampic-to-midas's converter (bin_to_mid.py:31, sampic_banks.py:19-20).
+    # The bank layout is documented there too, so a browser decoder for AD00 is
+    # writable whenever a frontend exists to feed it.
     "Scope": {
         "Event Rate Hz": 1.0,
         "Event ID": 1,

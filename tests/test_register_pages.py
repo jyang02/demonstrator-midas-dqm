@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 
 from mdqm.install import register_pages as rp
-from mdqm.install.manifest import pages
+from mdqm.install.config_defaults import DEFAULTS
+from mdqm.install.manifest import CONFIG_ROOT, pages
 
 REPO = Path(__file__).resolve().parents[1]
 PAGES_DIR = REPO / "pages"
@@ -230,3 +231,62 @@ class TestPruningStaleKeys:
 
         menu = sorted(k.rsplit("/", 1)[1] for k in c.odb if not k.endswith("!"))
         assert all(m.startswith("WD") for m in menu), menu
+
+
+# --- seeding the page config -------------------------------------------------
+#
+# Seeding is what makes every proposed /Equipment path in these pages editable
+# from the ODB browser rather than only from a patch, which is the whole basis
+# of the "correct it at PSI during a shift" claim. It had no tests.
+
+def test_seeding_creates_one_subtree_per_page():
+    c = FakeClient()
+    rp.seed_config(c, CONFIG_ROOT, dry_run=False)
+
+    assert c.odb_exists(f"{CONFIG_ROOT}/Analyzer Client"), "Common seeds at the root"
+    for page, values in DEFAULTS.items():
+        if page == "Common":
+            continue
+        for key in values:
+            assert c.odb_exists(f"{CONFIG_ROOT}/{page}/{key}"), f"{page}/{key}"
+
+
+def test_seeding_creates_no_subtree_for_a_page_with_no_config():
+    """A /DQM key nobody reads is a key somebody will edit expecting an effect."""
+    c = FakeClient()
+    rp.seed_config(c, CONFIG_ROOT, dry_run=False)
+    assert not any(p.startswith(f"{CONFIG_ROOT}/Retired") for p in c.odb)
+
+
+def test_seeding_never_overwrites_an_operator_edit():
+    """The paths in here are proposed; whoever corrects one has seen the hardware."""
+    corrected = "/Equipment/ATAR_SlowControl/Variables/Temp"
+    c = FakeClient({f"{CONFIG_ROOT}/SlowControls/Temperature Path": corrected})
+    rp.seed_config(c, CONFIG_ROOT, dry_run=False)
+    assert c.odb[f"{CONFIG_ROOT}/SlowControls/Temperature Path"] == corrected
+    assert not any(p.endswith("SlowControls/Temperature Path") for p, _ in c.writes)
+
+
+def test_seeding_never_writes_a_subtree_wholesale():
+    """odb_set on a subtree carries remove_unspecified_keys and would delete
+    whatever an operator had added beside ours -- the same bug the /Custom
+    writes avoid, one level down."""
+    c = FakeClient()
+    rp.seed_config(c, CONFIG_ROOT, dry_run=False)
+    for path, value in c.writes:
+        assert not isinstance(value, dict), f"{path} was written as a whole subtree"
+        assert path.count("/") >= 2, f"{path} is not a leaf"
+
+
+def test_a_dry_run_seeds_nothing():
+    c = FakeClient()
+    rp.seed_config(c, CONFIG_ROOT, dry_run=True)
+    assert c.writes == []
+
+
+def test_seeding_twice_writes_nothing_the_second_time():
+    c = FakeClient()
+    rp.seed_config(c, CONFIG_ROOT, dry_run=False)
+    first = len(c.writes)
+    rp.seed_config(c, CONFIG_ROOT, dry_run=False)
+    assert len(c.writes) == first, "registration is meant to be idempotent"

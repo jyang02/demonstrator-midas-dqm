@@ -33,7 +33,7 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | page | asks | mechanism | waiting on |
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
-| **Scope** | What does this event look like? | event buffer | an ATAR bank, and a **document** describing its layout |
+| **Scope** | What does this event look like? | event buffer | a frontend writing `AD00`/`AT00` into a live buffer (the bank *layout* is documented — see below) |
 | **Channels** | Is every channel behaving? | analyzer | the bank, and the analyzer client nobody has started |
 | **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above, plus an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding |
@@ -48,6 +48,14 @@ finds a blank page has not, and stops trusting the menu.
 
 The three pages backed by an analyzer check for one at load rather than
 asserting its absence, so the reason they show is about this experiment now.
+
+One blocker has since moved. `docs/sampic-bank-verification.md` records what
+`~/sampic-to-midas` settles: the physics event id, both bank names and the full
+`AD00`/`AT00` byte layout are confirmed, so Scope is waiting on a frontend
+rather than on a document. It also records what that file does **not** settle —
+its run has no ODB dump in it, so every `/Equipment` path here is still a
+proposal from `frontend_requirements.md`, which is why they are all editable
+keys.
 
 ## Regenerating the panel catalogue
 
@@ -150,6 +158,29 @@ With the run stopped, mlogger is not reading the buffer and nothing reaches disk
 
 `--loop` matters for the time base: the DRS cell-width table rides only the run's
 *first* event, so restarting the file is the only way to see one again.
+
+### Checking every page without a detector
+
+Each of these runs against a live mhttpd with **no demonstrator equipment at
+all**, which is the state under test. `shoot.py` exits non-zero when its
+condition never becomes true, so each one is a test and not only a camera.
+
+```bash
+B="http://localhost:8088/?cmd=custom&page"
+T="document.querySelectorAll('#dqm-root .dqm-tile').length"
+W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
+
+scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
+scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 5"
+scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 11"
+scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
+scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
+scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
+scripts/shoot.py "$B=Retired"      /tmp/retired.png      --console --wait-for "$T === 3"
+```
+
+The `$W` counts are the useful ones to watch: SlowControls drops from 6 to 5 the
+day `featar_sc` exists, and that invocation failing is the signal to update it.
 
 ### Seeing the page without a browser
 
