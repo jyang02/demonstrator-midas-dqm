@@ -27,9 +27,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-#: Repository root, derived rather than hardcoded -- the checkout lives in a
-#: different place on every machine (``~/jyang`` here, ``~/software/demonstrator-
-#: frontends`` on Pinky), and the ODB values are absolute, per-machine state.
+#: Repository root, derived rather than hardcoded: the checkout lives in a
+#: different place on every machine, and the ODB values written from it are
+#: absolute, per-machine state.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PAGES_DIR = REPO_ROOT / "pages"
 
@@ -117,7 +117,7 @@ ENTRIES: tuple[Entry, ...] = (
           "temperature, bias, leakage and position, straight from the ODB"),
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
     Entry("dqm-panels.js", "js/dqm-panels.js", False,
-          "the panel catalogue, generated from demonstrator-shifter-ui's spec"),
+          "the panel catalogue, generated from the page spec"),
     Entry("dqm-page.js", "js/dqm-page.js", False,
           "the shared panel renderer, the page boot and the renderer registry"),
     Entry("dqm-rates.js", "js/dqm-rates.js", False, "the live panels on the Rates page"),

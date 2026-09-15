@@ -230,7 +230,7 @@ function statusChip(status) {
  */
 function reasonFor(p) {
   if (p.status === "blocked") return p.blocked_by || "Blocked, for a reason nobody wrote down.";
-  if (p.status === "dropped") return "Dropped in the conversion. " + (p.note || "");
+  if (p.status === "dropped") return "Dropped from the page set. " + (p.note || "");
   if (p.status === "proposed") {
     return "Proposed. Nobody has agreed to this panel yet, so nothing draws it.";
   }
@@ -360,7 +360,7 @@ function noteNode(n) {
 }
 
 function footer(page) {
-  const bits = [`Panels specified in demonstrator-shifter-ui, spec ${DQMPanels.SPEC_SHA256.slice(0, 12)}.`];
+  const bits = [`Panels generated from the page spec, ${DQMPanels.SPEC_SHA256.slice(0, 12)}.`];
   bits.push(`Configuration: ${DQM.CONFIG_ROOT}/${page}.`);
   if (cfg && (!cfg._seeded || !cfg._pageSeeded)) {
     bits.push("That subtree does not exist, so this page is using built-in defaults; "

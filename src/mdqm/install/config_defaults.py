@@ -5,9 +5,9 @@ the page uses exactly these values from its own built-in copy and says so in a
 note, which is what lets it work on a bare experiment the first time anyone
 opens it. Seeding them into the ODB only makes them editable without touching
 a file -- which is the whole point here, because every ``/Equipment`` path
-below is *proposed* rather than deployed: ``demonstrator-shifter-ui``'s
-``docs/frontend_requirements.md`` says out loud that only the bank names and
-the run-parameter key names are the collaboration's, and that equipment names,
+below is *proposed* rather than deployed: the frontend requirements that
+accompany the page spec say out loud that only the bank names and the
+run-parameter key names are the collaboration's, and that equipment names,
 paths and types want confirming against the build actually running at PSI.
 Correcting one should be an ODB edit during a shift, not a patch.
 
@@ -58,11 +58,9 @@ DEFAULTS: dict[str, dict[str, object]] = {
     # --- Scope: one event through mhttpd, decoded in the browser ---------
     # No renderer reads these yet -- there is no frontend putting these banks
     # into a live event buffer. But unlike every other path in this file, these
-    # four are *confirmed* rather than proposed: see
-    # docs/sampic-bank-verification.md, which reads them out of
-    # sampic-to-midas's converter (bin_to_mid.py:31, sampic_banks.py:19-20).
-    # The bank layout is documented there too, so a browser decoder for AD00 is
-    # writable whenever a frontend exists to feed it.
+    # four are *specified* rather than proposed: docs/sampic-bank-layout.md
+    # writes the bank layout down, which is what makes a browser decoder for
+    # AD00 writable whenever a frontend exists to feed it.
     "Scope": {
         "Event Rate Hz": 1.0,
         "Event ID": 1,
@@ -109,7 +107,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Demand Path": "/Equipment/ATAR_HV/Settings/Demand",
         "Position Path": "/Equipment/Motion/Variables/Position",
         "Motion Settings": "/Equipment/Motion/Settings",
-        # These three are the thresholds frontend_requirements.md names for
+        # These three are the thresholds the frontend requirements name for
         # MIDAS alarms. The panels use the same numbers deliberately: the
         # screen and the alarm system must not disagree about what "high"
         # means.

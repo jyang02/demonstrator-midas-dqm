@@ -2,11 +2,11 @@
 
 This is the first plugin in ``analyzer.PLUGINS``, and it exists because the
 reason that registry was empty stopped being true. The note there said the
-demonstrator "has no documented bank to decode" -- but ``mdqm.dqm.sampic``
-documents AD00/AT00 as bytes against the pi_midas headers, it is cross-tested
-against the browser decoder in ``pages/js/dqm-adbanks.js``, and the Scope page
-decodes the same bank out of a live buffer. A bank that two decoders agree on
-and a page draws is documented enough to analyse.
+demonstrator "has no documented bank to decode" -- but
+``docs/sampic-bank-layout.md`` specifies AD00/AT00, ``mdqm.dqm.sampic`` is
+cross-tested against the browser decoder in ``pages/js/dqm-adbanks.js``, and the
+Scope page decodes the same bank out of a live buffer. A bank that two decoders
+agree on and a page draws is documented enough to analyse.
 
 What it publishes, all from fields the converter actually writes:
 
@@ -80,10 +80,10 @@ def _payload(bank) -> bytes:
 def _edge_fraction(hist) -> float:
     """Share of entries in the under/overflow bins, rounded.
 
-    Reported per histogram because this plugin's whole binning problem is that
-    the defaults it inherited were written for a different detector. A range
-    that does not fit the data produces an empty-looking plot and no error; this
-    is the number that says so before somebody debugs the renderer instead.
+    Reported per histogram because a binning is only ever right for the data it
+    was chosen against. A range that does not fit produces an empty-looking plot
+    and no error; this is the number that says so before somebody debugs the
+    renderer instead.
     """
     counts = hist.counts
     total = int(counts.sum())

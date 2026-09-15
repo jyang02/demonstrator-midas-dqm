@@ -1,8 +1,9 @@
 //
 // dqm-brpc.js -- talking to an analyzer client through mhttpd's binary RPC.
 //
-// Generic: nothing here knows about WaveDream, or about which histograms exist.
-// The framing is musip's, so this also drives musip's analyzer unmodified.
+// Generic: nothing here knows about any particular detector, or about which
+// histograms exist. The framing is musip's, so this also drives musip's
+// analyzer unmodified.
 //
 // Adapted from musip/custom/onlineDQM.js, with its truncation retry folded into
 // a loop rather than duplicated, and its histogram decoder kept byte-identical.

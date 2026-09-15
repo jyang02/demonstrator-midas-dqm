@@ -2,8 +2,8 @@
 // The Scope page, driven with real events out of run 108.
 //
 // The transport is stubbed; the bytes are not. Every event this file feeds the
-// page is the exact payload sampic-to-midas's converter wrote, so a change that
-// breaks decoding breaks these tests rather than a plot at 3am.
+// page is the exact payload recorded in the run file, so a change that breaks
+// decoding breaks these tests rather than a plot at 3am.
 //
 
 const test = require("node:test");

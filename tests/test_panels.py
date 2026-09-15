@@ -1,17 +1,16 @@
 """The panel catalogue, and the two ways it can rot.
 
-``pages/js/dqm-panels.js`` is generated from a spec that lives in another
+``pages/js/dqm-panels.js`` is generated from a spec file kept outside this
 repository. Two failure modes follow, and each gets a test here:
 
 * the spec changes and this copy does not -- caught by regenerating and
-  comparing, when that checkout is present. It is optional, mirroring the rule
-  that repo uses for its own extracted vocabulary: a sibling checkout may not
-  exist, and its absence must not fail a suite;
+  comparing, when the spec file is reachable. That check is optional on
+  purpose: the spec must never be a build dependency of this repository;
 * a field is carried into the shipped asset that nothing reads -- caught
   hermetically by ``test_no_carried_field_is_unread``. An unread field is
   precisely the rot the generator exists to prevent.
 
-Everything except the first two tests runs with no sibling checkout at all.
+Everything except the first two tests runs with no spec file at all.
 """
 
 from __future__ import annotations
@@ -29,17 +28,21 @@ from mdqm.install.manifest import ENTRIES
 REPO = Path(__file__).resolve().parents[1]
 CATALOGUE = REPO / "pages" / "js" / "dqm-panels.js"
 
+#: Where the drift check looks for the spec. ``DQM_SPEC`` is the way to point it
+#: somewhere else; the fallback is the conventional location beside this
+#: checkout, and is the one filesystem path here that names the spec's own
+#: directory -- it earns that by keeping the check running by default, since a
+#: drift test that skips silently is a drift test nobody has.
 SPEC = Path(os.environ.get(
-    "SHIFTER_UI_SPEC", Path.home() / "demonstrator-shifter-ui" / "spec" / "dqm_shifter.json"))
+    "DQM_SPEC", Path.home() / "demonstrator-shifter-ui" / "spec" / "dqm_shifter.json"))
 needs_spec = pytest.mark.skipif(
-    not SPEC.exists(), reason=f"{SPEC} is not checked out; drift cannot be checked")
+    not SPEC.exists(), reason=f"{SPEC} not found; set DQM_SPEC to check drift")
 
 #: What the spec said when this catalogue was generated. A structural test, not
-#: a guess: if a panel is added or dropped upstream the drift test says so, and
+#: a guess: if a panel is added or dropped in the spec the drift test says so, and
 #: this number is what makes the change visible in a suite run without the
-#: sibling checkout. It counts what the catalogue ships, not what the spec
-#: holds: the spec's 48 include the three-element generic group, which has not
-#: been rendered since the Retired page was removed.
+#: spec file. It counts what the catalogue ships, not what the spec holds: the
+#: spec's 48 include the three-element generic group, which has no page here.
 EXPECTED_ELEMENTS = 45
 
 #: Every ``sketch`` the renderer must have a sentence for. From the spec's own
@@ -90,7 +93,7 @@ def test_the_recorded_sha_is_the_spec_it_was_generated_from():
     assert f'const SPEC_SHA256 = "{want}";' in CATALOGUE.read_text()
 
 
-# --- hermetic: these hold with no sibling checkout --------------------------
+# --- hermetic: these hold with no spec file --------------------------------
 
 def test_the_catalogue_literal_is_strict_json():
     """No comments, no trailing commas, no JS. The assertion is that this parses."""
@@ -113,9 +116,7 @@ def test_every_menu_page_has_a_catalogue_entry():
 
 
 def test_every_blocked_element_gives_a_reason():
-    """The source repo's R2, carried across the boundary.
-
-    This is the whole product: a panel that is empty and does not say why is
+    """This is the whole product: a panel that is empty and does not say why is
     worse than no panel.
     """
     silent = [e["id"] for e in _elements()
@@ -127,8 +128,8 @@ def test_every_dropped_element_carries_its_note():
     """A dropped panel has no blocked_by and no data -- the note is all it has.
 
     Vacuous while the spec keeps every dropped panel in the generic group, which
-    has had no page since the Retired page was removed. It guards the field a
-    dropped panel on a kept page would depend on.
+    has no page here. It guards the field a dropped panel on a kept page would
+    depend on.
     """
     silent = [e["id"] for e in _elements() if e["status"] == "dropped" and not e.get("note")]
     assert not silent, f"dropped with no note: {silent}"

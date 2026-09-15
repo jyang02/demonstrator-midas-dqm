@@ -8,9 +8,9 @@ able to affect data taking:
 
 * **No equipment and no transition callbacks.** Registering either would put
   this client in the run-transition path, where a wedged process delays a run
-  start until the watchdog reaps it. That is not hypothetical -- it is exactly
-  what the retired DQM publisher did, registering TR_START at sequence 100
-  (``docs/REGISTRY.md``). Run state is *polled* from ``/Runinfo`` instead.
+  start until the watchdog reaps it. That is not hypothetical: a monitoring
+  process that registers TR_START at a low sequence number delays every run
+  start it is slow for. Run state is *polled* from ``/Runinfo`` instead.
 * **Never ``GET_ALL``.** The event request is ``GET_NONBLOCKING``, so MIDAS
   overwrites events for this client rather than stalling the producer. One word
   is the difference between a monitor and a throttle, so it is asserted in the
@@ -42,9 +42,9 @@ from mdqm.dqm.server import Server
 
 DEFAULT_CLIENT = "mdqm_analyzer"
 
-#: The DAQ-stress counter this client watches so it can throttle itself. Named
-#: after the WaveDream frontend it was written against; the demonstrator's
-#: equivalent is whatever fesampic ends up calling its dropped-packet counter.
+#: The DAQ-stress counter this client watches so it can throttle itself. The
+#: path is a placeholder: the demonstrator's equivalent is whatever its frontend
+#: ends up calling its dropped-packet counter.
 #: A missing counter is handled, not fatal -- check_daq_health() returns
 #: quietly -- so this is safe to leave pointing at an equipment that does not
 #: exist, and --dropped-path overrides it without a rebuild.
@@ -63,9 +63,9 @@ class TokenBucket:
 
     The buffer is drained every cycle regardless -- that is free with
     GET_NONBLOCKING and keeps the read pointer current -- but only this many are
-    *decoded*. One knob, replacing the three the retired stack had
-    (num-events-per-retrieval, period-ms, serialize-every-n-events), which
-    interacted in ways nobody could predict from their names.
+    *decoded*. One knob rather than three interacting ones -- a batch size, a
+    period and a serialise-every-n -- which between them produce behaviour
+    nobody can predict from their names.
     """
 
     def __init__(self, rate: float):
@@ -318,9 +318,9 @@ class Analyzer:
         while not _stop:
             # use_numpy is not optional at these rates. Without it a 33 kB
             # TID_BYTE bank arrives as a tuple of 33,000 Python ints and
-            # bank_bytes() has to walk every one of them; wdunpack documents
-            # that shape because the offline file reader hands it over too. With
-            # it, the same bank is an ndarray and the conversion is a memcpy.
+            # converting it has to walk every one of them; the offline file
+            # reader hands over the same shape. With it, the bank is an ndarray
+            # and the conversion is a memcpy.
             event = client.receive_event(buf, async_flag=True, use_numpy=True)
             if event is None:
                 break
@@ -365,9 +365,9 @@ class Analyzer:
 #: Plugin name -> a callable taking (store, roles, binning).
 #:
 #: This was empty, on the grounds that the demonstrator had no documented bank
-#: to decode. It has one: mdqm.dqm.sampic describes AD00/AT00 against the
-#: pi_midas headers, tests/js/adbank.test.js decodes the same bytes in the
-#: browser, and the Scope page draws them out of a live buffer. What the
+#: to decode. It has one: docs/sampic-bank-layout.md specifies AD00/AT00,
+#: mdqm.dqm.sampic and tests/js/adbank.test.js decode the same bytes on either
+#: side of the boundary, and the Scope page draws them live. What the
 #: mechanism-C panels on Channels, Pulses and Physics are waiting for is a
 #: *renderer* as much as this registry -- probeAnalyzer() reports what is
 #: published, and no panel on those pages claims a renderer yet.

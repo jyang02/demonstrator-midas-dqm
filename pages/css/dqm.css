@@ -72,12 +72,11 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 /* --------------------------------------------------------------------------
    Panels rendered from the catalogue.
 
-   The mockups in demonstrator-shifter-ui lay tiles out on a 1240 px canvas by
-   shelf-packing absolute positions, because they were drawn as a picture of a
-   web application that has since been retired. That geometry is deliberately
-   not ported: it does not reflow, it does not fit inside #mmain beside the
-   sidenav, and it is not this experiment's to own. What carries over is the
-   size the design asked for, as a maximum width.
+   The design mockups lay tiles out on a 1240 px canvas by shelf-packing
+   absolute positions, because they were drawn as a picture of a web
+   application rather than as a page. That geometry is deliberately not ported:
+   it does not reflow and it does not fit inside #mmain beside the sidenav.
+   What carries over is the size the design asked for, as a maximum width.
    -------------------------------------------------------------------------- */
 
 .dqm-tile        { border-left: 3px solid var(--mgray, #ddd); padding-left: 10px;

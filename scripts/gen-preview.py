@@ -14,7 +14,7 @@ and is not vendored here, so the preview substitutes a minimal canvas plotter
 with the same call surface. A trace that looks wrong here may look fine in
 mhttpd, and vice versa.
 
-    scripts/gen-preview.py --run ~/sampic-to-midas/triumf_run108.mid -o /tmp/scope.html
+    scripts/gen-preview.py --run path/to/triumf_run108.mid -o /tmp/scope.html
 """
 
 from __future__ import annotations

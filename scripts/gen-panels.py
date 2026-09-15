@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate ``pages/js/dqm-panels.js`` from demonstrator-shifter-ui's spec.
+"""Generate ``pages/js/dqm-panels.js`` from the page spec.
 
 Why this is generated rather than typed
 ---------------------------------------
@@ -7,7 +7,7 @@ Forty-four panels each carry a label, a shift question, a reason they exist, a
 reason they are blocked and a two-part alarm sentence -- about 39 kB of prose.
 Those ``blocked_by`` strings *are* the product of this page set: they are what a
 shifter reads at 3am when a panel is empty, and they are the strings most likely
-to be edited upstream as the DAQ gets built. Copying them into seven page files
+to be edited in the spec as the DAQ gets built. Copying them into seven page files
 by hand guarantees drift, with nothing to detect it.
 
 So they are generated into one asset, and ``--check`` (which is what
@@ -23,11 +23,11 @@ sits next to the file it busts. And a fetch puts a network round trip *before*
 first paint: the page could not render a single panel until it landed, which is
 the blank-page-at-3am failure this whole design exists to avoid.
 
-Stdlib only, and it reads the spec as plain JSON rather than importing
-``render.model``, so it works against a bare copy of the file and that checkout
-is never a build dependency of this one.
+Stdlib only, and it reads the spec as plain JSON rather than importing any
+model code, so it works against a bare copy of the file and the spec is never a
+build dependency of this repository.
 
-    scripts/gen-panels.py --spec ~/demonstrator-shifter-ui/spec/dqm_shifter.json
+    scripts/gen-panels.py --spec path/to/dqm_shifter.json
     scripts/gen-panels.py --spec ... --check        # exit 1 if the file is stale
 """
 
@@ -43,13 +43,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = REPO_ROOT / "pages" / "js" / "dqm-panels.js"
 
-#: The group with no ``page`` of its own has no page here. It used to become the
-#: Retired page -- three panels the conversion decided against, kept so the
-#: decisions were not re-argued -- and that page has been removed; the group is
-#: dropped from the catalogue rather than rehomed, because a panel with nowhere
-#: to appear should not ship in a file whose every field is meant to have a
-#: reader. The spec does not declare the group a page either: ``chrome
-#: .custom_pages`` names the six real ones and stops.
+#: The group with no ``page`` of its own has no page here. It is dropped from
+#: the catalogue rather than rehomed, because a panel with nowhere to appear
+#: should not ship in a file whose every field is meant to have a reader. The
+#: spec does not declare the group a page either: ``chrome.custom_pages`` names
+#: the six real ones and stops.
 #:
 #: Passing ``--generic-page NAME`` puts it back under that name, which keeps
 #: this a flag rather than a fact, for the day the spec declares one itself.
@@ -61,7 +59,7 @@ DEFAULT_GENERIC_PAGE = None
 #: tests/test_panels.py asserts it. A shipped field nobody reads is the rot this
 #: generator exists to prevent -- which is why ``proposed_figure``, ``evidence``,
 #: ``badge`` and ``cites`` do not come across: they name types in a figure
-#: registry that the MIDAS conversion retired, so nothing here could validate
+#: registry this repository has no reader for, so nothing here could validate
 #: them and nothing here could use them.
 PANEL_FIELDS = ("id", "kind", "label", "question", "why", "status", "size",
                 "sketch", "blocked_by", "alarm", "body")
@@ -73,9 +71,9 @@ def elements_of(group: dict, generic_page: str) -> list[dict]:
         item = {k: el[k] for k in PANEL_FIELDS if el.get(k) not in (None, "", {})}
         # A dropped panel has no blocked_by -- it is not waiting for anything,
         # it was decided against. Its _note is the only thing it can say. The
-        # spec's dropped panels are all in the generic group, which no longer
-        # has a page, so this carries nothing today; it stays because the field
-        # is what a dropped panel on a kept page would have to rely on.
+        # spec's dropped panels are all in the generic group, which has no page
+        # here, so this carries nothing today; it stays because the field is
+        # what a dropped panel on a kept page would have to rely on.
         if el.get("status") == "dropped" and el.get("_note"):
             item["note"] = el["_note"]
         odb = (el.get("targets") or {}).get("odb")
@@ -131,17 +129,17 @@ TEMPLATE = '''//
 // dqm-panels.js -- the panel catalogue. GENERATED; do not edit.
 //
 // Regenerate with:
-//   scripts/gen-panels.py --spec ~/demonstrator-shifter-ui/spec/dqm_shifter.json
+//   scripts/gen-panels.py --spec path/to/dqm_shifter.json
 //
-// tests/test_panels.py regenerates and compares when that checkout is present,
-// and skips when it is not -- the optional-sibling rule the source repo uses
-// for its own extracted vocabulary. Editing this file by hand fails that test.
+// tests/test_panels.py regenerates and compares when the spec file is reachable,
+// and skips when it is not, so the spec is never a build dependency. Editing
+// this file by hand fails that test.
 //
 // Every field here has a reader in dqm-page.js or a page file, and a test says
 // so. Do not add one speculatively: a shipped field nobody reads is exactly the
 // rot this file is generated to prevent.
 //
-// source:       demonstrator-shifter-ui spec/dqm_shifter.json
+// source:       dqm_shifter.json
 // spec_version: {version}
 // sha256:       {sha}
 //
@@ -178,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--spec", required=True, type=Path,
-                    help="path to demonstrator-shifter-ui/spec/dqm_shifter.json")
+                    help="path to the page spec, dqm_shifter.json")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--generic-page", default=DEFAULT_GENERIC_PAGE,
                     help="give the group the spec names no page for a page of "

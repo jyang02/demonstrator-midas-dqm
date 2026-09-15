@@ -2,17 +2,17 @@
 // dqm-panels.js -- the panel catalogue. GENERATED; do not edit.
 //
 // Regenerate with:
-//   scripts/gen-panels.py --spec ~/demonstrator-shifter-ui/spec/dqm_shifter.json
+//   scripts/gen-panels.py --spec path/to/dqm_shifter.json
 //
-// tests/test_panels.py regenerates and compares when that checkout is present,
-// and skips when it is not -- the optional-sibling rule the source repo uses
-// for its own extracted vocabulary. Editing this file by hand fails that test.
+// tests/test_panels.py regenerates and compares when the spec file is reachable,
+// and skips when it is not, so the spec is never a build dependency. Editing
+// this file by hand fails that test.
 //
 // Every field here has a reader in dqm-page.js or a page file, and a test says
 // so. Do not add one speculatively: a shipped field nobody reads is exactly the
 // rot this file is generated to prevent.
 //
-// source:       demonstrator-shifter-ui spec/dqm_shifter.json
+// source:       dqm_shifter.json
 // spec_version: 1
 // sha256:       890c51692544c3fc7dc02b21e75ef861de474aa515ba149164edc1c4f8d739cf
 //

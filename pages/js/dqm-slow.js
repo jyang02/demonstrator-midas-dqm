@@ -221,7 +221,7 @@ DQMPage.register("temperature_sensors", async function (ctx) {
   await trend(ctx, found, true);
   ctx.body.appendChild(el("div", { class: "dqm-footnote" },
     `${found.path} — warns above ${ctx.cfg["Temp Warn C"]} °C, the same `
-    + "threshold frontend_requirements.md gives the MIDAS alarm."));
+    + "threshold the frontend requirements give the MIDAS alarm."));
 });
 
 // Referenced from the modb onload/onchange attributes above, so it has to be

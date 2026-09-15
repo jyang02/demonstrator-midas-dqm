@@ -5,20 +5,15 @@ The shifter screens for the ATAR8 demonstrator campaign at PSI πM1, built as
 stack: the pages are plain HTML and JavaScript served by the mhttpd the
 experiment already runs, on the port operators already have open.
 
-Forked from [wavedream-midas-dqm](https://github.com/jlabounty/wavedream-midas-dqm),
-which is the same architecture proven at a different experiment. `main` still
-holds that state, so `git log main..demonstrator-pages` is the whole diff. What
-carried over is the framework; what left is WaveDream's own pages and plugin.
-
-The page set is specified in `demonstrator-shifter-ui` (`spec/dqm_shifter.json`),
-and `pages/js/dqm-panels.js` is generated from it — see **Regenerating the panel
-catalogue** below.
+The page set is specified by `dqm_shifter.json`, a spec file kept outside this
+repository, and `pages/js/dqm-panels.js` is generated from it — see
+**Regenerating the panel catalogue** below.
 
 Two halves, kept apart on purpose:
 
 | generic — works at any MIDAS experiment | this experiment |
 |---|---|
-| `src/mdqm/dqm/`, `src/mdqm/install/` | `src/mdqm/plugins/` (empty — no plugin yet) |
+| the analyzer, histograms and RPC in `src/mdqm/dqm/`; `src/mdqm/install/` | `sampic.py` and `sampic_plugin.py` beside them |
 | `pages/js/dqm-common.js`, `dqm-brpc.js` | `pages/js/dqm-panels.js` and the page files |
 
 ## Install
@@ -61,13 +56,12 @@ out to be documented, so the browser decoder is written and tested against real
 bytes. Point it at a replay of an existing run and it draws today -- and the
 same bank, decoded again in the analyzer, is what Channels and Pulses draw.
 
-One blocker has since moved. `docs/sampic-bank-verification.md` records what
-`~/sampic-to-midas` settles: the physics event id, both bank names and the full
-`AD00`/`AT00` byte layout are confirmed, so Scope is waiting on a frontend
-rather than on a document. It also records what that file does **not** settle —
-its run has no ODB dump in it, so every `/Equipment` path here is still a
-proposal from `frontend_requirements.md`, which is why they are all editable
-keys.
+One blocker has since moved. `docs/sampic-bank-layout.md` is the written
+specification of `AD00`/`AT00`: the physics event id, both bank names and the
+full byte layout, so Scope waits on a frontend rather than on a document. It
+also records what is **not** settled — a recorded run carries no ODB dump, so
+every `/Equipment` path here is still a proposal, which is why they are all
+editable keys.
 
 ## Regenerating the panel catalogue
 
@@ -75,7 +69,7 @@ Every panel's title, question, blocked-reason and alarm sentence comes from the
 spec, via a generated asset:
 
 ```bash
-scripts/gen-panels.py --spec ~/demonstrator-shifter-ui/spec/dqm_shifter.json
+scripts/gen-panels.py --spec path/to/dqm_shifter.json
 ```
 
 Then bump the `?v=` on `dqm-panels.js` in every page that loads it. `--check`
@@ -117,11 +111,11 @@ itself for what they all share — seeded by the installer. With a subtree absen
 the page uses identical built-in defaults and says so, so it works on an
 experiment nobody has set up.
 
-This matters more here than it did upstream. Every `/Equipment` path these pages
-name is **proposed**, not deployed: `demonstrator-shifter-ui`'s
-`docs/frontend_requirements.md` says out loud that only the bank names and the
-run-parameter key names are the collaboration's, and that the equipment names,
-paths and types want confirming against the build actually running at PSI.
+Every `/Equipment` path these pages name is **proposed**, not deployed. The
+frontend requirements that accompany the spec say out loud that only the bank
+names and the run-parameter key names are the collaboration's, and that the
+equipment names, paths and types want confirming against the build actually
+running at PSI.
 Correcting one has to be an ODB edit during a shift, not a patch — so every
 panel that comes up empty because a configured path did not resolve offers a
 button that opens that key in the ODB editor.

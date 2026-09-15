@@ -90,7 +90,7 @@ def test_dry_run_writes_nothing(entries):
 def test_moved_checkout_heals_itself(entries):
     """A stale value that is still recognisably ours gets rewritten silently."""
     odb_name, path, _ = entries[0]
-    c = FakeClient({f"/Custom/{odb_name}": "/somewhere/else/mdqm/pages/scalars.html"})
+    c = FakeClient({f"/Custom/{odb_name}": "/somewhere/else/mdqm/pages/rates.html"})
     assert rp.register(c, entries, PAGES_DIR, replace=False, dry_run=False) == rp.EXIT_OK
     assert c.odb[f"/Custom/{odb_name}"] == str(path)
 
@@ -169,7 +169,7 @@ def test_check_reports_unreadable_and_missing(entries, capsys):
     assert rp.check(c, entries) == rp.EXIT_OK
 
     odb_name = entries[0][0]
-    c.odb[f"/Custom/{odb_name}"] = "/nonexistent/scalars.html"
+    c.odb[f"/Custom/{odb_name}"] = "/nonexistent/rates.html"
     assert rp.check(c, entries) == rp.EXIT_REFUSED
     assert "UNREADABLE" in capsys.readouterr().out
 
@@ -254,9 +254,9 @@ def test_seeding_creates_one_subtree_per_page():
 def test_seeding_creates_no_subtree_for_a_page_with_no_config(monkeypatch):
     """A /DQM key nobody reads is a key somebody will edit expecting an effect.
 
-    Every shipped page declares something today -- the one that did not was
-    Retired, which has been removed -- so the empty case is supplied here rather
-    than taken from the real defaults. The rule still holds in seed_config.
+    Every shipped page declares something today, so the empty case is supplied
+    here rather than taken from the real defaults. The rule still holds in
+    seed_config.
     """
     from mdqm.install import config_defaults
 

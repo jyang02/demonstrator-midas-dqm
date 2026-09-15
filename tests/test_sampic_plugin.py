@@ -108,9 +108,9 @@ def test_one_event_fills_every_histogram(plugin):
 def test_the_default_ranges_hold_real_looking_data(plugin):
     """The regression the corrected binning defaults exist for.
 
-    With the WaveDream ranges every entry landed in under/overflow and the plot
-    read as empty, so this asserts the edges stay clear, not merely that
-    something was filled.
+    With a range chosen for a differently shaped pulse every entry landed in
+    under/overflow and the plot read as empty, so this asserts the edges stay
+    clear, not merely that something was filled.
     """
     for ch in range(0, 12):
         plugin.process(_event([_hit(channel=ch, amplitude=-0.3 - 0.01 * ch)]))

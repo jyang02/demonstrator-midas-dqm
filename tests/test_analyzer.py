@@ -124,9 +124,8 @@ def test_the_event_request_is_non_blocking():
 def test_no_transition_callbacks_or_equipment_are_registered():
     """Either would put this client in the run-transition path.
 
-    That is exactly how the retired publisher could delay a run start: it
-    registered TR_START at sequence 100, so a wedged process held up every run
-    until the watchdog reaped it.
+    A monitoring client that registers TR_START at a low sequence number holds
+    up every run start it is slow for, until the watchdog reaps it.
     """
     src = inspect.getsource(A)
     for forbidden in ("register_transition_callback", "register_transition",

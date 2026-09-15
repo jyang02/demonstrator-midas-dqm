@@ -263,7 +263,7 @@ SCOPE_RUN_ACTIVE = 1 << 1
 SCOPE_WIDTHS_CACHED = 1 << 2
 
 VOLTS_SCALE = 1e-4
-"""Encoding mode 0: sample * this = volts. Matches wdunpack's VOLTAGE_SCALE."""
+"""Encoding mode 0: sample * this = volts."""
 
 
 def encode_scope_frame(

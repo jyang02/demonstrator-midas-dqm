@@ -3,9 +3,9 @@
 Under ``/DQM/Analyzer``, deliberately, and **not** under ``/Equipment/...``:
 the analyzer registers no equipment on purpose, because equipment would put it
 in the run-transition path where a wedged monitoring process can delay a run
-start. A settings tree under ``/Equipment/WDAnalyzer`` would imply equipment
-that does not exist. ``/DQM/Analyzer`` sits beside ``/DQM/Scalars``, which the
-scaler page already uses.
+start. A settings tree under ``/Equipment/<something>`` would imply equipment
+that does not exist. ``/DQM/Analyzer`` sits beside the pages' own subtrees under
+``/DQM``.
 
 Everything here is seeded when absent and never overwritten, so an operator's
 edits survive a restart. Changing a value takes effect within a couple of
@@ -21,9 +21,9 @@ import json
 
 ROOT = "/DQM/Analyzer"
 
-#: Which channels are what. Read by the analyzer and by the event display, from
-#: one place -- the retired stack kept this in a JSON file that the C++ stages
-#: and the browser loaded independently and could disagree about.
+#: Which channels are what. Read by the analyzer and by the event display from
+#: one place, so the two cannot disagree: split across a config file and a
+#: browser copy, this is exactly the thing that drifts.
 CHANNEL_ROLES: dict[str, object] = {
     "waveform channels": [0, 1, 2, 3, 4],
     "s1 channel": 0,
@@ -36,21 +36,20 @@ CHANNEL_ROLES: dict[str, object] = {
 
 #: Histogram binning.
 #:
-#: These were the retired C++ stages' values, kept because they record what
-#: operators found useful. That reasoning holds only for the detector they were
-#: found useful on: they describe WaveDream's negative-going pulses on a 1024-
-#: sample record, and the demonstrator's SAMPIC data is neither. Measured over
-#: 3000 events of run 108 (7036 hits, 450304 samples):
+#: A default here is only meaningful for the detector it was chosen against.
+#: These are chosen against SAMPIC data: an earlier set described a 1024-sample
+#: record with negative-going pulses about zero, which the demonstrator's data
+#: is not. Measured over 3000 events of run 108 (7036 hits, 450304 samples):
 #:
 #:     samples     -0.107 .. 0.996 V   (median 0.763)  -- not -1.0 .. 0.1
 #:     amplitude   -0.685 .. 0.179 V   (median -0.068) -- not 0.0 .. 1.0
 #:     record      64 samples, always                  -- not 1024
 #:
-#: The old ranges do not clip the SAMPIC distributions, they miss them: every
-#: entry lands in under- or overflow and the plot reads as empty. So the three
-#: that were wrong are corrected here rather than left for each operator to
-#: rediscover, and the plugin reports an ``edge_fraction`` per histogram so a
-#: range that stops fitting says so instead of going quiet.
+#: A range chosen for a different shape does not clip these distributions, it
+#: misses them: every entry lands in under- or overflow and the plot reads as
+#: empty. So they are set from the measurements above rather than left for each
+#: operator to rediscover, and the plugin reports an ``edge_fraction`` per
+#: histogram so a range that stops fitting says so instead of going quiet.
 BINNING: dict[str, object] = {
     "persistence x bins": 64,
     "persistence y bins": 110,
@@ -74,7 +73,7 @@ BINNING: dict[str, object] = {
     "phase bins": 72,
 }
 
-#: How hard the analyzer works. One knob, replacing the retired stack's three.
+#: How hard the analyzer works. One knob rather than three interacting ones.
 SAMPLING: dict[str, object] = {
     "max events per s": 20.0,
     "publish history": False,

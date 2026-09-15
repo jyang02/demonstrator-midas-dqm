@@ -5,19 +5,15 @@ Python twin that cannot drift from it: ``tests/generate_adbank_cases.py``
 encodes a set of hits here and ``tests/js/adbank.test.js`` decodes the same
 bytes there, so a field that moves on one side fails on the other.
 
-The layout is not invented and not guessed. It mirrors
-``sampic-to-midas/converter/sampic_banks.py``, which in turn cites the pi_midas
-headers it was written against -- ``sampic/EventBankUnpacker.hh`` and
-``sampic/EventTimingBankUnpacker.hh``. See
-``docs/sampic-bank-verification.md`` for what that repo confirms and what it
-does not.
+The layout is not invented and not guessed: it is written down in
+``docs/sampic-bank-layout.md``, which is the specification both decoders are
+built from and which records what recorded data does and does not settle.
 
 Two things worth knowing before reading a waveform out of here:
 
-* **the samples are already volts.** The frontend's ``.bin`` source is int16 and
-  the converter divides by 1e4 on the way in, so a decoder that scales again
-  produces a plot that is wrong by four orders of magnitude and still looks
-  plausible.
+* **the samples are already volts.** The int16 source is divided by 1e4 before
+  the bank is written, so a decoder that scales again produces a plot that is
+  wrong by four orders of magnitude and still looks plausible.
 * **the sampling period is not in the bank.** It lives in the SAMPIC ``.bin``
   header (``1e3 / sampling_freq_msps`` ns, 0.15625 ns at 6400 MS/s) and does not
   survive into MIDAS. Anything drawing a time axis has to be told it, which is
@@ -28,8 +24,8 @@ from __future__ import annotations
 
 import struct
 
-#: Bank names. pi_midas prefix-matches "AD"/"AT" and excludes "AD%"/"AT%",
-#: which belong to HDSoC.
+#: Bank names. The DAQ prefix-matches "AD"/"AT" and excludes "AD%"/"AT%",
+#: which belong to a different digitiser.
 AD_BANK = "AD00"
 AT_BANK = "AT00"
 
@@ -62,9 +58,9 @@ SCALAR_FIELDS = ("raw_tot_value", "tot_value", "amplitude", "baseline", "peak",
 AT_RECORD = struct.Struct("<QII10I")
 assert AT_RECORD.size == 56
 
-#: The converter writes this into tot_value where the standalone .bin format
-#: carries no time-over-threshold. It is a sentinel, not a measurement, and a
-#: page that plots it draws a spike at -1 ns.
+#: Written into tot_value where the standalone .bin format carries no
+#: time-over-threshold. It is a sentinel, not a measurement, and a page that
+#: plots it draws a spike at -1 ns.
 TOT_ABSENT = -1.0
 
 

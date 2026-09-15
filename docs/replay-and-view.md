@@ -25,7 +25,7 @@ cost an afternoon if you meet them the other way round.
 | `~josh/modern_midas/install` | yes | **yes** — this is the one `mhttpd` is already running from |
 
 **Do not disturb WDSCALERS.** `mhttpd -e WDSCALERS` and `mlogger -e WDSCALERS`
-have been up for days on port 8088; that is Josh's WaveDream experiment. Never
+have been up for days on port 8088; that is somebody else's experiment. Never
 replay SAMPIC events into its buffer and never register pages into its ODB. The
 recipe below builds a *separate* experiment, with its own exptab, its own shared
 memory and its own port, which cannot reach it.
@@ -69,7 +69,7 @@ mdqm-register-pages --experiment DEMODQM
 
 ### Replay
 
-`run108-slice.mid` is the first 8000 events of `sampic-to-midas/triumf_run108.mid`,
+`run108-slice.mid` is the first 8000 events of `triumf_run108.mid`,
 about 7 MB, already copied to `~/demo-dqm/`. The full 905 MB file works the same
 way. The begin-of-run record is skipped by `is_midas_internal_event()`, so the
 stub ODB payload in it is not a problem.

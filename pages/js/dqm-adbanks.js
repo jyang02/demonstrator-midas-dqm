@@ -5,9 +5,8 @@
 // out of the shared buffer and the page decodes it here, with no analyzer in
 // between. Nothing in this file talks to the network or touches the DOM.
 //
-// The layout is a Python twin of src/mdqm/dqm/sampic.py, which is itself a
-// mirror of sampic-to-midas/converter/sampic_banks.py and the pi_midas headers
-// that cites (sampic/EventBankUnpacker.hh, EventTimingBankUnpacker.hh).
+// The layout is specified in docs/sampic-bank-layout.md and has a Python twin
+// in src/mdqm/dqm/sampic.py.
 // tests/generate_adbank_cases.py encodes cases on the Python side that
 // tests/js/adbank.test.js decodes here, so a field that moves on one side fails
 // on the other -- and tests/js/ad-event-fixture.json holds real bytes out of
@@ -96,7 +95,7 @@ function decodeAD(buffer) {
     throw new Error(
       `AD00 is ${bytes.byteLength} bytes, not a multiple of ${AD_HIT_BYTES}. `
       + "This decoder and the frontend disagree about the bank layout; see "
-      + "docs/sampic-bank-verification.md.");
+      + "docs/sampic-bank-layout.md.");
   }
   const view = new DataView(bytes);
   const hits = [];

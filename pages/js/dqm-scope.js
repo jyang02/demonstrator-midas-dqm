@@ -22,9 +22,9 @@
 // says this out loud rather than letting two shifters discover it by comparing
 // screens.
 //
-// Loop shape is Stefan Ritt's, from the WaveDREAM browser scope: a chained
-// setTimeout re-armed *from the response*, never a fixed setInterval, so a slow
-// reply throttles the loop instead of stacking requests behind it.
+// Loop shape: a chained setTimeout re-armed *from the response*, never a fixed
+// setInterval, so a slow reply throttles the loop instead of stacking requests
+// behind it.
 //
 
 (function () {
@@ -313,7 +313,7 @@ function draw() {
   state.graph.redraw();
 }
 
-//: matplotlib's tab10, the set the retired DQM drew with. Channel number modulo
+//: matplotlib's tab10. Channel number modulo
 //: the palette: adjacent channels get different colours, which is what the eye
 //: needs when several are overlaid.
 const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
