@@ -541,28 +541,50 @@ test("with no orientation in the ODB the columns say only which layers they hold
 
 // --- colour carries the strip, not the channel ------------------------------
 
-test("traces are coloured and labelled by strip within the layer", async () => {
-  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
-  const page = await boot([ev], null, sampicSettings());
-  await pump(page, 3);
+test("the colour ramp runs monotonically across the whole strip range", () => {
+  // Loaded directly, with only the globals it touches at load, so the ramp can
+  // be checked across all 32 strips. Driving it through the page instead was
+  // the first attempt and it was worthless: every hit in the fixture event
+  // sits on strip 0, so the check passed with the ramp taken out entirely.
+  const saved = { DQMPage: globalThis.DQMPage, document: globalThis.document };
+  globalThis.DQMPage = { el: () => ({}), chip: () => ({}), blocked: () => ({}),
+                         register: () => {}, editButton: () => ({}) };
+  globalThis.document = { addEventListener() {}, getElementById: () => null };
+  let S;
+  try {
+    S = require(path.join(JS, "dqm-scope.js"));
+  } finally {
+    globalThis.DQMPage = saved.DQMPage;
+    globalThis.document = saved.document;
+  }
 
-  const ids = sampicSettings()["/Equipment/SAMPIC/Settings/Channel map channel id"];
-  const base = 100000, stride = 46;
-  const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-                   "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
+  const rgb = (c) => [1, 3, 5].map((i) => parseInt(c.substr(i, 2), 16));
+  const colours = [];
+  for (let strip = 0; strip <= 31; strip++) colours.push(S.stripColour(strip, 0, 31));
 
-  let checked = 0;
-  ev.decoded.hits.forEach(function (h) {
-    const index = ids[h.global_channel] - base;
-    const layer = Math.floor(index / stride), strip = index % stride;
-    const plots = page.doc.getElementById(`scope-plot-L${layer}`).mpg.param.plot;
-    const mine = plots.find((p) => p.label.startsWith(`strip ${strip}`));
-    assert.ok(mine, `no trace labelled strip ${strip} in layer ${layer}`);
-    assert.strictEqual(mine.line.color, PALETTE[strip % PALETTE.length],
-      `strip ${strip} is coloured by channel, not by strip`);
-    checked++;
+  // viridis rises monotonically in green. A categorical palette does not, which
+  // is what makes this the check that tells the two apart.
+  for (let i = 1; i < colours.length; i++) {
+    assert.ok(rgb(colours[i])[1] > rgb(colours[i - 1])[1],
+      `strip ${i} is not further along the ramp than ${i - 1}: `
+      + `${colours[i - 1]} -> ${colours[i]}`);
+  }
+
+  // Ends far apart, neighbours close: that is what "position at a glance"
+  // means, and what a modulo palette gets exactly backwards.
+  const dist = (a, b) => Math.hypot(...rgb(a).map((v, i) => v - rgb(b)[i]));
+  assert.ok(dist(colours[0], colours[31]) > 150, "the two ends look alike");
+  assert.ok(dist(colours[10], colours[11]) < 40, "neighbouring strips jump");
+
+  // Nothing pale enough to vanish on a white plot.
+  colours.forEach(function (c, strip) {
+    const [r, g, b] = rgb(c);
+    assert.ok(0.299 * r + 0.587 * g + 0.114 * b < 210,
+      `strip ${strip} is ${c}, too pale to see on white`);
   });
-  assert.ok(checked > 0);
+
+  // An unmapped channel keeps the categorical palette: no strip, no position.
+  assert.ok(S.PALETTE.includes(S.colourFor(7)));
 });
 
 test("the same strip in two layers gets the same colour", async () => {

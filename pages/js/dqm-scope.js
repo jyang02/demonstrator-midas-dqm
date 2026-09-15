@@ -110,7 +110,10 @@ async function loadChannelMap() {
     layers.add(layer);
   });
   if (!byChannel.size) return null;
+  const allStrips = Array.from(stripOfChannel.values());
   return { byChannel: byChannel, stripOf: stripOfChannel,
+           stripLo: Math.min.apply(null, allStrips),
+           stripHi: Math.max.apply(null, allStrips),
            layers: Array.from(layers).sort((a, b) => a - b),
            firstOrientation: typeof firstOrientation === "string" ? firstOrientation : null,
            source: `${base} (${byChannel.size} channels, ${layers.size} layers)` };
@@ -468,7 +471,8 @@ function draw() {
     panel.graph.param.plot.push({
       label: label, type: "scatter",
       line: { draw: true, width: 1,
-              color: colourFor(strip === null ? hit.global_channel : strip) },
+              color: strip === null ? colourFor(hit.global_channel)
+                : stripColour(strip, layerMap.stripLo, layerMap.stripHi) },
       marker: { draw: false },
       xData: cut.x, yData: cut.y,
     });
@@ -526,15 +530,51 @@ function draw() {
   panels.forEach(function (p) { p.graph.redraw(); });
 }
 
-//: matplotlib's tab10, indexed by strip number where the channel map gives one
-//: and by channel where it does not. Modulo the palette on purpose: adjacent
-//: strips get different colours, which is what the eye needs when a track
-//: crosses two neighbouring strips and both traces land in one panel. A ramp
-//: across the strip axis would read as position but make exactly that case two
-//: nearly identical lines.
+//: matplotlib's tab10. Used for a channel the map cannot place: with no strip
+//: there is no position to encode, so a categorical palette that separates
+//: neighbours is the right answer there.
 const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
                  "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
 function colourFor(ch) { return PALETTE[ch % PALETTE.length]; }
+
+//: viridis, at tenths. Perceptually uniform and colourblind-safe, so equal
+//: steps along the strip axis look like equal steps of colour and the order is
+//: readable without a key.
+const VIRIDIS = ["#440154", "#482878", "#3e4a89", "#31688e", "#26828e",
+                 "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#d8e219",
+                 "#fde725"];
+
+//: Stop short of the pale end. viridis finishes at #fde725, which is a 1px
+//: yellow line on a white plot with grey gridlines -- ordered, and invisible.
+//: 0.85 ends around a yellow-green that still reads.
+const RAMP_TOP = 0.85;
+
+function lerpHex(a, b, t) {
+  const p = (h, i) => parseInt(h.substr(1 + 2 * i, 2), 16);
+  const c = (i) => Math.round(p(a, i) + (p(b, i) - p(a, i)) * t)
+    .toString(16).padStart(2, "0");
+  return `#${c(0)}${c(1)}${c(2)}`;
+}
+
+/**
+ * Where this strip sits across its layer, as a colour.
+ *
+ * A ramp rather than a categorical palette because position is what this is
+ * for: strip 3 and strip 28 should look far apart at a glance, and two
+ * neighbouring strips should look like neighbours. The cost is the other way
+ * round from tab10 -- a track crossing two adjacent strips draws two similar
+ * lines -- so the legend still names the strip, which is what tells them apart.
+ *
+ * `lo`/`hi` are the instrumented window taken from the channel map itself, so
+ * the ramp spans the strips that exist rather than a guessed 0..45.
+ */
+function stripColour(strip, lo, hi) {
+  const span = (hi > lo) ? (hi - lo) : 1;
+  const t = Math.min(1, Math.max(0, (strip - lo) / span)) * RAMP_TOP;
+  const x = t * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(x));
+  return lerpHex(VIRIDIS[i], VIRIDIS[i + 1], x - i);
+}
 
 // ---------------------------------------------------------------------------
 // Status
@@ -742,6 +782,14 @@ function save() {
       excluded: Array.from(excluded()),
     }));
   } catch (e) { /* a preference that cannot be saved is not worth an alert */ }
+}
+
+// The colour ramp is exported so it can be tested across the whole strip range
+// rather than only across the strips one fixture event happens to light -- the
+// first attempt at testing it did exactly that, and passed with the ramp taken
+// out, because every hit in that event was on strip 0.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { stripColour, colourFor, VIRIDIS, RAMP_TOP, PALETTE };
 }
 
 })();
