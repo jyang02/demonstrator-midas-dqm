@@ -403,8 +403,47 @@ function seriesPanel(name) {
 
       // xData/yData directly rather than through BRPC.display(), which is for
       // the binned wire format and would have nothing to do here.
-      graph.param.plot[0].xData = s.channel;
-      graph.param.plot[0].yData = s.value;
+      //
+      // And then the four bounds by hand, which is the whole reason this is
+      // more than two lines. mplot computes xMin/xMax/yMin/yMax in setData()
+      // and its ODB path and nowhere else, so a plot whose data was assigned
+      // directly has them undefined -- and draw() fills the background and
+      // returns early on exactly that, leaving a uniformly white canvas with
+      // no exception, graph.error still null and a clean console. The Scope
+      // page has been caught by this before; see the same dance there.
+      const plot = graph.param.plot[0];
+      plot.xData = s.channel;
+      plot.yData = s.value;
+
+      // The x axis is every channel the analyzer knows about, not the range
+      // the data happens to span. A channel nobody has hit is the thing this
+      // tile exists to show, and it can only show it as a gap if the axis
+      // holds still while channels come and go.
+      plot.xMin = 0;
+      plot.xMax = s.channels;
+
+      let lo = 0, hi = 1;
+      if (s.value.length) {
+        lo = hi = s.value[0];
+        // A loop rather than Math.min.apply: depth is an ODB setting, and
+        // apply() on a long enough array throws rather than returning a wrong
+        // answer, which would be a fine bug to hit at 3am on a raised depth.
+        for (let i = 1; i < s.value.length; i++) {
+          if (s.value[i] < lo) lo = s.value[i];
+          if (s.value[i] > hi) hi = s.value[i];
+        }
+        // Padded so points do not sit on the frame, and never zero-height: a
+        // channel set that is perfectly flat is a real and good outcome here,
+        // and it must not collapse the axis onto itself.
+        const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.01 || 0.01;
+        lo -= pad;
+        hi += pad;
+      }
+      plot.yMin = lo;
+      plot.yMax = hi;
+
+      // calcMinMax() turns the per-plot bounds into the graph-level ones that
+      // drawYAxis() reads. Without it the axis has nothing to label.
       graph.calcMinMax();
       graph.redraw();
 
