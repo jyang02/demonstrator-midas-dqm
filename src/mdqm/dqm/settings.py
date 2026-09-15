@@ -34,16 +34,41 @@ CHANNEL_ROLES: dict[str, object] = {
     "labels": [""] * 18,
 }
 
-#: Histogram binning. Defaults are the values the retired C++ stages used, which
-#: are the record of what operators found useful -- not arbitrary starting points.
+#: Histogram binning.
+#:
+#: These were the retired C++ stages' values, kept because they record what
+#: operators found useful. That reasoning holds only for the detector they were
+#: found useful on: they describe WaveDream's negative-going pulses on a 1024-
+#: sample record, and the demonstrator's SAMPIC data is neither. Measured over
+#: 3000 events of run 108 (7036 hits, 450304 samples):
+#:
+#:     samples     -0.107 .. 0.996 V   (median 0.763)  -- not -1.0 .. 0.1
+#:     amplitude   -0.685 .. 0.179 V   (median -0.068) -- not 0.0 .. 1.0
+#:     record      64 samples, always                  -- not 1024
+#:
+#: The old ranges do not clip the SAMPIC distributions, they miss them: every
+#: entry lands in under- or overflow and the plot reads as empty. So the three
+#: that were wrong are corrected here rather than left for each operator to
+#: rediscover, and the plugin reports an ``edge_fraction`` per histogram so a
+#: range that stops fitting says so instead of going quiet.
 BINNING: dict[str, object] = {
-    "persistence x bins": 256,
+    "persistence x bins": 64,
     "persistence y bins": 110,
-    "persistence y min": -1.0,
-    "persistence y max": 0.1,
+    "persistence y min": -0.2,
+    "persistence y max": 1.0,
     "amplitude bins": 200,
-    "amplitude min": 0.0,
-    "amplitude max": 1.0,
+    "amplitude min": -0.8,
+    "amplitude max": 0.2,
+    "baseline bins": 200,
+    "baseline min": 0.0,
+    "baseline max": 1.0,
+    "noise bins": 200,
+    "noise max V": 0.05,
+    #: 0..31 in run 108; two SAMPIC chips at 16 channels each.
+    "channels": 32,
+    "max hits per event": 16,
+    #: Not read by the SAMPIC plugin -- it publishes neither a delta-t nor a
+    #: phase, and the module docstring says why. Left for the plugin that does.
     "deltat bins": 200,
     "deltat max s": 0.1,
     "phase bins": 72,

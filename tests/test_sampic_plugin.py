@@ -1,0 +1,188 @@
+"""The SAMPIC plugin, against bytes built by the encoder it decodes with.
+
+No MIDAS anywhere: the plugin duck-types the event, so these run on a machine
+with no bindings installed -- which is where they run, since the box that has
+MIDAS has no pytest and the box with pytest has no MIDAS.
+
+The events here are built with ``sampic.encode_ad``, the same function
+``tests/generate_adbank_cases.py`` uses to feed the browser decoder, so a layout
+change breaks this and the JS test together rather than either alone.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from mdqm.dqm import sampic
+from mdqm.dqm.hist import HistStore
+from mdqm.dqm.sampic_plugin import PREFIX, PRESAMPLES, SampicPlugin
+
+
+class _Bank:
+    def __init__(self, payload: bytes, numpy=True):
+        self.data = np.frombuffer(payload, dtype=np.uint8) if numpy else tuple(payload)
+
+
+class _Event:
+    """Only what the plugin touches: a banks mapping."""
+
+    def __init__(self, banks: dict):
+        self.banks = banks
+
+
+def _hit(channel=3, amplitude=-0.30, baseline=0.75, waveform=None, hit_number=1):
+    if waveform is None:
+        # Flat baseline with a negative-going dip, like the real thing.
+        waveform = [baseline] * sampic.AD_MAX_SAMPLES
+        for i in range(20, 26):
+            waveform[i] = baseline + amplitude
+    return {"channel": channel, "hit_number": hit_number, "amplitude": amplitude,
+            "baseline": baseline, "peak": baseline + amplitude,
+            "tot_value": sampic.TOT_ABSENT, "waveform": waveform}
+
+
+def _event(hits, numpy=True):
+    return _Event({sampic.AD_BANK: _Bank(sampic.encode_ad(hits), numpy=numpy)})
+
+
+@pytest.fixture
+def plugin():
+    return SampicPlugin(HistStore())
+
+
+# -- what it accepts ---------------------------------------------------------
+
+def test_accepts_an_event_with_an_ad_bank(plugin):
+    assert plugin.accepts(_event([_hit()]))
+
+
+def test_rejects_an_event_without_one(plugin):
+    """By bank, not by event id: the id is a frontend's choice."""
+    assert not plugin.accepts(_Event({"AT00": _Bank(b"")}))
+    assert not plugin.accepts(_Event({}))
+
+
+# -- the histograms it publishes ---------------------------------------------
+
+def test_publishes_exactly_its_documented_set(plugin):
+    assert plugin.store.names() == sorted([
+        f"{PREFIX}/amplitude", f"{PREFIX}/amplitude_by_channel",
+        f"{PREFIX}/baseline_by_channel", f"{PREFIX}/hits_per_event",
+        f"{PREFIX}/noise_by_channel", f"{PREFIX}/occupancy",
+        f"{PREFIX}/persistence"])
+
+
+def test_publishes_no_time_over_threshold(plugin):
+    """tot_value is the TOT_ABSENT sentinel in every hit of run 108.
+
+    A histogram of it would be a spike at -1 ns that reads as a measurement.
+    """
+    assert not [n for n in plugin.store.names() if "tot" in n.lower()]
+
+
+def test_publishes_no_time_between_hits(plugin):
+    """time_instant is identical for hits in one event: they are coincident."""
+    assert not [n for n in plugin.store.names() if "deltat" in n or "between" in n]
+
+
+# -- filling -----------------------------------------------------------------
+
+def test_one_event_fills_every_histogram(plugin):
+    assert plugin.process(_event([_hit(channel=3), _hit(channel=7)]))
+
+    occ = plugin.store.get(f"{PREFIX}/occupancy")
+    assert occ.entries == 2
+    # lo=0, hi=nch, one bin per channel: bin i+1 is channel i (0 is underflow).
+    assert occ.counts[3 + 1] == 1 and occ.counts[7 + 1] == 1
+
+    assert plugin.store.get(f"{PREFIX}/hits_per_event").entries == 1
+    assert plugin.store.get(f"{PREFIX}/amplitude").entries == 2
+    assert plugin.store.get(f"{PREFIX}/amplitude_by_channel").entries == 2
+    assert plugin.store.get(f"{PREFIX}/baseline_by_channel").entries == 2
+    assert plugin.store.get(f"{PREFIX}/noise_by_channel").entries == 2
+    # Every sample of every hit.
+    assert plugin.store.get(f"{PREFIX}/persistence").entries == 2 * sampic.AD_MAX_SAMPLES
+
+
+def test_the_default_ranges_hold_real_looking_data(plugin):
+    """The regression the corrected binning defaults exist for.
+
+    With the WaveDream ranges every entry landed in under/overflow and the plot
+    read as empty, so this asserts the edges stay clear, not merely that
+    something was filled.
+    """
+    for ch in range(0, 12):
+        plugin.process(_event([_hit(channel=ch, amplitude=-0.3 - 0.01 * ch)]))
+
+    edges = plugin.status()["edge_fraction"]
+    for name, fraction in edges.items():
+        assert fraction == 0.0, f"{name} put {fraction:.2%} of its entries off-axis"
+
+
+def test_hits_are_truncated_to_data_size_not_padded(plugin):
+    """A short record must not contribute the zero tail to persistence."""
+    plugin.process(_event([_hit(waveform=[0.75] * 20)]))
+    assert plugin.store.get(f"{PREFIX}/persistence").entries == 20
+
+
+def test_a_hit_too_short_to_measure_noise_is_skipped_not_guessed(plugin):
+    plugin.process(_event([_hit(waveform=[0.75] * (PRESAMPLES - 1))]))
+    assert plugin.store.get(f"{PREFIX}/noise_by_channel").entries == 0
+    # ...but it still counts everywhere it can be counted.
+    assert plugin.store.get(f"{PREFIX}/occupancy").entries == 1
+
+
+def test_an_empty_bank_counts_the_event_and_fills_nothing(plugin):
+    assert plugin.process(_event([]))
+    assert plugin.store.get(f"{PREFIX}/hits_per_event").counts[0 + 1] == 1
+    assert plugin.store.get(f"{PREFIX}/occupancy").entries == 0
+
+
+def test_bank_data_as_a_plain_sequence_decodes_the_same(plugin):
+    """use_numpy=True is what the analyzer asks for; not requiring it is free."""
+    plugin.process(_event([_hit(channel=5)], numpy=False))
+    assert plugin.store.get(f"{PREFIX}/occupancy").counts[5 + 1] == 1
+
+
+# -- failure is reported, not raised -----------------------------------------
+
+def test_a_bank_the_decoder_disagrees_with_is_counted_not_raised(plugin):
+    """One malformed event must not take down the only live monitor."""
+    bad = _Event({sampic.AD_BANK: _Bank(b"\x00" * (sampic.AD_HIT_BYTES + 1))})
+    assert plugin.process(bad) is False
+    assert plugin.bad_banks == 1
+    assert "not a multiple" in plugin.status()["last_error"]
+    # Still usable afterwards.
+    assert plugin.process(_event([_hit()]))
+    assert plugin.status()["events"] == 1
+
+
+# -- rebinning ---------------------------------------------------------------
+
+def test_reconfigure_rebuilds_and_therefore_resets(plugin):
+    plugin.process(_event([_hit()]))
+    assert plugin.store.get(f"{PREFIX}/occupancy").entries == 1
+
+    plugin.reconfigure({}, {**SampicPlugin.DEFAULT_BINNING, "channels": 64})
+    occ = plugin.store.get(f"{PREFIX}/occupancy")
+    assert occ.x.n == 64
+    assert occ.entries == 0, "a histogram with different bins is a different histogram"
+    assert len(plugin.store) == 7, "rebuilt in place, not added alongside"
+
+
+def test_reconfigure_falls_back_for_a_key_an_operator_deleted(plugin):
+    """settings.read never raises; neither may this."""
+    plugin.reconfigure({}, {"channels": 8})
+    assert plugin.store.get(f"{PREFIX}/occupancy").x.n == 8
+    assert plugin.store.get(f"{PREFIX}/amplitude").x.n == \
+        SampicPlugin.DEFAULT_BINNING["amplitude bins"]
+
+
+def test_status_reports_what_it_decoded(plugin):
+    plugin.process(_event([_hit(), _hit(channel=9)]))
+    plugin.process(_event([_hit()]))
+    status = plugin.status()
+    assert status["plugin"] == "sampic"
+    assert (status["events"], status["hits"]) == (2, 3)
+    assert status["hits_per_event"] == 1.5

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The DQM analyzer: a MIDAS client that samples events and serves histograms.
 
-    mdqm-analyzer --experiment pim1 --plugin <none are built in yet>
+    mdqm-analyzer --experiment pim1 --plugin sampic
 
 What it deliberately does NOT do, because a monitoring process must never be
 able to affect data taking:
@@ -37,6 +37,7 @@ import midas.client
 
 from mdqm.dqm import settings as odb_settings
 from mdqm.dqm.hist import HistStore
+from mdqm.dqm.sampic_plugin import SampicPlugin
 from mdqm.dqm.server import Server
 
 DEFAULT_CLIENT = "mdqm_analyzer"
@@ -361,14 +362,16 @@ class Analyzer:
         return midas.status_codes["SUCCESS"], ctypes.create_string_buffer(blob, len(blob))
 
 
-#: Plugin name -> a callable taking (store, roles, binning). Empty on purpose.
+#: Plugin name -> a callable taking (store, roles, binning).
 #:
-#: The demonstrator has no analyzer, because it has no documented bank to
-#: decode. That is not an oversight to be papered over with a stub: every
-#: mechanism-C panel on Channels, Pulses and Physics is blocked precisely
-#: because this registry is empty, and those pages check it at load rather than
-#: assert it. A plugin lands here the day somebody writes one.
-PLUGINS: dict = {}
+#: This was empty, on the grounds that the demonstrator had no documented bank
+#: to decode. It has one: mdqm.dqm.sampic describes AD00/AT00 against the
+#: pi_midas headers, tests/js/adbank.test.js decodes the same bytes in the
+#: browser, and the Scope page draws them out of a live buffer. What the
+#: mechanism-C panels on Channels, Pulses and Physics are waiting for is a
+#: *renderer* as much as this registry -- probeAnalyzer() reports what is
+#: published, and no panel on those pages claims a renderer yet.
+PLUGINS: dict = {SampicPlugin.name: SampicPlugin}
 
 
 def make_plugin_factory(name, roles=None, binning=None):
@@ -384,8 +387,8 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--experiment", default=os.environ.get("MIDAS_EXPT_NAME"))
     ap.add_argument("--client", default=DEFAULT_CLIENT)
-    ap.add_argument("--plugin", default=None,
-                    help="which analysis plugin to run; none are built in yet")
+    ap.add_argument("--plugin", default=SampicPlugin.name,
+                    help="which analysis plugin to run")
     ap.add_argument("--buffer", default="SYSTEM")
     ap.add_argument("--rate", type=float, default=20.0,
                     help="events per second to decode; the buffer is drained regardless")

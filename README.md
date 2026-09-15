@@ -34,9 +34,9 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
 | **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
-| **Channels** | Is every channel behaving? | analyzer | the bank, and the analyzer client nobody has started |
-| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above, plus an energy calibration with an owner |
-| **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding |
+| **Channels** | Is every channel behaving? | analyzer | **analyzer built** — `sampic` publishes occupancy, baseline, noise and multiplicity; the panels wait on renderers |
+| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above for persistence and amplitude; "what it is worth" still wants an energy calibration with an owner |
+| **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
 
 Forty of the forty-one panels are blocked, and **every one of them says so
@@ -152,9 +152,9 @@ replay a recorded run into it so the Scope page has events to draw.
 ### Working without a detector
 
 `scripts/replay-run.py` feeds a recorded run file into a live event buffer, so
-everything downstream of the buffer — the Scope page, and the analyzer when one
-exists — can be developed and tested against real events on a machine with no
-hardware attached:
+everything downstream of the buffer — the Scope page and the analyzer alike —
+can be developed and tested against real events on a machine with no hardware
+attached:
 
 ```bash
 scripts/replay-run.py run00201.mid.lz4 --rate 15 --loop --event-id 401
@@ -167,6 +167,33 @@ With the run stopped, mlogger is not reading the buffer and nothing reaches disk
 
 `--loop` matters for the time base: the DRS cell-width table rides only the run's
 *first* event, so restarting the file is the only way to see one again.
+
+### Running the analyzer against that replay
+
+`mdqm-analyzer` samples the same buffer and serves accumulated histograms over
+binary RPC. The `sampic` plugin decodes AD00 with `mdqm.dqm.sampic` -- the same
+layout the Scope page decodes in the browser -- and publishes seven histograms:
+
+```bash
+mdqm-analyzer --experiment DEMODQM --plugin sampic
+```
+
+It publishes occupancy, hits per event, amplitude (flat and by channel),
+baseline by channel, noise by channel, and a persistence plot. It deliberately
+publishes no time-over-threshold and no time-between-hits: `tot_value` is the
+`TOT_ABSENT` sentinel in every hit of run 108, and hits within an event share a
+`time_instant`, so both would be spikes that read as measurements. The module
+docstring lists the rest of what the data will not support.
+
+The panels on Channels and Pulses still show their empty state, because naming a
+histogram in `/DQM/<page>/Histograms` tells the page what to *ask for* and not
+how to draw it -- no panel on those pages claims a renderer yet. What changes
+today is the footnote: it goes from "nothing is running under that name" to
+naming what the analyzer publishes.
+
+Each plugin owns the binning its detector needs. `status()` reports an
+`edge_fraction` per histogram -- the share of entries in under/overflow -- so a
+range that does not fit the data says so instead of drawing an empty plot.
 
 ### Checking every page without a detector
 
