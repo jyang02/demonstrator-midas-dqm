@@ -19,6 +19,8 @@ globalThis.DQMPanels = require(path.join(JS, "dqm-panels.js"));
 globalThis.ADBanks = require(path.join(JS, "dqm-adbanks.js"));
 
 const REAL = JSON.parse(fs.readFileSync(path.join(__dirname, "ad-event-fixture.json"), "utf8"));
+const DEMO = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "demonstrator-event-fixture.json"), "utf8"));
 
 function buf(b64) {
   const b = Buffer.from(b64, "base64");
@@ -265,3 +267,50 @@ for (const id of ["calo_waveforms", "event_display_position", "event_display_ene
       globalThis.DQMPanels.BY_ID[id].blocked_by.trim());
   });
 }
+
+
+// --- a demonstrator event, four boards deep ---------------------------------
+
+test("a multi-board demonstrator event draws one trace per readout channel", async () => {
+  // Four FE boards in one event. Keyed on `channel` this drew every board's
+  // channel 5 onto one panel in one colour, and offered one checkbox that
+  // silently unticked all four.
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  assert.ok(ev, "no fixture event spans three boards");
+  const page = await boot([ev]);
+  await pump(page, 2);
+
+  assert.strictEqual(text(page, "scope-nhits"), String(ev.decoded.nhits));
+  assert.match(text(page, "scope-banks"), /AC00/, "the collector bank is not reported");
+
+  const labels = graphOf(page).param.plot.map((p) => p.label);
+  assert.strictEqual(labels.length, ev.decoded.nhits, "a hit lost its trace");
+  ev.decoded.channels.forEach(function (ch) {
+    assert.ok(labels.some((l) => l.startsWith(`ch ${ch}`)), `no trace for ch ${ch}`);
+  });
+
+  // Distinct channels get distinct colours: the board-local bug gave two
+  // boards' channel 5 the same one.
+  const colours = graphOf(page).param.plot.map((p) => p.line.color);
+  assert.strictEqual(new Set(colours).size, new Set(labels).size,
+    "two readout channels share a colour");
+
+  const rows = page.doc.getElementById("raw-table").byTag("tr");
+  assert.strictEqual(rows.length, ev.decoded.nhits + 1);
+});
+
+test("unticking one board's channel leaves the other boards drawn", async () => {
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev]);
+  await pump(page, 2);
+
+  const before = graphOf(page).param.plot.length;
+  const boxes = page.doc.getElementById("scope-channels").byTag("input");
+  assert.strictEqual(boxes.length, ev.decoded.channels.length,
+    "one checkbox per readout channel, not per board-local number");
+  boxes[0].checked = false;
+  boxes[0].dispatch("change");
+
+  assert.strictEqual(graphOf(page).param.plot.length, before - 1,
+    "unticking one channel removed more or fewer than one trace");
+});

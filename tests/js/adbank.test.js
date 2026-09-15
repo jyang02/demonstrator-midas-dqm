@@ -5,7 +5,12 @@
 //   adbank-cases.json     encoded by mdqm.dqm.sampic, regenerated every Python
 //                         run, so the two implementations cannot drift;
 //   ad-event-fixture.json real events out of run 108, so "the layout is right"
-//                         is not a claim this repo checks only against itself.
+//                         is not a claim this repo checks only against itself;
+//   demonstrator-event-fixture.json
+//                         real events out of a demonstrator file: four FE
+//                         boards, AC00 present, AT00 telemetry filled. Run 108
+//                         is single-board with neither, so it cannot reach any
+//                         of that.
 //
 // The failure this file exists to catch is the one the spec's own blocker names:
 // "a silent field-order change gives a plot that draws and is wrong". Every
@@ -21,6 +26,8 @@ const AD = require(path.join(__dirname, "..", "..", "pages", "js", "dqm-adbanks.
 
 const CASES = JSON.parse(fs.readFileSync(path.join(__dirname, "adbank-cases.json"), "utf8"));
 const REAL = JSON.parse(fs.readFileSync(path.join(__dirname, "ad-event-fixture.json"), "utf8"));
+const DEMO = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "demonstrator-event-fixture.json"), "utf8"));
 
 function buf(b64) {
   const bytes = Buffer.from(b64, "base64");
@@ -265,3 +272,48 @@ test("the bank names are configurable, since only the default is confirmed", () 
   assert.strictEqual(out.haveAD, true);
   assert.strictEqual(out.hits.length, ev.decoded.nhits);
 });
+
+
+// --- real demonstrator bytes: four boards, AC00, filled telemetry ------------
+
+for (const ev of DEMO.events) {
+  const d = ev.decoded;
+  test(`demonstrator event ${ev.serial}: ${d.nhits} hits across boards ${d.boards}`, () => {
+    const banks = {};
+    for (const [name, b64] of Object.entries(ev.banks_b64)) banks[name] = buf(b64);
+
+    const out = AD.decodeEvent(banks, {});
+    assert.ok(out.haveAD && out.haveAT && out.haveAC, "a bank did not decode");
+    assert.strictEqual(out.hits.length, d.nhits);
+
+    // The whole point of this fixture: more than one board in one event, which
+    // `channel` alone cannot represent.
+    assert.ok(d.boards.length > 1, "fixture event does not span boards");
+    assert.deepStrictEqual(out.channels, d.channels);
+    assert.deepStrictEqual(
+      Array.from(new Set(out.hits.map((h) => h.fe_board_index))).sort((a, b) => a - b),
+      d.boards);
+    out.hits.forEach(function (h, i) {
+      assert.strictEqual(h.global_channel, d.hits[i].global_channel);
+    });
+
+    // The invariant a mismatched event would break.
+    assert.strictEqual(out.collector.total_hits, out.hits.length);
+    assert.strictEqual(out.timing.nhits, out.hits.length);
+    assert.strictEqual(out.collector.total_us,
+      out.collector.wait_us + out.collector.group_build_us + out.collector.finalize_us);
+
+    // Telemetry is filled here, where run 108 has it all zero.
+    assert.ok(out.timing.sp_total_us_sum > 0, "telemetry is zero in a generated file");
+    assert.strictEqual(out.timing.sp_total_us_sum, d.timing.sp_total_us_sum);
+    assert.ok(out.timing.sp_total_us_max <= out.timing.sp_total_us_sum);
+
+    // And the waveforms are still volts, negative-going, 64 slots.
+    out.hits.forEach(function (h) {
+      assert.strictEqual(h.waveform.length, 64);
+      assert.ok(h.amplitude < 0, "demonstrator pulses are negative-going");
+      assert.strictEqual(h.tot_value, AD.TOT_ABSENT);
+      h.waveform.forEach((v) => assert.ok(v > -0.2 && v < 1.1, `${v} is not volts`));
+    });
+  });
+}
