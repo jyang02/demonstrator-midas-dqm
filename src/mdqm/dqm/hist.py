@@ -153,6 +153,137 @@ class Hist2D:
         }
 
 
+class RollingHist2D:
+    """A Hist2D over roughly the last ``cap`` events, not the whole run.
+
+    Some plots answer "what is happening" and some answer "what happened". A
+    persistence plot and an amplitude spectrum are the first kind: a shifter
+    looks at them to see the pulse shape the detector is producing *now*, and a
+    sum over an eight-hour run answers a question nobody asked while burying
+    any change under the weight of everything before it.
+
+    Kept as two halves rather than a ring of events, which is the whole trick.
+    Storing the last N events to subtract them later would mean keeping every
+    sample of every hit -- megabytes, and a second copy of the decode. Instead
+    one half is filled while the other is held, and they swap when the filling
+    half has taken ``cap // 2`` events. What is served is the sum, so the window
+    holds between ``cap // 2`` and ``cap`` events and never less.
+
+    That is why ``cap`` is a cap and not a window length: the count in the plot
+    varies by a factor of two under a fixed setting, and the one thing that can
+    honestly be promised is the ceiling. ``metadata()`` reports the real count
+    so the page can show it rather than implying the setting is the answer.
+
+    The alternative -- clear everything every N events -- was rejected for one
+    concrete reason: it empties the plot in front of whoever is watching it, and
+    an empty plot on a monitoring page reads as a fault. This never shows fewer
+    than half a window.
+    """
+
+    def __init__(self, name: str, x: Axis, y: Axis, title: str = "",
+                 cap: int = 1000, clear_on_run_start: bool = True):
+        self.name = name
+        self.title = title
+        self.clear_on_run_start = clear_on_run_start
+        # Both halves share the Axis objects, which is safe because an Axis is
+        # read-only once built and is never rebound -- a rebinning replaces the
+        # whole RollingHist2D, the same way it replaces a Hist2D.
+        self.active = Hist2D(name, x, y, title)
+        self.retired = Hist2D(name, x, y, title)
+        self.events = 0
+        # How many events are in the half being held. Tracked rather than
+        # assumed to be `half`, because set_cap() can swap early and leave a
+        # short half behind, and window_events is reported to the shifter.
+        self.retired_events = 0
+        self.swaps = 0
+        self.set_cap(cap)
+
+    # -- the knob ------------------------------------------------------------
+
+    def set_cap(self, cap) -> None:
+        """Adopt a new cap. Never resets, and takes effect at the next swap.
+
+        Lowering it below what the filling half already holds swaps at once, so
+        a shifter who cuts the cap sees something happen rather than waiting out
+        the old one. Raising it just lets the current half run on.
+
+        The half already being held is not re-cut either way -- it would mean
+        throwing away the newest data to honour a number sooner -- so for up to
+        one swap after a cut the window can still be larger than the new cap.
+        ``window`` in the metadata is the real count throughout, which is the
+        reason the page shows that and not the setting.
+        """
+        self.cap = max(2, int(cap))
+        self.half = max(1, self.cap // 2)
+        if self.events >= self.half:
+            self._swap()
+
+    def _swap(self) -> None:
+        self.active, self.retired = self.retired, self.active
+        self.active.clear()
+        self.retired_events = self.events
+        self.events = 0
+        self.swaps += 1
+
+    # -- the Hist2D surface --------------------------------------------------
+
+    def fill(self, xs, ys) -> None:
+        self.active.fill(xs, ys)
+
+    def note_event(self) -> None:
+        """One event has been processed. Swap when this half has had its share."""
+        self.events += 1
+        if self.events >= self.half:
+            self._swap()
+
+    @property
+    def counts(self) -> np.ndarray:
+        return self.active.counts + self.retired.counts
+
+    @property
+    def entries(self) -> int:
+        return self.active.entries + self.retired.entries
+
+    @property
+    def dropped(self) -> int:
+        return self.active.dropped + self.retired.dropped
+
+    @property
+    def x(self) -> Axis:
+        return self.active.x
+
+    @property
+    def y(self) -> Axis:
+        return self.active.y
+
+    @property
+    def window_events(self) -> int:
+        """Events actually in what is being served, which is what to report."""
+        return self.events + self.retired_events
+
+    def clear(self) -> None:
+        self.active.clear()
+        self.retired.clear()
+        self.events = 0
+        self.retired_events = 0
+
+    def encode(self) -> bytes:
+        return framing.encode_histogram(
+            self.counts, [(self.x.lo, self.x.hi), (self.y.lo, self.y.hi)], self.entries)
+
+    def metadata(self) -> dict:
+        meta = self.active.metadata()
+        meta["entries"] = self.entries
+        meta["dropped"] = self.dropped
+        # The page shows these beside the plot. "cap" is the setting and
+        # "window" is what is really in there; showing only the first would
+        # claim a number the plot does not have.
+        meta["cap"] = self.cap
+        meta["window"] = self.window_events
+        meta["rolling"] = True
+        return meta
+
+
 class HistStore:
     """The analyzer's histograms, by name.
 

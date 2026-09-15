@@ -73,6 +73,16 @@ BINNING: dict[str, object] = {
     "phase bins": 72,
 }
 
+#: How many events the rolling plots keep. The shifter's knob, and the reason
+#: it is its own section rather than another entry under Binning: changing a bin
+#: count has to throw away what has been accumulated, and changing how far back
+#: a plot looks must not. Only the histograms named here roll; everything else
+#: accumulates for the whole run.
+WINDOW: dict[str, object] = {
+    "persistence events": 1000,
+    "amplitude by channel events": 1000,
+}
+
 #: How hard the analyzer works. One knob rather than three interacting ones.
 SAMPLING: dict[str, object] = {
     "max events per s": 20.0,
@@ -82,6 +92,7 @@ SAMPLING: dict[str, object] = {
 SECTIONS = {
     "Channel roles": CHANNEL_ROLES,
     "Binning": BINNING,
+    "Window": WINDOW,
     "Sampling": SAMPLING,
 }
 

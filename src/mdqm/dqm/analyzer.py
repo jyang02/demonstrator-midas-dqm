@@ -219,8 +219,16 @@ class Analyzer:
         # left the analyzer running on defaults while *reporting* the ODB values
         # in its status -- plots that disagreed with the configuration they
         # claimed, which is worse than plots that are merely wrong.
+        # Before the rebuild branch, and outside it. A cap change must reach the
+        # plugin on its own -- it is not a shape change and deliberately does
+        # not appear in binning_fingerprint, so nothing else here would carry
+        # it. Cheap enough to push on every apply rather than diffing it.
+        if hasattr(self.plugin, "set_window"):
+            self.plugin.set_window(new.get("Window", {}))
+
         if changed_shape and hasattr(self.plugin, "reconfigure"):
-            self.plugin.reconfigure(new["Channel roles"], new["Binning"])
+            self.plugin.reconfigure(new["Channel roles"], new["Binning"],
+                                    new.get("Window", {}))
             self.reconfigures += 1
             if first:
                 print(f"{DEFAULT_CLIENT}: applied binning from {odb_settings.ROOT}",

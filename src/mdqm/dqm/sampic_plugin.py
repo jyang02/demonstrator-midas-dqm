@@ -69,7 +69,7 @@ import time
 import numpy as np
 
 from mdqm.dqm import sampic
-from mdqm.dqm.hist import Axis, Hist1D, Hist2D
+from mdqm.dqm.hist import Axis, Hist1D, Hist2D, RollingHist2D
 
 #: How many leading samples the noise estimate uses. The pulse is well clear of
 #: the start of the record in this format -- the earliest minimum measured in
@@ -271,10 +271,30 @@ class SampicPlugin:
         "recent per channel": 10,
     }
 
-    def __init__(self, store, roles=None, binning=None):
+    #: Event caps for the two rolling plots. Overridden from /DQM/Analyzer/Window
+    #: as soon as the analyzer is connected. Keyed by setting name; the histogram
+    #: each one drives is in _WINDOW_OF.
+    DEFAULT_WINDOW: dict[str, int] = {
+        "persistence events": 1000,
+        "amplitude by channel events": 1000,
+    }
+
+    #: setting name -> the histogram it caps. One place, so set_window() and
+    #: _build() cannot drift apart about which plots roll.
+    _WINDOW_OF: dict[str, str] = {
+        "persistence events": f"{PREFIX}/persistence",
+        "amplitude by channel events": f"{PREFIX}/amplitude_by_channel",
+    }
+
+    @property
+    def _rolling_names(self) -> list[str]:
+        return list(self._WINDOW_OF.values())
+
+    def __init__(self, store, roles=None, binning=None, window=None):
         self.store = store
         self.roles = dict(roles or {})
         self.binning = {**self.DEFAULT_BINNING, **(binning or {})}
+        self.window = {**self.DEFAULT_WINDOW, **(window or {})}
         self.events = 0
         self.hits = 0
         self.bad_banks = 0
@@ -320,17 +340,19 @@ class SampicPlugin:
             Axis(int(b["amplitude bins"]), float(b["amplitude min"]),
                  float(b["amplitude max"]), "amplitude (V)"),
             "Pulse amplitude"))
-        self.store.add(Hist2D(
+        self.store.add(RollingHist2D(
             f"{PREFIX}/amplitude_by_channel", chan(),
             Axis(int(b["amplitude bins"]), float(b["amplitude min"]),
                  float(b["amplitude max"]), "amplitude (V)"),
-            "Amplitude by channel"))
-        self.store.add(Hist2D(
+            "Amplitude by channel",
+            cap=int(self.window["amplitude by channel events"])))
+        self.store.add(RollingHist2D(
             f"{PREFIX}/persistence",
             Axis(int(b["persistence x bins"]), 0.0, float(sampic.AD_MAX_SAMPLES), "sample"),
             Axis(int(b["persistence y bins"]), float(b["persistence y min"]),
                  float(b["persistence y max"]), "V"),
-            "All waveforms, overlaid"))
+            "All waveforms, overlaid",
+            cap=int(self.window["persistence events"])))
 
         # Not histograms. See RecentByChannel: what these two tiles are asked
         # is where a channel is sitting now, which a sum over the run cannot
@@ -347,7 +369,7 @@ class SampicPlugin:
                 f"(RMS of the first {PRESAMPLES} samples)", "RMS (V)"),
         }
 
-    def reconfigure(self, roles, binning) -> None:
+    def reconfigure(self, roles, binning, window=None) -> None:
         """A histogram with different bins is a different histogram.
 
         Dropped and rebuilt rather than re-binned, which is the contract
@@ -356,6 +378,7 @@ class SampicPlugin:
         """
         self.roles = dict(roles or {})
         self.binning = {**self.DEFAULT_BINNING, **(binning or {})}
+        self.window = {**self.DEFAULT_WINDOW, **(window or {})}
         for name in self._names():
             self.store.remove(name)
         # The rings go the same way and for the same reason: a ring of a
@@ -363,6 +386,20 @@ class SampicPlugin:
         # a new depth would mix two settings in one plot without saying so.
         self.recent = {}
         self._build()
+
+    def set_window(self, window) -> None:
+        """Adopt new event caps in place.
+
+        Deliberately not a reconfigure. A cap says how far back a plot looks,
+        not what shape it is, so changing it must not throw away what is in
+        there -- which is exactly what rebuilding would do, and what a shifter
+        nudging a number on a page would least expect.
+        """
+        self.window = {**self.DEFAULT_WINDOW, **(window or {})}
+        for key, name in self._WINDOW_OF.items():
+            hist = self.store.get(name)
+            if hist is not None and hasattr(hist, "set_cap"):
+                hist.set_cap(int(self.window[key]))
 
     # -- the event path ------------------------------------------------------
 
@@ -397,6 +434,7 @@ class SampicPlugin:
         self._check_counts(event, len(hits))
         self.store.get(f"{PREFIX}/hits_per_event").fill([len(hits)])
         if not hits:
+            self._advance_window()
             return True
 
         channels = _global_channels(hits)
@@ -431,9 +469,31 @@ class SampicPlugin:
                 np.concatenate(persist_x), np.concatenate(persist_y))
         if noise:
             self.recent[f"{PREFIX}/noise_by_channel"].add(noise_ch, noise, now)
+        self._advance_window()
         return True
 
     # -- what the page shows about the analyzer ------------------------------
+
+    def _advance_window(self) -> None:
+        """Tell the rolling plots one event has been through.
+
+        After the fills, not before, and that ordering is the whole of it: a
+        swap between the two would put this event's data in the fresh half
+        while its count went to the half just retired, and the window count and
+        the entry count would disagree by one for the rest of the run. Caught by
+        test_a_rolling_plot_forgets_events_past_its_cap, which asserts they
+        agree.
+
+        Per event rather than per hit, and called on the empty-bank path too: an
+        event with no hits is still an event the window has seen, and a window
+        that only advanced on busy events would quietly reach further back the
+        quieter the run got -- exactly when a shifter is looking to see whether
+        anything has changed.
+        """
+        for name in self._rolling_names:
+            hist = self.store.get(name)
+            if hist is not None and hasattr(hist, "note_event"):
+                hist.note_event()
 
     def _check_counts(self, event, nhits: int) -> None:
         """Three statements of one number, from three levels of the DAQ.

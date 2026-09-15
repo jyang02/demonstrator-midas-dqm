@@ -337,3 +337,67 @@ def test_a_malformed_timing_bank_counts_as_a_bad_bank(plugin):
     assert "AC00" in st["last_error"]
     assert st["collector_seen"] == 0
     assert st["hits"] == 1
+
+
+# ---------------------------------------------------------------------------
+# The rolling window on persistence and amplitude by channel
+# ---------------------------------------------------------------------------
+
+def test_the_rolling_plots_are_capped_and_the_rest_are_not(plugin):
+    """Only the two plots a shifter reads as "now" roll."""
+    rolling = [n for n in plugin.store.names()
+               if hasattr(plugin.store.get(n), "set_cap")]
+    assert rolling == [f"{PREFIX}/amplitude_by_channel", f"{PREFIX}/persistence"]
+
+
+def test_a_rolling_plot_forgets_events_past_its_cap(plugin):
+    """The point of the cap: an old event must stop counting."""
+    plugin.set_window({"amplitude by channel events": 10})
+    amp = plugin.store.get(f"{PREFIX}/amplitude_by_channel")
+
+    for _ in range(200):
+        plugin.process(_event([_hit(channel=3)]))
+
+    # One hit an event, so entries would be 200 if it accumulated for the run.
+    assert amp.entries <= 10, "the cap is a ceiling, not a suggestion"
+    assert amp.entries >= 5, "and it must never fall below half a window"
+    assert amp.window_events == amp.entries
+
+
+def test_an_empty_event_still_advances_the_window(plugin):
+    """Otherwise a quiet run silently looks further back than a busy one."""
+    plugin.set_window({"persistence events": 10})
+    pers = plugin.store.get(f"{PREFIX}/persistence")
+    before = pers.swaps
+    for _ in range(20):
+        plugin.process(_event([]))
+    assert pers.swaps > before
+
+
+def test_changing_the_cap_does_not_reset_the_plot(plugin):
+    """A cap says how far back to look, not what shape to be.
+
+    Rebuilding on a cap change would empty the plot under whoever was reading
+    it, which is the thing a shifter nudging a number would least expect.
+    """
+    plugin.set_window({"amplitude by channel events": 1000})
+    for _ in range(20):
+        plugin.process(_event([_hit(channel=3)]))
+    amp = plugin.store.get(f"{PREFIX}/amplitude_by_channel")
+    assert amp.entries == 20
+
+    plugin.set_window({"amplitude by channel events": 900})
+    assert plugin.store.get(f"{PREFIX}/amplitude_by_channel") is amp, "not rebuilt"
+    assert amp.entries == 20, "and not cleared"
+    assert amp.cap == 900
+
+
+def test_the_metadata_reports_the_real_count_and_the_cap(plugin):
+    """They differ by up to a factor of two, so the page is told both."""
+    plugin.set_window({"persistence events": 100})
+    for _ in range(10):
+        plugin.process(_event([_hit()]))
+    meta = plugin.store.get(f"{PREFIX}/persistence").metadata()
+    assert meta["rolling"] is True
+    assert meta["cap"] == 100
+    assert meta["window"] == 10

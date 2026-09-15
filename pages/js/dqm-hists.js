@@ -94,6 +94,15 @@ const SERIES = {
 //:
 //: The 1D tiles are not in here and always draw: occupancy and hits per event
 //: are a few hundred bins and have never been the problem.
+//: Histogram -> the /DQM/Analyzer/Window key that caps it. The page offers an
+//: Edit button straight to that path, which is the whole of "configurable by
+//: the shifter": the analyzer re-reads /DQM/Analyzer every couple of seconds
+//: and adopts a new cap without a restart and without resetting the plot.
+const WINDOW_KEY = {
+  "sampic/persistence": "persistence events",
+  "sampic/amplitude_by_channel": "amplitude by channel events",
+};
+
 const TWO_D = new Set([
   "amplitude_by_channel",
   "pulse_persistence",
@@ -181,9 +190,14 @@ function histPanel(name, twoD) {
 
     const entries = el("span", {}, "—");
     const cadence = el("span", { class: "dqm-chip", id: `${name}-cadence` }, "");
+    // Written only for a rolling histogram, and by the same argument the
+    // cadence chip is always written: a plot showing the last thousand events
+    // and a plot showing the whole run look identical, and the difference
+    // decides what a shifter concludes from it.
+    const windowChip = el("span", { class: "dqm-chip", id: `${name}-window` }, "");
     const strip = el("div", { class: "dqm-strip" },
       chip("histogram", el("code", {}, name)),
-      chip("entries", entries), cadence);
+      chip("entries", entries), cadence, windowChip);
     ctx.body.appendChild(strip);
 
     // The off state, built before the plot so it reads above it. Kept in the
@@ -206,6 +220,7 @@ function histPanel(name, twoD) {
 
     let graph = null;
     let drawn = false;
+    let rolling = false;
 
     async function build() {
       // Titles come from dqm::metadata rather than being repeated here: the
@@ -213,6 +228,15 @@ function histPanel(name, twoD) {
       // second thing to update when a binning changes.
       const meta = await BRPC.json(client, "dqm::metadata", name);
       const axes = (meta && meta.axes) || [];
+      rolling = !!(meta && meta.rolling);
+      if (rolling) {
+        // The path is the one a shifter edits, so it is offered rather than
+        // described. dlgOdbEdit is what every other configurable value on
+        // these pages uses.
+        const path = `${DQM.CONFIG_ROOT}/Analyzer/Window/${WINDOW_KEY[name] || ""}`;
+        windowChip.appendChild(el("span", {}, ""));
+        windowChip.appendChild(editButton(path, "events"));
+      }
       graph = new MPlotGraph(plotDiv, {
         title: { text: (meta && meta.title) || name },
         stats: { show: false },
@@ -267,6 +291,22 @@ function histPanel(name, twoD) {
       BRPC.display(hist, graph, 0);
       drawn = true;
       entries.textContent = String(hist.entries);
+      if (rolling) {
+        // dqm::metadata rather than the histogram payload, because the wire
+        // format carries counts and an entry total and has nowhere to put a
+        // window. One small JSON call on the tile's own cadence.
+        const m = await BRPC.json(client, "dqm::metadata", name);
+        if (m && m.rolling) {
+          // The count that is actually in the plot, not the setting. They are
+          // different by up to a factor of two by construction, and claiming
+          // the setting would be claiming a number the plot does not have.
+          windowChip.firstChild.textContent = `last ${m.window} of max ${m.cap} `;
+          windowChip.title = `A rolling plot: it holds the most recent events `
+            + `rather than the whole run, and swaps half a window at a time, so `
+            + `the count sits between half the cap and the cap. Edit the cap at `
+            + `${DQM.CONFIG_ROOT}/Analyzer/Window.`;
+        }
+      }
       note.className = "dqm-note";
       note.textContent = hist.entries
         ? ""
