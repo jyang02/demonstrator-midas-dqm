@@ -235,7 +235,10 @@ function histPanel(name, twoD) {
         // these pages uses.
         const path = `${DQM.CONFIG_ROOT}/Analyzer/Window/${WINDOW_KEY[name] || ""}`;
         windowChip.appendChild(el("span", {}, ""));
-        windowChip.appendChild(editButton(path, "events"));
+        // "Edit cap" and not "events": a button whose label is a word from the
+        // sentence beside it reads as part of the sentence, which is how the
+        // one knob on this page manages to be invisible.
+        windowChip.appendChild(editButton(path, "Edit cap"));
       }
       graph = new MPlotGraph(plotDiv, {
         title: { text: (meta && meta.title) || name },
@@ -300,7 +303,7 @@ function histPanel(name, twoD) {
           // The count that is actually in the plot, not the setting. They are
           // different by up to a factor of two by construction, and claiming
           // the setting would be claiming a number the plot does not have.
-          windowChip.firstChild.textContent = `last ${m.window} of max ${m.cap} `;
+          windowChip.firstChild.textContent = `last ${m.window} of max ${m.cap} events `;
           windowChip.title = `A rolling plot: it holds the most recent events `
             + `rather than the whole run, and swaps half a window at a time, so `
             + `the count sits between half the cap and the cap. Edit the cap at `
