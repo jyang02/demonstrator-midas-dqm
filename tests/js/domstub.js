@@ -48,6 +48,10 @@ class El {
     return c;
   }
   get firstChild() { return this.children.length ? this.children[0] : null; }
+  // The DOM spells this parentNode; the stub stored it as `parent` and page
+  // code reaching for the standard name got undefined, which surfaces as a
+  // TypeError three frames from the cause.
+  get parentNode() { return this.parent || null; }
   remove() {
     if (!this.parent) return;
     const i = this.parent.children.indexOf(this);

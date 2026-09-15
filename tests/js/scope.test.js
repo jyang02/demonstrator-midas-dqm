@@ -47,7 +47,29 @@ function asEvent(ev) {
  * the stub distinguishes them the way mhttpd does: a reply carrying `result` is
  * the empty case, one without it is an event.
  */
-async function boot(events, cfgOverrides) {
+//: /Equipment/SAMPIC/Settings as a demonstrator file's frontend publishes it:
+//: the channel map and the geometry that encoded it. 8 layers x 32 channels,
+//: stride 46, exactly what demonstrator/odb.py writes.
+function sampicSettings(nLayers, perLayer, stride, base) {
+  nLayers = nLayers || 8; perLayer = perLayer || 32;
+  stride = stride || 46; base = base || 100000;
+  const ids = [], det = [];
+  for (let L = 0; L < nLayers; L++) {
+    for (let sIdx = 0; sIdx < perLayer; sIdx++) {
+      ids.push(base + L * stride + sIdx);
+      det.push("atar");
+    }
+  }
+  return {
+    "/Equipment/SAMPIC/Settings/Channel map channel id": ids,
+    "/Equipment/SAMPIC/Settings/Channel map detector": det,
+    "/Equipment/SAMPIC/Settings/Atar pixel id base": base,
+    "/Equipment/SAMPIC/Settings/Atar strips per layer": stride,
+    "/Equipment/SAMPIC/Settings/Atar n layers": nLayers,
+  };
+}
+
+async function boot(events, cfgOverrides, odbExtra) {
   const queue = (events || []).slice();
   globalThis.bkToObj = (rpc) => rpc.__event;
   globalThis.localStorage = {
@@ -60,9 +82,12 @@ async function boot(events, cfgOverrides) {
   const page = runPage(path.join(JS, "dqm-page.js"), {
     db_get_values: (p) => ({
       // /DQM/Scope comes back seeded; /DQM itself does not, which is the usual
-      // half-configured state and exercises the merge.
-      data: p.paths.map((x) => (x.endsWith("/Scope") ? cfg : null)),
-      status: p.paths.map((x) => (x.endsWith("/Scope") ? 1 : 312)),
+      // half-configured state and exercises the merge. Anything in `odbExtra`
+      // answers as itself, which is how the SAMPIC settings get in.
+      data: p.paths.map((x) => (x.endsWith("/Scope") ? cfg
+        : (odbExtra && x in odbExtra) ? odbExtra[x] : null)),
+      status: p.paths.map((x) => (x.endsWith("/Scope") ? 1
+        : (odbExtra && x in odbExtra) ? 1 : 312)),
     }),
     db_ls: (p) => ({ data: p.paths.map(() => null) }),
     hs_get_events: () => ({ events: [] }),
@@ -371,4 +396,75 @@ test("a collector that disagrees with the banks it collected is reported", async
   const page2 = await boot([bad]);
   await pump(page2, 2);
   assert.match(text(page2, "scope-status"), /AC00 collected 99 hits but AD00 carries/);
+});
+
+
+// --- one panel per ATAR layer -----------------------------------------------
+
+test("with the map in the ODB, the traces split into one panel per layer", async () => {
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+
+  assert.match(text(page, "scope-layers"), /One panel per ATAR layer/);
+  const host = page.doc.getElementById("scope-layer-panels");
+  assert.ok(host, "no layer panels were built");
+  const panels = host.byClass("dqm-scope-plot");
+  assert.strictEqual(panels.length, 8, "one panel per layer of the map");
+
+  // Every hit is drawn exactly once, somewhere.
+  const drawn = panels.flatMap((d) => d.mpg.param.plot)
+    .filter((p) => p.xData.length).map((p) => p.label);
+  assert.strictEqual(drawn.length, ev.decoded.nhits,
+    "a hit was dropped or drawn twice when routed to a layer");
+  assert.strictEqual(new Set(drawn).size, drawn.length);
+
+  // And in the right one: layer = (channel_id - base) / stride.
+  const base = 100000, stride = 46;
+  ev.decoded.hits.forEach(function (h) {
+    const id = sampicSettings()["/Equipment/SAMPIC/Settings/Channel map channel id"]
+      [h.global_channel];
+    const layer = Math.floor((id - base) / stride);
+    const labels = panels[layer].mpg.param.plot.map((p) => p.label);
+    assert.ok(labels.some((l) => l.startsWith(`ch ${h.global_channel}`)),
+      `ch ${h.global_channel} is not in layer ${layer}`);
+  });
+});
+
+test("a layer with no hits keeps its panel rather than renumbering the rest", async () => {
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+
+  const panels = page.doc.getElementById("scope-layer-panels").byClass("dqm-scope-plot");
+  const empty = panels.filter((d) => d.mpg.param.plot.every((p) => !p.xData.length));
+  assert.ok(empty.length > 0, "this event should not light every layer");
+  empty.forEach(function (d) {
+    assert.strictEqual(d.mpg.param.plot.length, 1, "an empty panel still needs axes");
+    assert.match(d.mpg.param.plot[0].label, /no hits/);
+  });
+});
+
+test("without the geometry in the ODB the page stays on one panel and says why", async () => {
+  const ev = DEMO.events[0];
+  // The channel ids, but not the numbers that decode them -- which is what an
+  // older file, or another experiment's frontend, would publish.
+  const partial = sampicSettings();
+  delete partial["/Equipment/SAMPIC/Settings/Atar strips per layer"];
+  const page = await boot([ev], null, partial);
+  await pump(page, 3);
+
+  assert.strictEqual(page.doc.getElementById("scope-layer-panels"), null,
+    "layers were invented from a map that cannot be decoded");
+  assert.match(text(page, "scope-layers"), /cannot be guessed/);
+  const plots = graphOf(page).param.plot.filter((p) => p.xData.length);
+  assert.strictEqual(plots.length, ev.decoded.nhits, "the single panel lost hits");
+});
+
+test("run 108, whose frontend published nothing, is unchanged", async () => {
+  const ev = REAL.events[3];
+  const page = await boot([ev]);
+  await pump(page, 3);
+  assert.strictEqual(page.doc.getElementById("scope-layer-panels"), null);
+  assert.strictEqual(graphOf(page).param.plot.length, ev.decoded.nhits);
 });

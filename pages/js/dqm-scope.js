@@ -54,6 +54,68 @@ const STORE = "dqm-scope-settings";
 //: the page says so rather than silently dropping any.
 const BUSY_OVERLAY = 8;
 
+//: Channel -> layer, read from /Equipment/SAMPIC/Settings once at load.
+//:
+//: null until loadChannelMap() has answered, and it stays null when the
+//: settings are not there -- which is the honest state for a file whose
+//: frontend never wrote them. The page then draws one panel, as it always did.
+let layerMap = null;
+
+/**
+ * Which layer each readout channel is in, or null if the ODB does not say.
+ *
+ * Two things are needed and BOTH have to come from the ODB: the channel ids
+ * themselves, and the geometry that encoded them. A pim1 pixel id becomes
+ * (layer, strip) only under the base and the stride it was made with, so
+ * guessing the stride gives the wrong layer and the wrong strip while looking
+ * entirely plausible -- 56 of 256 channels move if 48 is assumed where the
+ * file used 46. There is no default here for that reason: no geometry in the
+ * ODB means no layer view, and the panel says so.
+ */
+async function loadChannelMap() {
+  const base = "/Equipment/SAMPIC/Settings";
+  let v;
+  try {
+    v = await DQM.getODB([
+      `${base}/Channel map channel id`,
+      `${base}/Channel map detector`,
+      `${base}/Atar pixel id base`,
+      `${base}/Atar strips per layer`,
+      `${base}/Atar n layers`,
+    ]);
+  } catch (e) {
+    return null;
+  }
+  const [ids, detectors, pixelBase, stride, nLayers] = v || [];
+  if (!Array.isArray(ids) || !ids.length) return null;
+  if (!Number.isFinite(Number(pixelBase)) || !(Number(stride) > 0)) return null;
+
+  const byChannel = new Map();
+  const layers = new Set();
+  ids.forEach(function (id, i) {
+    // Only channels the map calls ATAR have a layer; anything else is on the
+    // same digitiser but is not a strip.
+    const det = Array.isArray(detectors) ? detectors[i] : "atar";
+    if (det && String(det).toLowerCase() !== "atar") return;
+    const index = Number(id) - Number(pixelBase);
+    if (!(index >= 0)) return;
+    const layer = Math.floor(index / Number(stride));
+    if (Number(nLayers) > 0 && layer >= Number(nLayers)) return;
+    byChannel.set(i, layer);
+    layers.add(layer);
+  });
+  if (!byChannel.size) return null;
+  return { byChannel: byChannel, layers: Array.from(layers).sort((a, b) => a - b),
+           source: `${base} (${byChannel.size} channels, ${layers.size} layers)` };
+}
+
+//: The layer a hit belongs to, or null when the map does not cover it.
+function layerOf(hit) {
+  if (!layerMap) return null;
+  const l = layerMap.byChannel.get(hit.global_channel);
+  return l === undefined ? null : l;
+}
+
 // ---------------------------------------------------------------------------
 // atar_raw_waveforms -- the traces
 // ---------------------------------------------------------------------------
@@ -73,6 +135,9 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
   ctx.body.appendChild(el("div", { class: "dqm-strip", id: "scope-channels" }));
   ctx.body.appendChild(el("div", { class: "dqm-note", id: "scope-status" },
     "Waiting for an event…"));
+
+  ctx.body.appendChild(el("div", { class: "dqm-note", id: "scope-layers" },
+    "Reading the channel map…"));
 
   const plot = el("div", { class: "dqm-scope-plot", id: "scope-plot" });
   ctx.body.appendChild(plot);
@@ -102,8 +167,27 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
       plot: [],
     });
     plot.mpg = state.graph;            // reachable from the console and the tests
+    state.graphs = [{ layer: null, graph: state.graph, div: plot }];
     state.graph.resize();
     state.graph.draw();
+
+    // One panel per layer, if the ODB says which channels are in which. Built
+    // after the single graph above rather than instead of it, so a file whose
+    // frontend published no settings keeps exactly the page it had.
+    loadChannelMap().then(function (map) {
+      layerMap = map;
+      if (!map) {
+        const note = document.getElementById("scope-layers");
+        if (note) {
+          note.textContent = "One panel for every channel: /Equipment/SAMPIC/"
+            + "Settings carries no ATAR geometry, and which layer a channel is "
+            + "in cannot be guessed from the bank.";
+        }
+        return;
+      }
+      buildLayerPanels(ctx.body, plot, map);
+      if (state.event) draw();
+    });
     // An event can easily arrive before this timeout runs -- the poll starts
     // immediately below and mhttpd may well answer first. Without this, the
     // first event is decoded, counted, tabulated and never plotted.
@@ -116,6 +200,48 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
     if (!document.hidden && state.running && !state.timer) poll();
   });
 });
+
+/**
+ * Replace the single plot with one per layer.
+ *
+ * The all-channels graph is kept as the panel for anything the map does not
+ * place -- a channel on this digitiser that is not an ATAR strip still has
+ * waveforms worth seeing, and dropping it silently would be the page hiding
+ * hits. It is only shown when such a hit actually turns up.
+ */
+function buildLayerPanels(body, firstPlot, map) {
+  const note = document.getElementById("scope-layers");
+  if (note) note.textContent = `One panel per ATAR layer, from ${map.source}.`;
+
+  state.graphs = [];
+  const host = el("div", { id: "scope-layer-panels" });
+  body.insertBefore(host, firstPlot);
+
+  map.layers.forEach(function (layer) {
+    const title = el("div", { class: "dqm-subhead" }, `Layer ${layer}`);
+    const div = el("div", { class: "dqm-scope-plot", id: `scope-plot-L${layer}` });
+    host.appendChild(title);
+    host.appendChild(div);
+    const g = new MPlotGraph(div, {
+      title: { text: "" },
+      stats: { show: false },
+      legend: { show: true },
+      mouseWheelZoom: true,
+      xAxis: { title: { text: xAxisTitle() } },
+      yAxis: { title: { text: "V" } },
+      plot: [],
+    });
+    div.mpg = g;
+    g.resize();
+    g.draw();
+    state.graphs.push({ layer: layer, graph: g, div: div });
+  });
+
+  // The unmapped panel goes last and starts hidden.
+  firstPlot.hidden = true;
+  state.graphs.push({ layer: null, graph: state.graph, div: firstPlot });
+}
+
 
 function pauseButton() {
   const b = el("button", { class: "mbutton", id: "scope-pause" }, "Pause");
@@ -258,11 +384,18 @@ function draw() {
   // Rebuild the plot list rather than updating in place: mplot's deletePlot
   // splices findPlot()'s return with no check, so removing a label that is not
   // there alerts the operator and then deletes the wrong trace.
-  state.graph.param.plot = [];
+  const panels = state.graphs || [{ layer: null, graph: state.graph, div: null }];
+  panels.forEach(function (p) { p.graph.param.plot = []; p.used = false; });
+  const byLayer = new Map(panels.map((p) => [p.layer, p]));
+  const fallback = byLayer.get(null);
   const drawn = [];
 
   state.event.hits.forEach(function (hit) {
     if (excluded().has(hit.global_channel)) return;
+    // Its layer's panel, or the all-channels one for a channel the map does
+    // not place. Never dropped: a hit the page does not draw is a hit nobody
+    // sees.
+    const panel = byLayer.get(layerOf(hit)) || fallback;
     // With no period configured, plot against sample index rather than a row of
     // zeros: an honest axis in the wrong unit beats every point stacked at x=0.
     const xs = dt ? ADBanks.sampleTimes(hit, dt)
@@ -271,16 +404,31 @@ function draw() {
     // format does not silently become a 4000-point polyline per channel.
     const cut = ADBanks.minMaxDecimate(xs, hit.waveform, 600);
     const label = `ch ${hit.global_channel}${hit.hit_number ? ` #${hit.hit_number}` : ""}`;
-    state.graph.param.plot.push({
+    panel.graph.param.plot.push({
       label: label, type: "scatter",
       line: { draw: true, width: 1, color: colourFor(hit.global_channel) },
       marker: { draw: false },
       xData: cut.x, yData: cut.y,
     });
+    panel.used = true;
     drawn.push(label);
   });
 
-  if (!drawn.length) {
+  // A layer with no hit this event keeps its panel and its axes -- an empty
+  // panel in a row of eight says "nothing here this time", where a vanishing
+  // one makes the layers renumber themselves between events. The unmapped
+  // panel is the exception: it appears only when something needs it.
+  panels.forEach(function (p) {
+    if (p.layer === null && p.div) p.div.hidden = state.graphs && !p.used;
+    if (p.used || p.graph.param.plot.length) return;
+    p.graph.param.plot.push({
+      label: p.layer === null ? "no unmapped channels" : `layer ${p.layer}: no hits`,
+      type: "scatter", line: { draw: true, width: 1 }, marker: { draw: false },
+      xData: [], yData: [], xMin: 0, xMax: 1, yMin: 0, yMax: 1,
+    });
+  });
+
+  if (!drawn.length && !state.graphs) {
     // An empty plot rather than none at all: mplot with a zero-length plot list
     // draws no axes either, and a panel with no axes reads as broken rather
     // than as "no channel selected".
@@ -299,19 +447,21 @@ function draw() {
   // returns immediately after painting the background -- a white panel with no
   // axes, no trace and no error raised anywhere, which is this page set's own
   // stated failure mode arriving by a different door.
-  state.graph.param.plot.forEach(function (p) {
-    if (!p.xData.length) return;
-    p.xMin = Math.min.apply(null, p.xData);
-    p.xMax = Math.max.apply(null, p.xData);
-    p.yMin = Math.min.apply(null, p.yData);
-    p.yMax = Math.max.apply(null, p.yData);
+  panels.forEach(function (panel) {
+    panel.graph.param.plot.forEach(function (p) {
+      if (!p.xData.length) return;
+      p.xMin = Math.min.apply(null, p.xData);
+      p.xMax = Math.max.apply(null, p.xData);
+      p.yMin = Math.min.apply(null, p.yData);
+      p.yMax = Math.max.apply(null, p.yData);
+    });
+    // ...and calcMinMax() turns those per-plot bounds into the graph-level
+    // this.xMin/this.yMax that drawYAxis() needs.
+    panel.graph.calcMinMax();
   });
-  // ...and calcMinMax() turns those per-plot bounds into the graph-level
-  // this.xMin/this.yMax that drawYAxis() needs.
-  state.graph.calcMinMax();
 
   state.busy = drawn.length > BUSY_OVERLAY;
-  state.graph.redraw();
+  panels.forEach(function (p) { p.graph.redraw(); });
 }
 
 //: matplotlib's tab10. Channel number modulo

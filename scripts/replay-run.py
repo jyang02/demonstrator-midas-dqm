@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import os
 import signal
+import struct
 import sys
 import time
 from pathlib import Path
@@ -103,6 +104,90 @@ def _client_names(client, path: str) -> list[str]:
         if isinstance(name, str):
             names.append(name)
     return names
+
+
+#: Subtrees of a run file's ODB dump worth publishing into the replay
+#: experiment. Deliberately not the whole dump: /Runinfo and /Logger describe a
+#: run that is not happening, and writing them would have the page believe a
+#: replay is a run.
+PUBLISH_SUBTREES = ("/Equipment",)
+
+
+def read_bor_odb(path: Path):
+    """The run file's begin-of-run ODB dump, parsed, or None.
+
+    A real frontend writes its Settings into the ODB and mlogger copies them
+    into the BOR record. A replay has no frontend, so the experiment it feeds
+    has an empty /Equipment and every page that reads a Setting is blocked --
+    not because the information is missing, but because it is sitting in the
+    file rather than in the ODB. This takes it back out.
+
+    Only files whose dump is real JSON have one. The .bin/.root repackagers
+    write a stub payload that is not JSON, and this returns None for them
+    rather than failing: the replay still works, the pages just stay blocked
+    as they were.
+    """
+    import json
+    with open(path, "rb") as fh:
+        head = fh.read(16)
+        if len(head) < 16:
+            return None
+        event_id, _mask, _serial, _time, data_size = struct.unpack("<HHIII", head)
+        if event_id != 0x8000:
+            return None
+        payload = fh.read(data_size)
+    try:
+        text = payload.decode("utf-8").rstrip("\x00 \t\r\n\v\f")
+    except UnicodeDecodeError:
+        return None
+    if not text.lstrip().startswith("{"):
+        return None
+    try:
+        tree = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return tree if isinstance(tree, dict) else None
+
+
+def publish_odb(client, tree, dry_run: bool = False) -> int:
+    """Write the dump's /Equipment subtree into the live ODB, leaf at a time.
+
+    Leaf at a time by full path, for the reason register_pages does the same:
+    odb_set on a subtree carries remove_unspecified_keys=True and would delete
+    whatever else is there. The "<name>/key" metadata siblings are MIDAS's own
+    and are skipped -- the ODB rebuilds them from the values.
+    """
+    written = 0
+
+    def walk(node, path):
+        nonlocal written
+        for name, value in node.items():
+            if name.endswith("/key"):
+                continue
+            full = f"{path}/{name}"
+            if isinstance(value, dict):
+                walk(value, full)
+                continue
+            # A hex-family leaf is a "0x..." string in the dump and an integer
+            # in the ODB; anything else goes across as it is.
+            if isinstance(value, str) and value.startswith("0x"):
+                try:
+                    value = int(value, 16)
+                except ValueError:
+                    pass
+            if not dry_run:
+                client.odb_set(full, value)
+            written += 1
+
+    for sub in PUBLISH_SUBTREES:
+        node = tree
+        for part in sub.strip("/").split("/"):
+            node = node.get(part) if isinstance(node, dict) else None
+            if node is None:
+                break
+        if isinstance(node, dict):
+            walk(node, sub)
+    return written
 
 
 def replay(path: Path, client, buf, rate: float, limit: int | None,
@@ -171,6 +256,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--event-id", type=int, action="append", default=None,
                     help="only replay these event ids (repeatable)")
     ap.add_argument("--max-event-size", type=int, default=8 * 1024 * 1024)
+    ap.add_argument("--no-publish-odb", action="store_true",
+                    help="do not copy the run file's /Equipment settings into "
+                         "the experiment ODB")
     ap.add_argument("--allow-during-run", action="store_true",
                     help="inject even with a run active -- see the safety note")
     ap.add_argument("--quiet", action="store_true")
@@ -198,6 +286,17 @@ def main(argv: list[str] | None = None) -> int:
 
         buf = client.open_event_buffer(args.buffer, None, args.max_event_size)
         warn_about_stale_readers(client, args.buffer)
+
+        if not args.no_publish_odb:
+            tree = read_bor_odb(args.run_file)
+            if tree is None:
+                if not args.quiet:
+                    print("  no JSON ODB dump in this file; /Equipment left as it is")
+            else:
+                n = publish_odb(client, tree)
+                if not args.quiet:
+                    print(f"  published {n} ODB values from the file's "
+                          f"begin-of-run dump into {', '.join(PUBLISH_SUBTREES)}")
 
         if not args.quiet:
             ids = "all" if args.event_id is None else args.event_id
