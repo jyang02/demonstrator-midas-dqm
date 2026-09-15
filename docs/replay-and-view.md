@@ -3,7 +3,8 @@
 The Scope page decodes one event out of a live event buffer, so seeing it work
 needs three things: a MIDAS with `mplot.js`, an experiment, and something putting
 `AD00` banks into a buffer. There is no detector, so the third is a replay of an
-existing run file.
+existing run file. Channels and Pulses need a fourth, an analyzer, because a
+histogram is accumulated across events and the browser only ever sees one.
 
 ## Without MIDAS at all
 
@@ -14,8 +15,9 @@ judging layout, decoded numbers and empty states, and not for judging the plot.
 
 ## On pionline (192.168.40.106)
 
-Everything needed is already installed there. Two traps first, both of which
-cost an afternoon if you meet them the other way round.
+MIDAS, firefox and geckodriver are all installed there; Python packaging is
+not, which the setup below works around rather than fixes. Three traps first,
+each of which costs an afternoon if you meet it the other way round.
 
 **Use the right MIDAS.** There are two.
 
@@ -37,52 +39,127 @@ from anywhere else, or keep `PYTHONPATH` pointing at the real bindings as below.
 
 ### One-time setup
 
+The environment is long enough that retyping it is its own source of bugs, so
+put it in a file and source it at the top of every step. This assumes the clone
+is at `~/demonstrator-midas-dqm`; point `REPO` wherever yours actually landed.
+
 ```bash
 ssh pioneer@192.168.40.106
+mkdir -p ~/demo-dqm/expt
 
+cat > ~/demo-dqm/env.sh <<'EOF'
 export MIDASSYS=/home/pioneer/josh/modern_midas/install
 export PATH=$MIDASSYS/bin:$PATH
 export LD_LIBRARY_PATH=$MIDASSYS/lib:$LD_LIBRARY_PATH
-export PYTHONPATH=/home/pioneer/josh/modern_midas/midas/python
-export MIDAS_EXPTAB=~/demo-dqm/exptab
+export REPO=/home/pioneer/demonstrator-midas-dqm
+export PYTHONPATH=$REPO/src:/home/pioneer/josh/modern_midas/midas/python
+export MIDAS_EXPTAB=/home/pioneer/demo-dqm/exptab
 export MIDAS_EXPT_NAME=DEMODQM
+EOF
 
-mkdir -p ~/demo-dqm/expt
 echo "DEMODQM /home/pioneer/demo-dqm/expt pioneer" > ~/demo-dqm/exptab
 
+source ~/demo-dqm/env.sh
 cd ~/demo-dqm/expt
 odbedit -e DEMODQM -c "ls"          # creates the ODB on first run
+```
+
+**`mhttpd -p 8090` will not work.** This build takes its port from the ODB and
+refuses both `-p` and the `--http` in its own help text; `/Experiment/midas http
+port` is obsolete in it and logs an error if you set it. The key does not exist
+until `mhttpd` has run once and created `/WebServer`, so the first start is on
+the default 8080 and is meant to be thrown away:
+
+```bash
+mhttpd -e DEMODQM &                 # creates /WebServer, binds 8080
+sleep 3 && kill $!
 
 # Port 8090, not 8088: 8088 is WDSCALERS.
-mhttpd -e DEMODQM -p 8090 &
+odbedit -e DEMODQM -c 'set "/WebServer/localhost port" 8090'
+mhttpd -e DEMODQM & echo $! > ~/demo-dqm/mhttpd.pid
 ```
+
+Keep the pid. Cleaning up by pattern is a trap of its own -- see below.
 
 ### Register the pages
 
+**There is no `pip` on that box, and no `ensurepip`,** so `pip install -e .`
+cannot work and the `mdqm-*` console scripts never get created. Skip the install
+and call the entry points as modules; `PYTHONPATH` from `env.sh` already has
+`src` on it. The box Python is 3.10 against a `requires-python = ">=3.11"` in
+`pyproject.toml`, which only an installer would have enforced -- registration and
+replay both run fine on 3.10.
+
 ```bash
-cd ~/demo-dqm/repo
-pip install --user -e .
-mdqm-register-pages --experiment DEMODQM --list       # 16 keys, all absolute
-mdqm-register-pages --experiment DEMODQM --dry-run    # says what it would write
-mdqm-register-pages --experiment DEMODQM
+source ~/demo-dqm/env.sh
+cd $REPO                            # not ~, or `import midas` finds the build tree
+python3 -m mdqm.install.register_pages --experiment DEMODQM --list      # 16 keys, all absolute
+python3 -m mdqm.install.register_pages --experiment DEMODQM --dry-run   # says what it would write
+python3 -m mdqm.install.register_pages --experiment DEMODQM
 ```
+
+Worth running after *every* `git pull` and after moving the checkout: the keys
+are absolute paths into your working tree, and registration is idempotent
+precisely so that a moved checkout heals itself. A `/Custom` left pointing at a
+directory that no longer exists is a 404 on all six pages at once.
+
+### Get a run file onto the box
+
+Nothing replays without data, and **the cleanup step at the bottom of this page
+deletes it**, so expect to do this again. `triumf_run108.mid` is 905 MB and lives
+on the machine the data was made on, not on pionline. Cut a slice there and copy
+that instead:
+
+```bash
+# on the dev box, where triumf_run108.mid is
+scripts/slice-run.py triumf_run108.mid run108-slice.mid --events 8000
+scp run108-slice.mid pioneer@192.168.40.106:~/demo-dqm/
+```
+
+8000 events is 7.3 MB and copies in about a second. The slice is a byte-for-byte
+prefix, so the replay cannot tell it from the full file; `slice-run.py` needs
+nothing but the standard library, which is what lets it run on a box with no
+MIDAS. The begin-of-run record is event 0 and is kept; `is_midas_internal_event()`
+skips it on the way into the buffer, so its stub ODB payload is not a problem.
 
 ### Replay
 
-`run108-slice.mid` is the first 8000 events of `triumf_run108.mid`,
-about 7 MB, already copied to `~/demo-dqm/`. The full 905 MB file works the same
-way. The begin-of-run record is skipped by `is_midas_internal_event()`, so the
-stub ODB payload in it is not a problem.
-
 ```bash
-cd ~/demo-dqm/repo
-scripts/replay-run.py ~/demo-dqm/run108-slice.mid --experiment DEMODQM \
-    --rate 5 --loop --client-name demo_replay
+source ~/demo-dqm/env.sh
+cd $REPO
+python3 scripts/replay-run.py ~/demo-dqm/run108-slice.mid --experiment DEMODQM \
+    --rate 5 --loop --client-name demo_replay &
+echo $! > ~/demo-dqm/replay.pid
 ```
 
 `--loop` restarts at the end. `--rate 5` is well under what the page polls at, so
 every event gets looked at; raise it to see the page keep up. The script refuses
 to run while a run is active, which on a fresh experiment it is not.
+
+### The analyzer
+
+Channels and Pulses are blocked without one. It needs numpy, **which the system
+Python does not have** -- and since there is no pip, it cannot be given any. The
+only interpreters on that box with both numpy and working MIDAS bindings belong
+to Josh. Running one read-only is fine; do not install anything into them.
+
+```bash
+source ~/demo-dqm/env.sh
+cd $REPO
+/home/pioneer/josh/slowdash/venv/bin/python3 -m mdqm.dqm.analyzer \
+    --experiment DEMODQM --client mdqm_analyzer &
+echo $! > ~/demo-dqm/analyzer.pid
+```
+
+`~josh/miniconda/install/envs/pion313/bin/python` works equally well, but Josh's
+own analyzer runs on it against WDSCALERS -- using the other one keeps the two
+processes apart in `ps`, which is worth the nothing it costs.
+
+It should say it seeded `/DQM/Analyzer` and is serving 7 histograms. Note that
+`mdqm.dqm` is shared infrastructure: Josh runs this same analyzer continuously
+against WDSCALERS, but from his own checkout with its own settings and its own
+ODB, so our `/DQM` edits cannot reach him. Confirm that again before changing
+anything under `src/mdqm/dqm/`.
 
 ### Look at it
 
@@ -94,23 +171,63 @@ ssh -N -L 8090:localhost:8090 pioneer@192.168.40.106
 
 Then open <http://localhost:8090/?cmd=custom&page=Scope>. The waveform panel
 should show a trace per hit, the raw-event table the decoded hit scalars, and
-the status line the event serial and hit count. The other four pages are in the
-side menu and will all be explaining themselves, since that experiment has no
-equipment.
+the status line the event serial and hit count.
 
 ### What to expect on the other pages
 
-| page | on a bare DEMODQM |
+With the replay and the analyzer both up:
+
+| page | on DEMODQM |
 |---|---|
 | Rates | `midas_event_rate` lists the replay client's equipment if it registers any; otherwise "no equipment is registered" |
 | Scope | **live** from the replay |
-| Channels / Pulses / Physics | every panel blocked, each naming the analyzer it asked for and got no answer from |
+| Channels | **live**: hits per event, baseline and noise by channel, occupancy |
+| Pulses | **live**: persistence and amplitude by channel |
+| Physics | blocked, and stays blocked -- it wants a calibration nobody has written |
 | SlowControls | six panels, each waiting for `ATAR_SC` / `ATAR_HV` / `Motion` |
+
+Individual panels on Channels and Pulses stay blocked too, and correctly so:
+they ask for a calorimeter or `fesampic` bank that run 108 does not contain.
+Each says which. Without the analyzer, every panel on both pages is blocked and
+names the client it got no answer from.
+
+### Checking it really rendered
+
+A MIDAS page photographs as the word "Loading..." if you screenshot it on the
+load event, and an `mplot` panel with no bounds set paints a clean white
+rectangle with no error anywhere. So verify with a wait condition rather than
+with your eyes on a screenshot:
+
+```bash
+source ~/demo-dqm/env.sh && cd $REPO
+python3 scripts/shoot.py "http://localhost:8090/?cmd=custom&page=Scope" /tmp/scope.png \
+    --wait-for "document.querySelector('.dqm-chip')" --console
+```
+
+`shoot.py` exits non-zero if the condition never comes true, so it works as a
+test. To tell "painted" from "blank", wait on a pixel census -- a canvas showing
+more than three distinct colours -- rather than on the canvas existing. firefox
+and geckodriver are on pionline; they are not on the dev box.
 
 ### Cleaning up
 
 ```bash
-pkill -f "mhttpd -e DEMODQM"
-pkill -f demo_replay
-rm -rf ~/demo-dqm            # nothing outside this directory was touched
+kill $(cat ~/demo-dqm/mhttpd.pid) $(cat ~/demo-dqm/replay.pid) $(cat ~/demo-dqm/analyzer.pid)
+rm -rf ~/demo-dqm
+rm -f /dev/shm/1000_DEMODQM_*        # never a wider glob than this
 ```
+
+Three things about that, all of which have bitten:
+
+**Kill by pid, not by pattern.** `pkill -f "mhttpd -e DEMODQM"` also matches the
+ssh command line you are typing it from, and kills your own shell.
+
+**`rm -rf ~/demo-dqm` does not remove the ODB.** It is POSIX shared memory keyed
+by the experiment *directory path*, so recreating that path later remaps the old
+segment -- stale clients, a `/Custom` full of paths into whatever checkout you
+had last time, and a leftover 84 MB SYSTEM buffer whose dead readers pin the
+read pointer and hang the next `replay-run.py` inside `BM_WAIT`. Hence the third
+line. Glob no wider: the WDSCALERS segments sit right beside it in `/dev/shm`.
+
+**It also deletes `run108-slice.mid`,** which does not exist anywhere else on the
+box. Move it out first if you expect to be back.
