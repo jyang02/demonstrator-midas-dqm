@@ -135,13 +135,18 @@ class SampicPlugin:
         "persistence y bins": 110,
         "persistence y min": -0.2,
         "persistence y max": 1.0,
-        "amplitude bins": 200,
+        # 100, not 200, for the three histograms that are per-channel: with
+        # 256 channels on the other axis they are 2D, and 200 y-bins into a
+        # 330px-tall tile is about six times finer than anything visible. At 32
+        # channels the total was small enough not to matter; at 256 it is
+        # 51200 bins a tile, which is what made the Channels page lag.
+        "amplitude bins": 100,
         "amplitude min": -0.8,
         "amplitude max": 0.2,
-        "baseline bins": 200,
+        "baseline bins": 100,
         "baseline min": 0.0,
         "baseline max": 1.0,
-        "noise bins": 200,
+        "noise bins": 100,
         "noise max V": 0.05,
         # 4 FE boards x 64 board-local channels. The axis is the GLOBAL index
         # fe_board_index * CHANNELS_PER_BOARD + channel (see _global_channels),
