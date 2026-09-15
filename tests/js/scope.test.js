@@ -66,6 +66,7 @@ function sampicSettings(nLayers, perLayer, stride, base) {
     "/Equipment/SAMPIC/Settings/Atar pixel id base": base,
     "/Equipment/SAMPIC/Settings/Atar strips per layer": stride,
     "/Equipment/SAMPIC/Settings/Atar n layers": nLayers,
+    "/Equipment/SAMPIC/Settings/Atar first layer orientation": "vertical",
   };
 }
 
@@ -425,7 +426,11 @@ test("with the map in the ODB, the traces split into one panel per layer", async
     const id = sampicSettings()["/Equipment/SAMPIC/Settings/Channel map channel id"]
       [h.global_channel];
     const layer = Math.floor((id - base) / stride);
-    const labels = panels[layer].mpg.param.plot.map((p) => p.label);
+    // By id, not by position: the panels are laid out in two columns now, so
+    // the nth panel in the DOM is not layer n.
+    const panel = page.doc.getElementById(`scope-plot-L${layer}`);
+    assert.ok(panel, `no panel for layer ${layer}`);
+    const labels = panel.mpg.param.plot.map((p) => p.label);
     assert.ok(labels.some((l) => l.startsWith(`ch ${h.global_channel}`)),
       `ch ${h.global_channel} is not in layer ${layer}`);
   });
@@ -467,4 +472,57 @@ test("run 108, whose frontend published nothing, is unchanged", async () => {
   await pump(page, 3);
   assert.strictEqual(page.doc.getElementById("scope-layer-panels"), null);
   assert.strictEqual(graphOf(page).param.plot.length, ev.decoded.nhits);
+});
+
+
+// --- two columns, one strip orientation each --------------------------------
+
+test("odd layers go left, even layers right, which groups them by orientation", async () => {
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+
+  const odd = page.doc.getElementById("scope-col-odd");
+  const even = page.doc.getElementById("scope-col-even");
+  assert.ok(odd && even, "the two columns were not built");
+
+  const layersIn = (col) => col.byClass("dqm-scope-plot")
+    .map((d) => Number(d.id.replace("scope-plot-L", "")));
+  assert.deepStrictEqual(layersIn(odd), [1, 3, 5, 7]);
+  assert.deepStrictEqual(layersIn(even), [0, 2, 4, 6]);
+
+  // Layer 0 is vertical in the fixture, so the even column is the vertical one
+  // and the odd column is horizontal. Read from the ODB, not assumed: a target
+  // built the other way round has to label the other way round.
+  assert.match(even.byClass("dqm-col-head")[0].textContent, /vertical strips/);
+  assert.match(odd.byClass("dqm-col-head")[0].textContent, /horizontal strips/);
+  assert.match(page.doc.getElementById("scope-plot-L3").parentNode
+    .byClass("dqm-subhead").map((d) => d.textContent).join(" "),
+    /Layer 3 \(horizontal\)/);
+});
+
+test("the columns follow the ODB when the first layer is horizontal", async () => {
+  const ev = DEMO.events[0];
+  const odb = sampicSettings();
+  odb["/Equipment/SAMPIC/Settings/Atar first layer orientation"] = "horizontal";
+  const page = await boot([ev], null, odb);
+  await pump(page, 3);
+
+  // Same parity split, opposite labels.
+  assert.match(page.doc.getElementById("scope-col-even")
+    .byClass("dqm-col-head")[0].textContent, /horizontal strips/);
+  assert.match(page.doc.getElementById("scope-col-odd")
+    .byClass("dqm-col-head")[0].textContent, /vertical strips/);
+});
+
+test("with no orientation in the ODB the columns say only which layers they hold", async () => {
+  const ev = DEMO.events[0];
+  const odb = sampicSettings();
+  delete odb["/Equipment/SAMPIC/Settings/Atar first layer orientation"];
+  const page = await boot([ev], null, odb);
+  await pump(page, 3);
+
+  const head = page.doc.getElementById("scope-col-odd").byClass("dqm-col-head")[0];
+  assert.strictEqual(head.textContent, "odd layers", "orientation was invented");
+  assert.ok(page.doc.getElementById("scope-plot-L1"), "the split still happened");
 });

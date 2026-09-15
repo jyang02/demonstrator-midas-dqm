@@ -54,7 +54,15 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    layer holding the hits is four screens below the one you are looking at.
    The point of a per-layer view is seeing the whole target at once, so they
    are short enough that all eight fit. */
-#scope-layer-panels .dqm-scope-plot { height: 170px; margin-top: 2px; }
+/* Two columns: odd layers left, even right. Layers alternate orientation, so
+   each column holds one strip direction. Collapses to one column when there is
+   not room for two side by side rather than squeezing both. */
+#scope-layer-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+@media (max-width: 1500px) { #scope-layer-panels { grid-template-columns: 1fr; } }
+#scope-layer-panels .dqm-scope-plot { height: 170px; margin-top: 2px; min-width: 0; }
+#scope-layer-panels .dqm-col-head {
+  font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px;
+}
 #scope-layer-panels .dqm-subhead    { margin-top: 8px; font-weight: 600; }
 .dqm-subhead { font-size: 0.9em; color: #333; }
 .dqm-strip label.dqm-chip { cursor: pointer; }

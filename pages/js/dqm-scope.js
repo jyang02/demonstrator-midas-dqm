@@ -82,11 +82,12 @@ async function loadChannelMap() {
       `${base}/Atar pixel id base`,
       `${base}/Atar strips per layer`,
       `${base}/Atar n layers`,
+      `${base}/Atar first layer orientation`,
     ]);
   } catch (e) {
     return null;
   }
-  const [ids, detectors, pixelBase, stride, nLayers] = v || [];
+  const [ids, detectors, pixelBase, stride, nLayers, firstOrientation] = v || [];
   if (!Array.isArray(ids) || !ids.length) return null;
   if (!Number.isFinite(Number(pixelBase)) || !(Number(stride) > 0)) return null;
 
@@ -106,7 +107,23 @@ async function loadChannelMap() {
   });
   if (!byChannel.size) return null;
   return { byChannel: byChannel, layers: Array.from(layers).sort((a, b) => a - b),
+           firstOrientation: typeof firstOrientation === "string" ? firstOrientation : null,
            source: `${base} (${byChannel.size} channels, ${layers.size} layers)` };
+}
+
+/**
+ * The strip orientation of a layer, or null if the ODB does not say.
+ *
+ * Layers alternate, so the orientation follows the parity of the layer number
+ * once the first one is known -- which is why splitting the panels by parity
+ * is the same thing as grouping them by orientation. Read rather than assumed:
+ * a target built the other way round would put every label on the wrong column.
+ */
+function orientationOf(map, layer) {
+  if (!map || !map.firstOrientation) return null;
+  const first = String(map.firstOrientation).toLowerCase();
+  const other = first === "vertical" ? "horizontal" : "vertical";
+  return layer % 2 === 0 ? first : other;
 }
 
 //: The layer a hit belongs to, or null when the map does not cover it.
@@ -211,17 +228,42 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
  */
 function buildLayerPanels(body, firstPlot, map) {
   const note = document.getElementById("scope-layers");
-  if (note) note.textContent = `One panel per ATAR layer, from ${map.source}.`;
+  if (note) {
+    note.textContent = `One panel per ATAR layer, in two columns by strip `
+      + `orientation, from ${map.source}.`;
+  }
 
   state.graphs = [];
   const host = el("div", { id: "scope-layer-panels" });
   body.insertBefore(host, firstPlot);
 
+  // Two columns, odd layers left and even layers right. Layers alternate
+  // orientation, so that is the same thing as putting each strip direction in
+  // its own column -- a track crossing the target is read down one column for
+  // one coordinate and down the other for the other, instead of zig-zagging
+  // between orientations the way a single stack does.
+  const columns = new Map();
+  [["odd", 1], ["even", 0]].forEach(function (pair) {
+    const parity = pair[1];
+    const col = el("div", { class: "dqm-layer-col", id: `scope-col-${pair[0]}` });
+    // The layers actually present with this parity, so the heading describes
+    // the column rather than asserting a geometry nothing confirmed.
+    const mine = map.layers.filter((L) => L % 2 === parity);
+    const orient = mine.length ? orientationOf(map, mine[0]) : null;
+    col.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
+      orient ? `${orient} strips — ${pair[0]} layers` : `${pair[0]} layers`));
+    host.appendChild(col);
+    columns.set(parity, col);
+  });
+
   map.layers.forEach(function (layer) {
-    const title = el("div", { class: "dqm-subhead" }, `Layer ${layer}`);
+    const col = columns.get(layer % 2);
+    const orient = orientationOf(map, layer);
+    const title = el("div", { class: "dqm-subhead" },
+      orient ? `Layer ${layer} (${orient})` : `Layer ${layer}`);
     const div = el("div", { class: "dqm-scope-plot", id: `scope-plot-L${layer}` });
-    host.appendChild(title);
-    host.appendChild(div);
+    col.appendChild(title);
+    col.appendChild(div);
     const g = new MPlotGraph(div, {
       title: { text: "" },
       stats: { show: false },
