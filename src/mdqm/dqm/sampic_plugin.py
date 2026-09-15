@@ -14,9 +14,18 @@ What it publishes, all from fields the converter actually writes:
     sampic/hits_per_event       multiplicity
     sampic/amplitude            pulse amplitude, all channels
     sampic/amplitude_by_channel channel x amplitude
-    sampic/baseline_by_channel  channel x baseline
-    sampic/noise_by_channel     channel x pre-pulse RMS
     sampic/persistence          sample index x volts, every sample of every hit
+
+and two *series*, which are not histograms and are served over ``dqm::series``
+rather than ``dqm::histogram``:
+
+    sampic/baseline_by_channel  the last N baselines on each channel
+    sampic/noise_by_channel     the last N pre-pulse RMS values on each channel
+
+Those two are recent values rather than an accumulation on purpose, and
+``RecentByChannel`` gives the argument: what the tile is asked is where a
+channel is sitting *now*, which a sum over the whole run cannot answer and can
+actively hide. It is also what makes them cheap enough to draw.
 
 What it deliberately does **not** publish, because the data will not support it
 and a plot that looks plausible and is wrong is worse than a panel that says it
@@ -54,6 +63,8 @@ is testable on a machine with no MIDAS installed, which is where its tests run.
 """
 
 from __future__ import annotations
+
+import time
 
 import numpy as np
 
@@ -122,6 +133,103 @@ def _edge_fraction(hist) -> float:
     return round(edge / total, 4)
 
 
+class RecentByChannel:
+    """The last N values seen on each channel, with when each arrived.
+
+    A baseline or a noise figure is not a distribution anybody wants summed
+    over a run: what a shifter is asking is "where is this channel sitting
+    *now*, and is it where its neighbours are". Accumulating that since the
+    start of the run answers a question nobody asked, and hides the very thing
+    the tile exists to catch -- a channel that has walked -- inside a column
+    that still carries every value it ever had.
+
+    So this keeps a short ring per channel instead. It is also what makes the
+    tile cheap to draw: a few thousand scatter points rather than a colormap of
+    26316 rectangles repainted on every arrival, which is what made the
+    Channels page unusable.
+
+    Timestamps are kept per value, and that is not decoration. Channels hit at
+    very different rates, so "the last ten" on a busy channel is a second old
+    and on a quiet one can be minutes old. A tile that drew both the same way
+    would be quietly claiming they are contemporaneous; ``points()`` reports the
+    age so the page can say otherwise.
+    """
+
+    __slots__ = ("nch", "depth", "values", "when", "pos", "count", "title", "unit")
+
+    def __init__(self, nch: int, depth: int, title: str = "", unit: str = ""):
+        self.nch = int(nch)
+        self.depth = max(1, int(depth))
+        self.title = title
+        self.unit = unit
+        self.values = np.zeros((self.nch, self.depth), dtype=np.float64)
+        self.when = np.zeros((self.nch, self.depth), dtype=np.float64)
+        # Next slot to write, and how many of the ring are real. Kept apart so
+        # a half-full ring reports the values it has rather than padding with
+        # a zero that would plot as a channel sitting at 0 V.
+        self.pos = np.zeros(self.nch, dtype=np.int64)
+        self.count = np.zeros(self.nch, dtype=np.int64)
+
+    def add(self, channels, values, now: float) -> None:
+        """Record one event's worth. Out-of-range channels are dropped."""
+        for ch, v in zip(channels, values):
+            i = int(ch)
+            if i < 0 or i >= self.nch:
+                continue
+            p = int(self.pos[i])
+            self.values[i, p] = float(v)
+            self.when[i, p] = now
+            self.pos[i] = (p + 1) % self.depth
+            if self.count[i] < self.depth:
+                self.count[i] += 1
+
+    def clear(self) -> None:
+        self.pos[:] = 0
+        self.count[:] = 0
+
+    @property
+    def entries(self) -> int:
+        return int(self.count.sum())
+
+    def points(self, now: float | None = None) -> dict:
+        """Parallel arrays for the page: channel, value, and age in seconds.
+
+        Parallel arrays rather than a list of triples because this crosses the
+        wire as JSON and the punctuation of 2560 little objects costs more than
+        the numbers in them. Rounded for the same reason -- a baseline to four
+        decimals is 0.1 mV, well past what the tile can show.
+
+        Channels with nothing in them are omitted rather than sent as an empty
+        column: a channel nobody has hit is not a channel sitting at zero, and
+        the distinction is the whole point of an occupancy plot next door.
+        """
+        now = time.time() if now is None else now
+        chans: list[int] = []
+        vals: list[float] = []
+        ages: list[float] = []
+        for i in range(self.nch):
+            n = int(self.count[i])
+            if not n:
+                continue
+            # Oldest first, so the page can fade or order by age if it wants.
+            start = (int(self.pos[i]) - n) % self.depth
+            for k in range(n):
+                s = (start + k) % self.depth
+                chans.append(i)
+                vals.append(round(float(self.values[i, s]), 4))
+                ages.append(round(max(0.0, now - float(self.when[i, s])), 1))
+        return {
+            "title": self.title,
+            "unit": self.unit,
+            "depth": self.depth,
+            "channels": self.nch,
+            "entries": self.entries,
+            "channel": chans,
+            "value": vals,
+            "age": ages,
+        }
+
+
 class SampicPlugin:
     """Accumulates AD00 hits. One instance per analyzer, rebuilt on rebinning."""
 
@@ -154,6 +262,13 @@ class SampicPlugin:
         "channels": 256,
         # Demonstrator events reach 35 hits; 16 sent the rest to the overflow.
         "max hits per event": 40,
+        # How many recent values per channel the baseline and noise series
+        # keep. Ten is what a shifter asked for and is enough to see a channel
+        # scattering rather than sitting: one point says where it is, ten say
+        # whether it is steady. It is also the whole cost of those two tiles --
+        # depth x channels points on the wire and on the screen -- so raising
+        # it is the knob to reach for last, not first.
+        "recent per channel": 10,
     }
 
     def __init__(self, store, roles=None, binning=None):
@@ -179,7 +294,7 @@ class SampicPlugin:
     def _names(self) -> list[str]:
         return [f"{PREFIX}/{n}" for n in
                 ("occupancy", "hits_per_event", "amplitude", "amplitude_by_channel",
-                 "baseline_by_channel", "noise_by_channel", "persistence")]
+                 "persistence")]
 
     def _build(self) -> None:
         b = self.binning
@@ -211,20 +326,26 @@ class SampicPlugin:
                  float(b["amplitude max"]), "amplitude (V)"),
             "Amplitude by channel"))
         self.store.add(Hist2D(
-            f"{PREFIX}/baseline_by_channel", chan(),
-            Axis(int(b["baseline bins"]), float(b["baseline min"]),
-                 float(b["baseline max"]), "baseline (V)"),
-            "Baseline by channel"))
-        self.store.add(Hist2D(
-            f"{PREFIX}/noise_by_channel", chan(),
-            Axis(int(b["noise bins"]), 0.0, float(b["noise max V"]), "RMS (V)"),
-            f"Noise: RMS of the first {PRESAMPLES} samples"))
-        self.store.add(Hist2D(
             f"{PREFIX}/persistence",
             Axis(int(b["persistence x bins"]), 0.0, float(sampic.AD_MAX_SAMPLES), "sample"),
             Axis(int(b["persistence y bins"]), float(b["persistence y min"]),
                  float(b["persistence y max"]), "V"),
             "All waveforms, overlaid"))
+
+        # Not histograms. See RecentByChannel: what these two tiles are asked
+        # is where a channel is sitting now, which a sum over the run cannot
+        # answer. The baseline and noise *bins* settings are left in the
+        # binning dict and unused rather than deleted, because an operator who
+        # has set them in the ODB should not have them silently disappear; the
+        # axis is now whatever the data spans.
+        depth = int(b["recent per channel"])
+        self.recent = {
+            f"{PREFIX}/baseline_by_channel": RecentByChannel(
+                nch, depth, "Baseline by channel, most recent", "baseline (V)"),
+            f"{PREFIX}/noise_by_channel": RecentByChannel(
+                nch, depth, f"Noise by channel, most recent "
+                f"(RMS of the first {PRESAMPLES} samples)", "RMS (V)"),
+        }
 
     def reconfigure(self, roles, binning) -> None:
         """A histogram with different bins is a different histogram.
@@ -237,6 +358,10 @@ class SampicPlugin:
         self.binning = {**self.DEFAULT_BINNING, **(binning or {})}
         for name in self._names():
             self.store.remove(name)
+        # The rings go the same way and for the same reason: a ring of a
+        # different depth is a different ring, and keeping the old values under
+        # a new depth would mix two settings in one plot without saying so.
+        self.recent = {}
         self._build()
 
     # -- the event path ------------------------------------------------------
@@ -283,7 +408,8 @@ class SampicPlugin:
         self.store.get(f"{PREFIX}/occupancy").fill(channels)
         self.store.get(f"{PREFIX}/amplitude").fill(amplitudes)
         self.store.get(f"{PREFIX}/amplitude_by_channel").fill(channels, amplitudes)
-        self.store.get(f"{PREFIX}/baseline_by_channel").fill(channels, baselines)
+        now = time.time()
+        self.recent[f"{PREFIX}/baseline_by_channel"].add(channels, baselines, now)
 
         noise_ch, noise = [], []
         persist_x, persist_y = [], []
@@ -304,7 +430,7 @@ class SampicPlugin:
             self.store.get(f"{PREFIX}/persistence").fill(
                 np.concatenate(persist_x), np.concatenate(persist_y))
         if noise:
-            self.store.get(f"{PREFIX}/noise_by_channel").fill(noise_ch, noise)
+            self.recent[f"{PREFIX}/noise_by_channel"].add(noise_ch, noise, now)
         return True
 
     # -- what the page shows about the analyzer ------------------------------
@@ -346,6 +472,18 @@ class SampicPlugin:
                 setattr(self, bad, getattr(self, bad) + 1)
                 self.last_mismatch = (f"{name} says {claimed} hits, "
                                       f"{sampic.AD_BANK} carries {nhits}")
+
+    def series(self, name: str = "") -> dict:
+        """The recent-value series, for ``dqm::series``.
+
+        With a name, that one series; without, every name it serves. The
+        no-name form is what a page uses to find out what is on offer, the same
+        shape ``dqm::list`` plays for histograms.
+        """
+        if name:
+            r = self.recent.get(name)
+            return r.points() if r is not None else {}
+        return {"names": list(self.recent)}
 
     def status(self) -> dict:
         return {

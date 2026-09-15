@@ -18,6 +18,11 @@ const HEADER_BYTES = 8;
 const DEFAULT_MAX = {
   "dqm::list": 64 * 1024,
   "dqm::metadata": 16 * 1024,
+  // 256 channels x 10 values x three arrays of JSON numbers is about 45 kB, so
+  // 64 would fit today and would start costing a second round trip the moment
+  // anyone raised "recent per channel". call() does retry on truncation, which
+  // is what makes that a slow path rather than a broken one.
+  "dqm::series": 512 * 1024,
   "dqm::histogram": 1024 * 1024,
   "dqm::clear": 4 * 1024,
   "wd::status": 64 * 1024,

@@ -29,7 +29,7 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
 | **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
-| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy and hits per event draw from the `sampic` plugin; baseline and noise are colormaps, off by default behind a per-tile toggle; the other seven need layers, T0 or banks nothing writes |
+| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy, hits per event, and baseline and noise as recent-value scatters; the other seven need layers, T0 or banks nothing writes |
 | **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel are both there, off by default behind a per-tile toggle; "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
@@ -196,9 +196,24 @@ channel on Pulses -- each fetching one histogram and handing it to mplot
 through `BRPC.display()`. The mapping from panel to histogram is the one
 page-shaped fact in that file; everything else is generic.
 
-Two of the six draw when the page opens: occupancy and hits per event, both 1D
-and both a few hundred bins. The other four are **colormaps and start off**,
-listed in `TWO_D` in that file, each with a `Show plot` button in its own tile.
+Four of the six draw when the page opens. Occupancy and hits per event are 1D
+and a few hundred bins. Baseline and noise by channel are **recent-value
+series** rather than histograms -- the last N values on each channel, drawn as
+a scatter of channel against value -- fetched over `dqm::series` and listed in
+`SERIES`.
+
+That pair changed shape because of the question they answer, not only the cost.
+"Is this channel sitting where it should" is about *now*; a colormap summed
+since the run started cannot answer it, and actively hides a channel that has
+walked inside a column still carrying every value it ever had. The scatter also
+shows the spread within a channel, which separates a channel that has moved
+from one that is merely noisy. Depth is `/DQM/Analyzer/Binning/recent per
+channel`, default 10, and it is the whole cost of those tiles. Each point
+carries its age, and the tile reports the oldest one drawn, because channels are
+hit at very different rates and the points are not one moment.
+
+The remaining two are **colormaps and start off**, listed in `TWO_D` in that
+file, each with a `Show plot` button in its own tile.
 Off is a real off -- no fetch, no draw, no timer -- so a page of these costs
 what a page of text costs, and the toggle lasts until the page is reloaded.
 

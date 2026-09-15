@@ -59,9 +59,7 @@ const DEFAULTS = {
   "Channels": {
     "Histograms": [
       "sampic/occupancy",
-      "sampic/hits_per_event",
-      "sampic/baseline_by_channel",
-      "sampic/noise_by_channel"
+      "sampic/hits_per_event"
     ]
   },
   "Pulses": {

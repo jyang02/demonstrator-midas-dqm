@@ -181,7 +181,7 @@ With the replay and the analyzer both up:
 |---|---|
 | Rates | `midas_event_rate` lists the replay client's equipment if it registers any; otherwise "no equipment is registered" |
 | Scope | **live** from the replay |
-| Channels | **live**: hits per event and occupancy. Baseline and noise by channel are colormaps and open off -- `Show plot` on the tile draws them; see `TWO_D` in `pages/js/dqm-hists.js` |
+| Channels | **live**: hits per event, occupancy, and baseline and noise by channel as recent-value scatters (the last 10 per channel, over `dqm::series`) |
 | Pulses | **live**: persistence and amplitude by channel, both colormaps and both open off -- `Show plot` on the tile draws them |
 | Physics | blocked, and stays blocked -- it wants a calibration nobody has written |
 | SlowControls | six panels, each waiting for `ATAR_SC` / `ATAR_HV` / `Motion` |

@@ -129,7 +129,12 @@ class Analyzer:
             self.store,
             status_fn=self.status,
             defs_fn=lambda: {"plugin": self.plugin.name,
-                             "histograms": self.store.names()},
+                             "histograms": self.store.names(),
+                             "series": (self.plugin.series().get("names", [])
+                                        if hasattr(self.plugin, "series") else [])},
+            # Guarded like scope_fn: a plugin need not serve any series.
+            series_fn=(lambda name: self.plugin.series(name)
+                       if hasattr(self.plugin, "series") else {}),
             # The plugin owns the frame; the server only forwards it. Guarded
             # because a plugin need not offer one -- only detector-specific
             # plugins have traces to show.

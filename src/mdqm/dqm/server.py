@@ -30,11 +30,16 @@ class Server:
     why the command set is easy to trust.
     """
 
-    def __init__(self, store, status_fn=None, defs_fn=None, scope_fn=None):
+    def __init__(self, store, status_fn=None, defs_fn=None, scope_fn=None,
+                 series_fn=None):
         self.store = store
         self._status_fn = status_fn or (lambda: {})
         self._defs_fn = defs_fn or (lambda: {})
         self._scope_fn = scope_fn or (lambda: None)
+        # Injected like the others, and for the same reason: a series is a
+        # plugin's own state rather than something in the histogram store, and
+        # the server has no business knowing which plugin is loaded.
+        self._series_fn = series_fn or (lambda name: {})
         self.calls = 0
         self.last_error: str | None = None
 
@@ -59,6 +64,8 @@ class Server:
             return self._histogram(args)
         if cmd == "dqm::metadata":
             return self._metadata(args)
+        if cmd == "dqm::series":
+            return self._series(args)
         if cmd == "dqm::clear":
             return self._clear(args)
         if cmd == "wd::scope":
@@ -103,6 +110,23 @@ class Server:
             return framing.envelope(
                 framing.TAG_ERROR, f"no such histogram: {name!r}".encode())
         return framing.envelope(framing.TAG_META, json.dumps(hist.metadata()).encode())
+
+    def _series(self, args: str) -> bytes:
+        """A recent-value series as JSON, or the list of names when unnamed.
+
+        JSON rather than the binary histogram framing, which is a real
+        trade and worth stating. The framing wins on size for anything binned;
+        this is scattered points, so it would need its own tag, its own decoder
+        in the browser and its own tests, to save bytes on a payload whose
+        whole point is that it is small enough not to matter. The cost this
+        replaces was never the wire -- it was 26316 rectangles a repaint.
+        """
+        name = self._name_from(args)
+        got = self._series_fn(name)
+        if name and not got:
+            return framing.envelope(
+                framing.TAG_ERROR, f"no such series: {name!r}".encode())
+        return self._json(got)
 
     def _clear(self, args: str) -> bytes:
         selector = self._name_from(args)

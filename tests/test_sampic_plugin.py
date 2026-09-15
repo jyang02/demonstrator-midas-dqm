@@ -85,9 +85,51 @@ def test_rejects_an_event_without_one(plugin):
 def test_publishes_exactly_its_documented_set(plugin):
     assert plugin.store.names() == sorted([
         f"{PREFIX}/amplitude", f"{PREFIX}/amplitude_by_channel",
-        f"{PREFIX}/baseline_by_channel", f"{PREFIX}/hits_per_event",
-        f"{PREFIX}/noise_by_channel", f"{PREFIX}/occupancy",
+        f"{PREFIX}/hits_per_event", f"{PREFIX}/occupancy",
         f"{PREFIX}/persistence"])
+
+
+def test_baseline_and_noise_are_series_and_not_histograms(plugin):
+    """They answer "where is this channel now", which a run-long sum cannot.
+
+    The split matters beyond taste: dqm::list and /DQM/<page>/Histograms are
+    for histograms, so a series named there would be reported missing on a page
+    where it is drawing.
+    """
+    for n in (f"{PREFIX}/baseline_by_channel", f"{PREFIX}/noise_by_channel"):
+        assert plugin.store.get(n) is None, "must not be in the histogram store"
+        assert n in plugin.recent
+    assert plugin.series()["names"] == [
+        f"{PREFIX}/baseline_by_channel", f"{PREFIX}/noise_by_channel"]
+
+
+def test_a_series_keeps_only_the_last_n_on_each_channel(plugin):
+    depth = int(SampicPlugin.DEFAULT_BINNING["recent per channel"])
+    for i in range(depth + 5):
+        plugin.process(_event([_hit(channel=2, baseline=0.5 + 0.01 * i)]))
+
+    pts = plugin.series(f"{PREFIX}/baseline_by_channel")
+    on2 = [v for c, v in zip(pts["channel"], pts["value"]) if c == 2]
+    assert len(on2) == depth, "the ring must not grow past its depth"
+    # Oldest first, and the five earliest values are gone rather than the five
+    # latest -- the failure a ring written backwards would give.
+    assert on2[-1] == round(0.5 + 0.01 * (depth + 4), 4)
+    assert on2[0] == round(0.5 + 0.01 * 5, 4)
+
+
+def test_a_series_omits_a_channel_nothing_has_hit(plugin):
+    """An unhit channel is not a channel sitting at 0 V."""
+    plugin.process(_event([_hit(channel=9)]))
+    pts = plugin.series(f"{PREFIX}/baseline_by_channel")
+    assert set(pts["channel"]) == {9}
+
+
+def test_a_series_reports_the_age_of_each_point(plugin):
+    """Channels are hit at different rates, so the points are not one moment."""
+    plugin.process(_event([_hit(channel=1)]))
+    pts = plugin.series(f"{PREFIX}/baseline_by_channel")
+    assert len(pts["age"]) == len(pts["value"])
+    assert all(a >= 0.0 for a in pts["age"])
 
 
 def test_publishes_no_time_over_threshold(plugin):
@@ -116,8 +158,8 @@ def test_one_event_fills_every_histogram(plugin):
     assert plugin.store.get(f"{PREFIX}/hits_per_event").entries == 1
     assert plugin.store.get(f"{PREFIX}/amplitude").entries == 2
     assert plugin.store.get(f"{PREFIX}/amplitude_by_channel").entries == 2
-    assert plugin.store.get(f"{PREFIX}/baseline_by_channel").entries == 2
-    assert plugin.store.get(f"{PREFIX}/noise_by_channel").entries == 2
+    assert plugin.recent[f"{PREFIX}/baseline_by_channel"].entries == 2
+    assert plugin.recent[f"{PREFIX}/noise_by_channel"].entries == 2
     # Every sample of every hit.
     assert plugin.store.get(f"{PREFIX}/persistence").entries == 2 * sampic.AD_MAX_SAMPLES
 
@@ -145,7 +187,7 @@ def test_hits_are_truncated_to_data_size_not_padded(plugin):
 
 def test_a_hit_too_short_to_measure_noise_is_skipped_not_guessed(plugin):
     plugin.process(_event([_hit(waveform=[0.75] * (PRESAMPLES - 1))]))
-    assert plugin.store.get(f"{PREFIX}/noise_by_channel").entries == 0
+    assert plugin.recent[f"{PREFIX}/noise_by_channel"].entries == 0
     # ...but it still counts everywhere it can be counted.
     assert plugin.store.get(f"{PREFIX}/occupancy").entries == 1
 
@@ -222,7 +264,10 @@ def test_reconfigure_rebuilds_and_therefore_resets(plugin):
     occ = plugin.store.get(f"{PREFIX}/occupancy")
     assert occ.x.n == 64
     assert occ.entries == 0, "a histogram with different bins is a different histogram"
-    assert len(plugin.store) == 7, "rebuilt in place, not added alongside"
+    assert len(plugin.store) == 5, "rebuilt in place, not added alongside"
+    assert plugin.recent[f"{PREFIX}/baseline_by_channel"].nch == 64
+    assert plugin.recent[f"{PREFIX}/baseline_by_channel"].entries == 0, \
+        "a ring of a different width is a different ring"
 
 
 def test_reconfigure_falls_back_for_a_key_an_operator_deleted(plugin):

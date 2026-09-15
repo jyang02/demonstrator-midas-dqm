@@ -95,10 +95,12 @@ DEFAULTS: dict[str, dict[str, object]] = {
     # A page still asks for its list and names what it did not find rather than
     # assuming: these are the histograms the SAMPIC plugin publishes today, not
     # a contract any analyzer has to satisfy.
+    # Histograms only. Baseline and noise by channel are recent-value *series*
+    # now, fetched over dqm::series and not in dqm::list, so naming them here
+    # would have probeAnalyzer report them missing on a page where they are
+    # drawing perfectly well. Each series tile reports its own arrival.
     "Channels": {"Histograms": ["sampic/occupancy",
-                                "sampic/hits_per_event",
-                                "sampic/baseline_by_channel",
-                                "sampic/noise_by_channel"]},
+                                "sampic/hits_per_event"]},
     "Pulses": {"Histograms": ["sampic/persistence",
                               "sampic/amplitude_by_channel"]},
     # Empty on purpose: nothing the SAMPIC plugin can publish answers a question

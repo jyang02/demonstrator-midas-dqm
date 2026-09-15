@@ -39,10 +39,31 @@ const { el, chip, blocked, editButton, probeThisBox } = DQMPage;
 const PANELS = {
   atar_occupancy:       "sampic/occupancy",
   hits_per_event:       "sampic/hits_per_event",
-  baseline_by_channel:  "sampic/baseline_by_channel",
-  noise_by_channel:     "sampic/noise_by_channel",
   pulse_persistence:    "sampic/persistence",
   amplitude_by_channel: "sampic/amplitude_by_channel",
+};
+
+//: Panel id -> the recent-value series the analyzer publishes for it.
+//:
+//: These two are not histograms and are fetched over dqm::series, not
+//: dqm::histogram. They were colormaps of everything since the run started;
+//: they are now the last N values on each channel, drawn as a scatter. The
+//: argument for the change is in RecentByChannel in sampic_plugin.py and it is
+//: about the question rather than the cost: "is this channel sitting where it
+//: should" is about now, and a sum over the run both fails to answer it and
+//: hides a channel that has walked inside a column carrying every value it
+//: ever had.
+//:
+//: The cost is the happy part. A few thousand markers instead of 26316
+//: rectangles is what lets these two draw on open while the remaining
+//: colormaps stay behind their toggle.
+//:
+//: Not in /DQM/<page>/Histograms, deliberately: they are not histograms, the
+//: analyzer does not list them in dqm::list, and probeAnalyzer would report
+//: them as missing. seriesPanel says whether its own series arrived.
+const SERIES = {
+  baseline_by_channel: "sampic/baseline_by_channel",
+  noise_by_channel:    "sampic/noise_by_channel",
 };
 
 //: The panels whose plot is a colormap. These are off when the page opens, and
@@ -74,8 +95,6 @@ const PANELS = {
 //: The 1D tiles are not in here and always draw: occupancy and hits per event
 //: are a few hundred bins and have never been the problem.
 const TWO_D = new Set([
-  "baseline_by_channel",
-  "noise_by_channel",
   "amplitude_by_channel",
   "pulse_persistence",
 ]);
@@ -306,14 +325,133 @@ function histPanel(name, twoD) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// One recent-value series, as a scatter
+// ---------------------------------------------------------------------------
+
+/**
+ * Baseline or noise: the last N values on each channel, channel against value.
+ *
+ * Always on, unlike the colormaps. depth x channels is a few thousand markers
+ * at the default depth of 10, which is the size the tiles above are toggled
+ * off to avoid.
+ *
+ * What a reader is looking for here is a column out of line with its
+ * neighbours -- every channel saw the same beam, so a channel whose baseline
+ * has walked stands proud of the row. The scatter shows the spread within a
+ * channel at the same time, which is the difference between a channel that has
+ * moved and one that is merely noisy, and which a single mean per channel
+ * would have thrown away.
+ */
+function seriesPanel(name) {
+  return function (ctx) {
+    const client = String(ctx.cfg["Analyzer Client"] || "").trim();
+    if (!client) {
+      blocked(ctx.body,
+        `No analyzer client is named in ${DQM.CONFIG_ROOT}/Analyzer Client, so `
+        + `this panel does not know whom to ask for ${name}.`,
+        ctx.panel, `${DQM.CONFIG_ROOT}/Analyzer Client`);
+      return;
+    }
+
+    const points = el("span", {}, "\u2014");
+    const depth = el("span", {}, "\u2014");
+    const oldest = el("span", { class: "dqm-chip" }, "");
+    const strip = el("div", { class: "dqm-strip" },
+      chip("series", el("code", {}, name)),
+      chip("points", points), chip("per channel", depth), oldest);
+    const note = el("div", { class: "dqm-note" }, "Asking the analyzer\u2026");
+    const plotDiv = el("div", { class: "dqm-plot" });
+    ctx.body.appendChild(strip);
+    ctx.body.appendChild(note);
+    ctx.body.appendChild(plotDiv);
+
+    let graph = null;
+    let drawn = false;
+
+    function build(s) {
+      graph = new MPlotGraph(plotDiv, {
+        title: { text: s.title || name },
+        stats: { show: false },
+        legend: { show: false },
+        // Off for the reason every plot on these pages has it off: mplot
+        // cancels the wheel inside the axis window and the page cannot then be
+        // scrolled past the tile.
+        mouseWheelZoom: false,
+        xAxis: { title: { text: "channel" } },
+        yAxis: { title: { text: s.unit || "" } },
+        plot: [{
+          label: name,
+          type: "scatter",
+          // The whole point: markers and no line. A line through points
+          // ordered by channel would draw a shape across channels that has no
+          // meaning -- neighbouring channels are neighbouring *electronics*,
+          // and until there is a channel map they are not even neighbouring
+          // strips.
+          line: { draw: false },
+          marker: { draw: true, size: 2, style: "circle" },
+        }],
+      });
+      plotDiv.mpg = graph;
+      graph.resize();
+    }
+
+    async function tick() {
+      const s = await BRPC.json(client, "dqm::series", name);
+      if (!s || !s.channel) throw new Error(`empty reply for ${name}`);
+      if (!graph) build(s);
+
+      // xData/yData directly rather than through BRPC.display(), which is for
+      // the binned wire format and would have nothing to do here.
+      graph.param.plot[0].xData = s.channel;
+      graph.param.plot[0].yData = s.value;
+      graph.calcMinMax();
+      graph.redraw();
+
+      drawn = true;
+      points.textContent = String(s.channel.length);
+      depth.textContent = String(s.depth);
+      // The honest part. Channels are hit at very different rates, so the
+      // oldest point on the plot can be far older than the newest, and a tile
+      // that did not say so would be quietly claiming these are one moment.
+      const maxAge = s.age && s.age.length ? Math.max.apply(null, s.age) : 0;
+      oldest.textContent = `oldest ${Math.round(maxAge)} s`;
+      oldest.title = `Every channel's last ${s.depth} values, so a channel that `
+        + `is rarely hit carries older points than a busy one. This is the age `
+        + `of the oldest point drawn.`;
+      note.className = "dqm-note";
+      note.textContent = s.channel.length
+        ? ""
+        : "The analyzer is answering and has recorded nothing on any channel "
+          + "yet: either no events have arrived, or nothing is filling it.";
+    }
+
+    const updater = new BRPC.AutoUpdater(tick, REFRESH_MS);
+    updater.onError = function (e) {
+      note.className = "dqm-diagnosis red";
+      note.textContent = drawn
+        ? `"${client}" stopped answering for ${name} (${e.message}). The plot `
+          + "above is the last one it sent, and is no longer being updated."
+        : `Nothing answered as "${client}" for ${name} (${e.message}). That is `
+          + "the analyzer this panel is waiting for.";
+    };
+
+    setTimeout(function () { updater.start(); }, 0);
+  };
+}
+
 Object.keys(PANELS).forEach(function (id) {
   DQMPage.register(id, histPanel(PANELS[id], TWO_D.has(id)));
 });
 
+Object.keys(SERIES).forEach(function (id) {
+  DQMPage.register(id, seriesPanel(SERIES[id]));
+});
+
 // Reachable for the tests, which assert this agrees with config_defaults.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PANELS, TWO_D, refreshFor, cadenceText, REFRESH_MS,
-                    BIG_HIST_CELLS, MAX_REFRESH_MS };
+  module.exports = { PANELS, SERIES, TWO_D, refreshFor, cadenceText,
+                    REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS };
 }
 
 })();
