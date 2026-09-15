@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       890c51692544c3fc7dc02b21e75ef861de474aa515ba149164edc1c4f8d739cf
+// sha256:       fe92acfecb8eddc5049954aea35abd3d6eb8d4275540a944aac4af333d087f35
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "890c51692544c3fc7dc02b21e75ef861de474aa515ba149164edc1c4f8d739cf";
+const SPEC_SHA256 = "fe92acfecb8eddc5049954aea35abd3d6eb8d4275540a944aac4af333d087f35";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -167,10 +167,9 @@ const PAGES = [
         "label": "ATAR raw waveforms, by layer",
         "question": "Does a pulse look like a pulse?",
         "why": "it is the page you open when a histogram is empty and nothing else says why",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "event",
-        "blocked_by": "No ATAR bank, and no document describing one. This page decodes the bank in the browser, so the layout has to be a written specification rather than a struct that happens to compile -- a silent field-order change gives a plot that draws and is wrong. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic, which is the frontend that would produce it. Organising them by layer needs no third thing: which channels are in which layer is declared configuration and lives in the frontend's Settings (decision 2). Wishlist 3a."
+        "sketch": "event"
       },
       {
         "id": "calo_waveforms",

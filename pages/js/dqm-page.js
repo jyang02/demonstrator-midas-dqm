@@ -181,7 +181,10 @@ const SHAPE = {
   none: "",
 };
 
-const CHIP = { blocked: "yellow", proposed: "blue", dropped: "", live: "green" };
+// Keys are the spec's status vocabulary (spec/schema.md): ready, blocked,
+// proposed, dropped. This said `live`, which the spec has never used, so the
+// first panel to go ready would have worn an uncoloured chip.
+const CHIP = { ready: "green", blocked: "yellow", proposed: "blue", dropped: "" };
 
 function render(group, page) {
   const rootEl = document.getElementById("dqm-root");

@@ -1,11 +1,15 @@
 """The panel catalogue, and the two ways it can rot.
 
-``pages/js/dqm-panels.js`` is generated from a spec file kept outside this
-repository. Two failure modes follow, and each gets a test here:
+``pages/js/dqm-panels.js`` is generated from ``spec/dqm_shifter.json``. Two
+failure modes follow, and each gets a test here:
 
 * the spec changes and this copy does not -- caught by regenerating and
-  comparing, when the spec file is reachable. That check is optional on
-  purpose: the spec must never be a build dependency of this repository;
+  comparing. This used to be optional, on the grounds that the spec lived in
+  demonstrator-shifter-ui and must never become a build dependency here. The
+  spec now lives beside the catalogue it generates, so the check always runs,
+  which is what this file already argued for: "a drift test that skips
+  silently is a drift test nobody has". ``DQM_SPEC`` still points it elsewhere
+  for anyone keeping the spec somewhere else;
 * a field is carried into the shipped asset that nothing reads -- caught
   hermetically by ``test_no_carried_field_is_unread``. An unread field is
   precisely the rot the generator exists to prevent.
@@ -28,13 +32,9 @@ from mdqm.install.manifest import ENTRIES
 REPO = Path(__file__).resolve().parents[1]
 CATALOGUE = REPO / "pages" / "js" / "dqm-panels.js"
 
-#: Where the drift check looks for the spec. ``DQM_SPEC`` is the way to point it
-#: somewhere else; the fallback is the conventional location beside this
-#: checkout, and is the one filesystem path here that names the spec's own
-#: directory -- it earns that by keeping the check running by default, since a
-#: drift test that skips silently is a drift test nobody has.
-SPEC = Path(os.environ.get(
-    "DQM_SPEC", Path.home() / "demonstrator-shifter-ui" / "spec" / "dqm_shifter.json"))
+#: The spec the catalogue is generated from, in this repository.
+#: ``DQM_SPEC`` points the check at a copy kept somewhere else.
+SPEC = Path(os.environ.get("DQM_SPEC", REPO / "spec" / "dqm_shifter.json"))
 needs_spec = pytest.mark.skipif(
     not SPEC.exists(), reason=f"{SPEC} not found; set DQM_SPEC to check drift")
 
