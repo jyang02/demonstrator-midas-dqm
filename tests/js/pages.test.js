@@ -224,3 +224,43 @@ test("with an analyzer answering, the panels say what it publishes instead", asy
   assert.match(probes[0].textContent,
     /It publishes: wd\/persistence_ch00, wd\/amplitude_ch00\./);
 });
+
+// --- how often a big histogram is refetched ---------------------------------
+
+test("a per-channel colormap is refetched far less often than a small histogram", () => {
+  const H = require(path.join(__dirname, "..", "..", "pages", "js", "dqm-hists.js"));
+
+  // The sizes this page actually asks for.
+  assert.strictEqual(H.refreshFor(256), H.REFRESH_MS, "occupancy is small");
+  assert.strictEqual(H.refreshFor(200), H.REFRESH_MS, "amplitude is small");
+  assert.strictEqual(H.refreshFor(64 * 110), H.REFRESH_MS, "persistence is small");
+
+  // 32 channels was small enough; 256 is not, which is the regression this
+  // guards. Three of those at the small cadence is what made the tab crawl.
+  assert.strictEqual(H.refreshFor(32 * 200), H.REFRESH_MS);
+  const big = H.refreshFor(256 * 200);
+  assert.ok(big > H.REFRESH_MS * 4, `256x200 still refetched every ${big} ms`);
+
+  // The point of scaling rather than picking a number: above the threshold,
+  // cells per second is constant, so doubling the channel count cannot make
+  // the page cost twice as much again. Below it, a small histogram costs less
+  // than that ceiling and is left alone.
+  const rate = (cells) => cells / H.refreshFor(cells);
+  const ceiling = H.BIG_HIST_CELLS / H.REFRESH_MS;
+  // Flat only up to the cap: past it, "never slower than MAX_REFRESH_MS" wins
+  // and the cost per second rises again. That is the deliberate trade -- a tile
+  // that stops updating is worse than one that costs a little more -- and
+  // 256 x 200 is comfortably under it.
+  [256 * 200, 300 * 150, 40 * 200].filter(
+    (c) => c > H.BIG_HIST_CELLS
+        && H.refreshFor(c) < H.MAX_REFRESH_MS).forEach(function (cells) {
+    assert.ok(Math.abs(rate(cells) - ceiling) < 1e-9,
+      `${cells} bins costs ${rate(cells)} cells/ms, not the ${ceiling} ceiling`);
+  });
+  assert.ok(rate(32 * 200) < ceiling, "a small histogram should cost less");
+  assert.strictEqual(H.refreshFor(512 * 200), H.MAX_REFRESH_MS,
+    "past the cap it should sit at the cap, not keep slowing down");
+
+  // And it never stops updating.
+  assert.ok(H.refreshFor(10 ** 9) <= H.MAX_REFRESH_MS);
+});

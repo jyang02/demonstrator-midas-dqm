@@ -40,10 +40,36 @@ const PANELS = {
   amplitude_by_channel: "sampic/amplitude_by_channel",
 };
 
-//: How often to re-fetch. These are accumulating histograms, not a live trace:
-//: a shifter watches a shape settle over minutes, and asking mhttpd -- the same
-//: process serving run control -- more often than this buys nothing.
+//: How often to re-fetch a small histogram. These are accumulating histograms,
+//: not a live trace: a shifter watches a shape settle over minutes, and asking
+//: mhttpd -- the same process serving run control -- more often than this buys
+//: nothing.
 const REFRESH_MS = 2000;
+
+//: Above this many bins, slow down (see refreshFor).
+const BIG_HIST_CELLS = 8000;
+//: Never slower than this, however large.
+const MAX_REFRESH_MS = 15000;
+
+/**
+ * How often to refetch a histogram of this size.
+ *
+ * A per-channel colormap is 256 x 200 bins once the ATAR's channels are all
+ * mapped: 51200 cells, about 208 kB on the wire, and 51200 rectangles for the
+ * browser to paint. Three of those on one page at the small-histogram cadence
+ * is 150000 cells every two seconds, which the browser cannot keep up with --
+ * the server barely notices (mhttpd goes from 0.2% to 0.6% of a core) and the
+ * tab crawls.
+ *
+ * Refetching that often buys nothing anyway, by this file's own argument: an
+ * accumulating histogram settles over minutes. So the interval scales with the
+ * size, and the cost per second stays roughly flat no matter how the channel
+ * count grows.
+ */
+function refreshFor(cells) {
+  if (!(cells > BIG_HIST_CELLS)) return REFRESH_MS;
+  return Math.min(MAX_REFRESH_MS, Math.round(REFRESH_MS * cells / BIG_HIST_CELLS));
+}
 
 // ---------------------------------------------------------------------------
 // One histogram, in one tile
@@ -61,9 +87,10 @@ function histPanel(name) {
     }
 
     const entries = el("span", {}, "—");
+    const cadence = el("span", { class: "dqm-chip", id: `${name}-cadence` }, "");
     const strip = el("div", { class: "dqm-strip" },
       chip("histogram", el("code", {}, name)),
-      chip("entries", entries));
+      chip("entries", entries), cadence);
     const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
     const plotDiv = el("div", { class: "dqm-plot" });
     ctx.body.appendChild(strip);
@@ -95,9 +122,29 @@ function histPanel(name) {
       graph.resize();
     }
 
+    let sized = false;
+
     async function tick() {
       if (!graph) await build();
       const hist = await BRPC.histogram(client, name);
+      // Sized from the histogram itself, on its first arrival: the page cannot
+      // know how many channels the map has until the analyzer answers.
+      if (!sized) {
+        sized = true;
+        const cells = (hist.data && hist.data.length)
+          || (hist.nx || 0) * (hist.ny || 1);
+        const ms = refreshFor(cells);
+        if (ms !== REFRESH_MS) {
+          updater.setInterval(ms);
+          // Said, not left to be discovered. A tile that repaints every 13
+          // seconds with no explanation reads as a stuck tile, and the first
+          // thing anyone does about a stuck tile is reload the page.
+          cadence.textContent = `every ${Math.round(ms / 1000)} s`;
+          cadence.title = `${cells} bins: refetched less often so the browser `
+            + `keeps up. The small histograms here still update every `
+            + `${REFRESH_MS / 1000} s.`;
+        }
+      }
       // setData() ends in calcMinMax() and redraw(), so unlike the Scope page
       // -- which assigns param.plot directly and has to do both by hand -- this
       // path needs neither.
@@ -137,6 +184,8 @@ Object.keys(PANELS).forEach(function (id) {
 });
 
 // Reachable for the tests, which assert this agrees with config_defaults.
-if (typeof module !== "undefined" && module.exports) module.exports = { PANELS };
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { PANELS, refreshFor, REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS };
+}
 
 })();
