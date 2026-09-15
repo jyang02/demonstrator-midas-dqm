@@ -147,7 +147,16 @@ function histPanel(name) {
         title: { text: (meta && meta.title) || name },
         stats: { show: false },
         legend: { show: false },
-        mouseWheelZoom: true,
+        // False, not for want of wanting it: a tile that keeps the wheel is a
+        // tile the page cannot be scrolled past. mplot cancels every wheel
+        // event inside the axis window, so with the cursor over a plot the
+        // page stands still while the axes silently zoom, which reads as a
+        // frozen page rather than as a feature -- and it bites hardest when
+        // the plot is the first tile, where the cursor already is. There is no
+        // modifier to gate it on; mplot's option is a boolean. Zooming is not
+        // lost: drag along an axis still zooms, and the tile's own reset
+        // button still restores the range.
+        mouseWheelZoom: false,
         xAxis: { title: { text: (axes[0] && axes[0].title) || "" } },
         yAxis: { title: { text: (axes[1] && axes[1].title) || "counts" } },
         // display() fills this in; it must exist first, because it indexes
