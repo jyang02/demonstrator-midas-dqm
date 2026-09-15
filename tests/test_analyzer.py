@@ -377,10 +377,10 @@ def test_settings_are_seeded_once_and_not_overwritten():
 
 def test_the_odb_is_the_authority_for_binning():
     a = _analyzer(rate=20.0)
-    c = _seeded_client(**{"Binning/persistence x bins": 64,
+    c = _seeded_client(**{"Binning/persistence x bins": 128,
                           "Binning/persistence y bins": 20})
     a.apply_settings(c, force=True)
-    assert a.settings["Binning"]["persistence x bins"] == 64
+    assert a.settings["Binning"]["persistence x bins"] == 128
 
 
 def test_changing_the_binning_rebuilds_the_histograms():
@@ -390,17 +390,17 @@ def test_changing_the_binning_rebuilds_the_histograms():
     a.apply_settings(c, force=True)
 
     pers = a.store.get("fake/persistence")
-    assert pers.x.n == 256, "the seeded default"
+    assert pers.x.n == 64, "the seeded default, over the plugin's own 256"
     pers.fill([1.0], [-0.5])
     assert pers.entries == 1
 
     before = a.reconfigures            # startup already applied the ODB once
-    c.tree["/DQM/Analyzer/Binning/persistence x bins"] = 64
+    c.tree["/DQM/Analyzer/Binning/persistence x bins"] = 128
     a._settings_checked = 0
     assert a.apply_settings(c) is True
 
     rebuilt = a.store.get("fake/persistence")
-    assert rebuilt.x.n == 64, "the new binning took effect"
+    assert rebuilt.x.n == 128, "the new binning took effect"
     assert rebuilt.entries == 0, "old counts must not be carried into new bins"
     assert a.reconfigures == before + 1
     assert any("binning changed" in m for m in c.messages), \
@@ -472,8 +472,8 @@ def test_a_broken_settings_tree_does_not_stop_the_analyzer():
     a.apply_settings(_Broken(), force=True)          # must not raise
 
     assert a.settings is not None, "it must end up configured, not unconfigured"
-    assert a.settings["Binning"]["persistence x bins"] == 256, "on the defaults"
-    assert S.read(_Broken())["Binning"]["persistence x bins"] == 256
+    assert a.settings["Binning"]["persistence x bins"] == 64, "on the defaults"
+    assert S.read(_Broken())["Binning"]["persistence x bins"] == 64
 
 
 def test_status_reports_the_live_binning():
