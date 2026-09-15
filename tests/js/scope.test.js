@@ -124,8 +124,8 @@ test("the trace carries volts against nanoseconds, from the configured period", 
 
   const trace = graphOf(page).param.plot[0];
   assert.strictEqual(trace.yData.length, 64);
-  // 0.15625 ns at 6400 MS/s: the last sample of a 64-slot hit.
-  assert.ok(Math.abs(trace.xData[63] - 63 * 0.15625) < 1e-6);
+  // 0.625 ns at 1.6 GSPS: the last sample of a 64-slot hit.
+  assert.ok(Math.abs(trace.xData[63] - 63 * 0.625) < 1e-6);
   // Volts, not ADC counts. A decoder that scaled by 1e4 would still plot.
   trace.yData.forEach((v) => assert.ok(Math.abs(v) < 5.0, `${v} is not volts`));
 });

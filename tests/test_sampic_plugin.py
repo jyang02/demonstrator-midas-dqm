@@ -158,6 +158,35 @@ def test_a_bank_the_decoder_disagrees_with_is_counted_not_raised(plugin):
     assert plugin.status()["events"] == 1
 
 
+# -- the channel axis is global, not board-local -----------------------------
+
+def test_channel_axis_separates_boards(plugin):
+    """`channel` is board-local, so it is not unique across FE boards.
+
+    Two hits that both report channel 5 on different boards are different
+    readout channels and must not share an occupancy bin.
+    """
+    plugin.process(_event([_hit(channel=5), _hit(channel=5)]))
+    occ = plugin.store.get(f"{PREFIX}/occupancy")
+    assert occ.entries == 2
+
+    plugin.reconfigure({}, {})          # reset
+    b0 = {**_hit(channel=5), "fe_board_index": 0}
+    b3 = {**_hit(channel=5), "fe_board_index": 3}
+    plugin.process(_event([b0, b3]))
+    counts = plugin.store.get(f"{PREFIX}/occupancy").counts
+    populated = [i for i, c in enumerate(counts) if c]
+    assert len(populated) == 2, "board 0 ch 5 and board 3 ch 5 shared a bin"
+
+
+def test_channel_axis_is_board_local_index_when_there_is_one_board():
+    """A single-board recording is unchanged: board 0 means index == channel."""
+    from mdqm.dqm.sampic_plugin import _global_channel
+    assert _global_channel({"channel": 5}) == 5.0
+    assert _global_channel({"fe_board_index": 0, "channel": 5}) == 5.0
+    assert _global_channel({"fe_board_index": 3, "channel": 5}) == 197.0
+
+
 # -- rebinning ---------------------------------------------------------------
 
 def test_reconfigure_rebuilds_and_therefore_resets(plugin):

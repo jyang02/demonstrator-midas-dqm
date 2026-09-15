@@ -63,6 +63,33 @@ PRESAMPLES = 8
 #: which is musip's selector semantics and what HistStore.clear implements.
 PREFIX = "sampic"
 
+#: Board-local channels per FE board. ``channel`` in an AD record counts within
+#: one board, so it is NOT unique on its own: board 0 channel 5 and board 3
+#: channel 5 are different readout channels that both report ``channel == 5``.
+#: Every per-channel axis here uses the global index below instead.
+CHANNELS_PER_BOARD = 64
+
+
+def _global_channel(hit) -> float:
+    """``fe_board_index * 64 + channel``, the index every channel axis uses.
+
+    This is the same global index the ODB's parallel ``Channel map detector``,
+    ``Channel map channel id`` and ``Channel map is active`` arrays are ordered
+    by, so occupancy bin i and channel-map entry i are the same readout
+    channel and a detector label can be read straight off a file that carries
+    one.
+
+    ``fe_board_index`` is absent from single-board recordings, where treating
+    it as 0 reproduces the previous behaviour exactly.
+    """
+    return float(int(hit.get("fe_board_index", 0)) * CHANNELS_PER_BOARD
+                 + int(hit["channel"]))
+
+
+def _global_channels(hits) -> np.ndarray:
+    return np.fromiter((_global_channel(h) for h in hits), dtype=np.float64,
+                       count=len(hits))
+
 
 def _payload(bank) -> bytes:
     """Bank data as bytes, whatever shape the bindings handed over.
@@ -118,8 +145,12 @@ class SampicPlugin:
         "baseline max": 1.0,
         "noise bins": 200,
         "noise max V": 0.05,
-        "channels": 32,
-        "max hits per event": 16,
+        # 4 FE boards x 64 board-local channels. The axis is the GLOBAL index
+        # fe_board_index * CHANNELS_PER_BOARD + channel (see _global_channels),
+        # so it must span every board, not one board's worth.
+        "channels": 256,
+        # Demonstrator events reach 35 hits; 16 sent the rest to the overflow.
+        "max hits per event": 40,
     }
 
     def __init__(self, store, roles=None, binning=None):
@@ -231,8 +262,7 @@ class SampicPlugin:
         if not hits:
             return True
 
-        channels = np.fromiter((h["channel"] for h in hits), dtype=np.float64,
-                               count=len(hits))
+        channels = _global_channels(hits)
         amplitudes = np.fromiter((h["amplitude"] for h in hits), dtype=np.float64,
                                  count=len(hits))
         baselines = np.fromiter((h["baseline"] for h in hits), dtype=np.float64,
@@ -255,7 +285,7 @@ class SampicPlugin:
             persist_x.append(np.arange(wave.size, dtype=np.float64))
             persist_y.append(wave)
             if wave.size >= PRESAMPLES:
-                noise_ch.append(float(hit["channel"]))
+                noise_ch.append(_global_channel(hit))
                 noise.append(float(np.std(wave[:PRESAMPLES])))
 
         if persist_x:

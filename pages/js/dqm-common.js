@@ -52,7 +52,7 @@ const DEFAULTS = {
     "Event ID": 1,
     "Waveform Bank": "AD00",
     "Hit Time Bank": "AT00",
-    "Sample Period ns": 0.15625,
+    "Sample Period ns": 0.625,
     "Buffer": "SYSTEM"
   },
   "Channels": {
