@@ -92,6 +92,7 @@ async function loadChannelMap() {
   if (!Number.isFinite(Number(pixelBase)) || !(Number(stride) > 0)) return null;
 
   const byChannel = new Map();
+  const stripOfChannel = new Map();
   const layers = new Set();
   ids.forEach(function (id, i) {
     // Only channels the map calls ATAR have a layer; anything else is on the
@@ -103,10 +104,14 @@ async function loadChannelMap() {
     const layer = Math.floor(index / Number(stride));
     if (Number(nLayers) > 0 && layer >= Number(nLayers)) return;
     byChannel.set(i, layer);
+    // The strip's position across the layer. Same decode as the layer, the
+    // other half of the divmod.
+    stripOfChannel.set(i, index % Number(stride));
     layers.add(layer);
   });
   if (!byChannel.size) return null;
-  return { byChannel: byChannel, layers: Array.from(layers).sort((a, b) => a - b),
+  return { byChannel: byChannel, stripOf: stripOfChannel,
+           layers: Array.from(layers).sort((a, b) => a - b),
            firstOrientation: typeof firstOrientation === "string" ? firstOrientation : null,
            source: `${base} (${byChannel.size} channels, ${layers.size} layers)` };
 }
@@ -131,6 +136,13 @@ function layerOf(hit) {
   if (!layerMap) return null;
   const l = layerMap.byChannel.get(hit.global_channel);
   return l === undefined ? null : l;
+}
+
+//: The hit's strip position across its layer, or null if the map cannot say.
+function stripOf(hit) {
+  if (!layerMap || !layerMap.stripOf) return null;
+  const sIdx = layerMap.stripOf.get(hit.global_channel);
+  return sIdx === undefined ? null : sIdx;
 }
 
 // ---------------------------------------------------------------------------
@@ -445,10 +457,18 @@ function draw() {
     // A 64-sample hit never needs reducing; this is here so a longer waveform
     // format does not silently become a 4000-point polyline per channel.
     const cut = ADBanks.minMaxDecimate(xs, hit.waveform, 600);
-    const label = `ch ${hit.global_channel}${hit.hit_number ? ` #${hit.hit_number}` : ""}`;
+    // Coloured by strip position, not by channel: within a layer panel the
+    // layer is already the heading, so what a trace still has to say is where
+    // across the layer it sat. Two layers' traces at the same strip then share
+    // a colour, which is the point -- a track crossing the target shows as the
+    // same colour appearing down both columns.
+    const strip = stripOf(hit);
+    const label = (strip === null ? `ch ${hit.global_channel}` : `strip ${strip}`)
+      + (hit.hit_number ? ` #${hit.hit_number}` : "");
     panel.graph.param.plot.push({
       label: label, type: "scatter",
-      line: { draw: true, width: 1, color: colourFor(hit.global_channel) },
+      line: { draw: true, width: 1,
+              color: colourFor(strip === null ? hit.global_channel : strip) },
       marker: { draw: false },
       xData: cut.x, yData: cut.y,
     });
@@ -506,9 +526,12 @@ function draw() {
   panels.forEach(function (p) { p.graph.redraw(); });
 }
 
-//: matplotlib's tab10. Channel number modulo
-//: the palette: adjacent channels get different colours, which is what the eye
-//: needs when several are overlaid.
+//: matplotlib's tab10, indexed by strip number where the channel map gives one
+//: and by channel where it does not. Modulo the palette on purpose: adjacent
+//: strips get different colours, which is what the eye needs when a track
+//: crosses two neighbouring strips and both traces land in one panel. A ramp
+//: across the strip axis would read as position but make exactly that case two
+//: nearly identical lines.
 const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
                  "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
 function colourFor(ch) { return PALETTE[ch % PALETTE.length]; }

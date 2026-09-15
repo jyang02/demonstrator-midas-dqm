@@ -418,7 +418,15 @@ test("with the map in the ODB, the traces split into one panel per layer", async
     .filter((p) => p.xData.length).map((p) => p.label);
   assert.strictEqual(drawn.length, ev.decoded.nhits,
     "a hit was dropped or drawn twice when routed to a layer");
-  assert.strictEqual(new Set(drawn).size, drawn.length);
+  // Unique WITHIN a panel, which is what mplot needs: findPlot() looks a label
+  // up in one graph's own plot list, and a duplicate there makes deletePlot
+  // remove the wrong trace. Across panels a repeat is expected and meaningful
+  // -- "strip 12" in two layers is a track crossing both at the same strip.
+  panels.forEach(function (d) {
+    const here = d.mpg.param.plot.map((p) => p.label);
+    assert.strictEqual(new Set(here).size, here.length,
+      `duplicate labels in ${d.id}: ${here}`);
+  });
 
   // And in the right one: layer = (channel_id - base) / stride.
   const base = 100000, stride = 46;
@@ -426,13 +434,16 @@ test("with the map in the ODB, the traces split into one panel per layer", async
     const id = sampicSettings()["/Equipment/SAMPIC/Settings/Channel map channel id"]
       [h.global_channel];
     const layer = Math.floor((id - base) / stride);
+    const strip = (id - base) % stride;
     // By id, not by position: the panels are laid out in two columns now, so
     // the nth panel in the DOM is not layer n.
     const panel = page.doc.getElementById(`scope-plot-L${layer}`);
     assert.ok(panel, `no panel for layer ${layer}`);
     const labels = panel.mpg.param.plot.map((p) => p.label);
-    assert.ok(labels.some((l) => l.startsWith(`ch ${h.global_channel}`)),
-      `ch ${h.global_channel} is not in layer ${layer}`);
+    // Labelled by strip once the map gives one: inside a layer panel the layer
+    // is the heading, so the strip is what is left to say.
+    assert.ok(labels.some((l) => l.startsWith(`strip ${strip}`)),
+      `strip ${strip} (ch ${h.global_channel}) is not in layer ${layer}`);
   });
 });
 
@@ -525,4 +536,63 @@ test("with no orientation in the ODB the columns say only which layers they hold
   const head = page.doc.getElementById("scope-col-odd").byClass("dqm-col-head")[0];
   assert.strictEqual(head.textContent, "odd layers", "orientation was invented");
   assert.ok(page.doc.getElementById("scope-plot-L1"), "the split still happened");
+});
+
+
+// --- colour carries the strip, not the channel ------------------------------
+
+test("traces are coloured and labelled by strip within the layer", async () => {
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+
+  const ids = sampicSettings()["/Equipment/SAMPIC/Settings/Channel map channel id"];
+  const base = 100000, stride = 46;
+  const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                   "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
+
+  let checked = 0;
+  ev.decoded.hits.forEach(function (h) {
+    const index = ids[h.global_channel] - base;
+    const layer = Math.floor(index / stride), strip = index % stride;
+    const plots = page.doc.getElementById(`scope-plot-L${layer}`).mpg.param.plot;
+    const mine = plots.find((p) => p.label.startsWith(`strip ${strip}`));
+    assert.ok(mine, `no trace labelled strip ${strip} in layer ${layer}`);
+    assert.strictEqual(mine.line.color, PALETTE[strip % PALETTE.length],
+      `strip ${strip} is coloured by channel, not by strip`);
+    checked++;
+  });
+  assert.ok(checked > 0);
+});
+
+test("the same strip in two layers gets the same colour", async () => {
+  // That is the point of colouring by strip: a track crossing the target shows
+  // as one colour appearing down both columns.
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+
+  const byStrip = new Map();
+  page.doc.getElementById("scope-layer-panels").byClass("dqm-scope-plot")
+    .forEach(function (d) {
+      d.mpg.param.plot.filter((p) => p.xData.length).forEach(function (p) {
+        const m = /^strip (\d+)/.exec(p.label);
+        if (!m) return;
+        const seen = byStrip.get(m[1]);
+        if (seen) assert.strictEqual(p.line.color, seen,
+          `strip ${m[1]} has two colours`);
+        byStrip.set(m[1], p.line.color);
+      });
+    });
+  assert.ok(byStrip.size > 0, "no strip-labelled traces to check");
+});
+
+test("a channel the map cannot place keeps its channel label and colour", async () => {
+  // No settings at all: every trace falls back to the old behaviour.
+  const ev = REAL.events[3];
+  const page = await boot([ev]);
+  await pump(page, 3);
+  const labels = graphOf(page).param.plot.map((p) => p.label);
+  assert.ok(labels.every((l) => l.startsWith("ch ")),
+    `unmapped hits should stay channel-labelled: ${labels}`);
 });
