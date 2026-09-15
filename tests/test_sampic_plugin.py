@@ -46,6 +46,23 @@ def _event(hits, numpy=True):
     return _Event({sampic.AD_BANK: _Bank(sampic.encode_ad(hits), numpy=numpy)})
 
 
+def _event_with_timing(hits, at_nhits=None, ac_total_hits=None, numpy=True):
+    """An event carrying AT00 and AC00 as well, as a generated file does.
+
+    `at_nhits` / `ac_total_hits` default to the truth; pass a different number
+    to build the event a disagreeing DAQ would have produced.
+    """
+    n = len(hits)
+    banks = {sampic.AD_BANK: _Bank(sampic.encode_ad(hits), numpy=numpy)}
+    if at_nhits is not None:
+        banks[sampic.AT_BANK] = _Bank(
+            sampic.encode_at(1234, at_nhits, sp_total_us_sum=99), numpy=numpy)
+    if ac_total_hits is not None:
+        banks[sampic.AC_BANK] = _Bank(
+            sampic.encode_ac(5678, 1, ac_total_hits, 2, 9, 2, 13), numpy=numpy)
+    return _Event(banks), n
+
+
 @pytest.fixture
 def plugin():
     return SampicPlugin(HistStore())
@@ -223,3 +240,55 @@ def test_status_reports_what_it_decoded(plugin):
     assert status["plugin"] == "sampic"
     assert (status["events"], status["hits"]) == (2, 3)
     assert status["hits_per_event"] == 1.5
+
+
+# -- three statements of one number ------------------------------------------
+
+def test_timing_banks_agreeing_are_counted_as_seen(plugin):
+    ev, n = _event_with_timing([_hit(), _hit(channel=9)], at_nhits=2, ac_total_hits=2)
+    assert plugin.process(ev)
+    st = plugin.status()
+    assert st["timing_seen"] == 1 and st["timing_mismatches"] == 0
+    assert st["collector_seen"] == 1 and st["collector_mismatches"] == 0
+    assert st["last_mismatch"] == ""
+
+
+def test_a_collector_disagreeing_with_the_banks_is_counted(plugin):
+    """AC00 says one thing, AD00 carries another: the event was built wrong."""
+    ev, n = _event_with_timing([_hit(), _hit(channel=9)], ac_total_hits=99)
+    assert plugin.process(ev), "the hits are still real and still get filled"
+    st = plugin.status()
+    assert st["collector_seen"] == 1
+    assert st["collector_mismatches"] == 1
+    assert "99" in st["last_mismatch"] and "AC00" in st["last_mismatch"]
+    # Counted, not dropped: an analyzer hiding the event would hide the fault.
+    assert st["events"] == 1 and st["hits"] == 2
+    assert plugin.store.get(f"{PREFIX}/occupancy").entries == 2
+
+
+def test_a_frontend_disagreeing_with_the_banks_is_counted(plugin):
+    ev, n = _event_with_timing([_hit()], at_nhits=7)
+    assert plugin.process(ev)
+    st = plugin.status()
+    assert st["timing_mismatches"] == 1 and st["collector_seen"] == 0
+    assert "AT00" in st["last_mismatch"]
+
+
+def test_an_absent_collector_bank_is_not_a_disagreement(plugin):
+    """Only generated files carry AC00; a repackaged recording has none."""
+    plugin.process(_event([_hit()]))
+    st = plugin.status()
+    assert st["collector_seen"] == 0, "a bank that is not there was counted as checked"
+    assert st["collector_mismatches"] == 0
+    assert st["bad_banks"] == 0
+
+
+def test_a_malformed_timing_bank_counts_as_a_bad_bank(plugin):
+    ev = _Event({sampic.AD_BANK: _Bank(sampic.encode_ad([_hit()])),
+                 sampic.AC_BANK: _Bank(b"\x00" * 12)})
+    assert plugin.process(ev), "a broken AC00 must not lose the hits"
+    st = plugin.status()
+    assert st["bad_banks"] == 1
+    assert "AC00" in st["last_error"]
+    assert st["collector_seen"] == 0
+    assert st["hits"] == 1

@@ -37,6 +37,13 @@ is blocked:
   invented here rather than read from anywhere.
 * **Calorimeter, MuPix, tracks.** No bank, no equipment, nothing to decode.
 
+AT00 and AC00 are read but not histogrammed. They carry one number each that
+can be checked -- the frontend's and the collector's own hit counts -- and
+per-event scalars about how the DAQ assembled the event, which is not a
+measurement of the detector. The check is counted into ``status()``; the
+scalars are shown beside the event on the Scope page, where an operator can
+read them against the event they describe.
+
 Channels are an *axis* here rather than one histogram per channel, so
 ``Channel roles/waveform channels`` does not change what exists. It is still
 reported in ``status()``, and the analyzer still rebuilds on a change to it --
@@ -151,6 +158,14 @@ class SampicPlugin:
         self.events = 0
         self.hits = 0
         self.bad_banks = 0
+        # Events where AT00 or AC00 disagreed with the AD00 hit count, and how
+        # many of each bank were there to check at all. A count of zero means
+        # nothing rather than "all agreed" unless the seen counter is non-zero.
+        self.timing_seen = 0
+        self.timing_mismatches = 0
+        self.collector_seen = 0
+        self.collector_mismatches = 0
+        self.last_mismatch = ""
         self.last_error: str | None = None
         self._build()
 
@@ -249,6 +264,7 @@ class SampicPlugin:
 
         self.events += 1
         self.hits += len(hits)
+        self._check_counts(event, len(hits))
         self.store.get(f"{PREFIX}/hits_per_event").fill([len(hits)])
         if not hits:
             return True
@@ -288,6 +304,44 @@ class SampicPlugin:
 
     # -- what the page shows about the analyzer ------------------------------
 
+    def _check_counts(self, event, nhits: int) -> None:
+        """Three statements of one number, from three levels of the DAQ.
+
+        AD00's hit count is what arrived, AT00's ``nhits`` is what the frontend
+        clustered, and AC00's ``total_hits`` is what the event builder believes
+        it assembled the event from. They disagreeing means the event was built
+        from parts that did not belong together -- a fault no per-hit histogram
+        here could show, because every histogram would look entirely normal.
+
+        Counted rather than rejected: the hits are still real and still worth
+        filling, and an analyzer that silently dropped events would hide the
+        very thing this is for. The count is what a shifter reads in status().
+
+        A bank that is not there is not a disagreement. Only generated files
+        carry AC00 at all, and a repackaged recording legitimately has none.
+        """
+        banks = getattr(event, "banks", None) or {}
+        for name, field, seen, bad in (
+                (sampic.AT_BANK, "nhits", "timing_seen", "timing_mismatches"),
+                (sampic.AC_BANK, "total_hits", "collector_seen", "collector_mismatches")):
+            if name not in banks:
+                continue
+            try:
+                decoded = (sampic.decode_at if name == sampic.AT_BANK
+                           else sampic.decode_ac)(_payload(banks[name]))
+            except (ValueError, KeyError, TypeError) as exc:
+                # A malformed timing bank is a layout fault like any other, and
+                # is counted where a shifter already looks for one.
+                self.bad_banks += 1
+                self.last_error = f"{name}: {type(exc).__name__}: {exc}"
+                continue
+            setattr(self, seen, getattr(self, seen) + 1)
+            claimed = int(decoded[field])
+            if claimed != nhits:
+                setattr(self, bad, getattr(self, bad) + 1)
+                self.last_mismatch = (f"{name} says {claimed} hits, "
+                                      f"{sampic.AD_BANK} carries {nhits}")
+
     def status(self) -> dict:
         return {
             "plugin": self.name,
@@ -296,6 +350,14 @@ class SampicPlugin:
             "hits_per_event": round(self.hits / self.events, 2) if self.events else 0.0,
             "bad_banks": self.bad_banks,
             "last_error": self.last_error,
+            # Denominators included on purpose: 0 mismatches out of 0 events
+            # carrying the bank is not agreement, and a shifter reading only
+            # the numerator could not tell the two apart.
+            "timing_seen": self.timing_seen,
+            "timing_mismatches": self.timing_mismatches,
+            "collector_seen": self.collector_seen,
+            "collector_mismatches": self.collector_mismatches,
+            "last_mismatch": self.last_mismatch,
             "binning": dict(self.binning),
             "channel_roles": dict(self.roles),
             # Per histogram, so a range that does not fit the data is visible
