@@ -216,5 +216,11 @@ test("with an analyzer answering, the panels say what it publishes instead", asy
 
   const probes = page.root.byClass("dqm-probe");
   assert.ok(probes.length > 0);
-  assert.match(probes[0].textContent, /names none of the 2 histograms it publishes/);
+  // The panel names what it wanted and what the client has instead, which is
+  // what makes the mismatch actionable. This asserted a phrasing the page has
+  // never produced -- written in the same commit as the message and never run,
+  // because the JS suite needs a node this repository's checkouts often lack.
+  assert.match(probes[0].textContent, /"mdqm_analyzer" answers and does not publish/);
+  assert.match(probes[0].textContent,
+    /It publishes: wd\/persistence_ch00, wd\/amplitude_ch00\./);
 });

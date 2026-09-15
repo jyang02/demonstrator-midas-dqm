@@ -183,6 +183,20 @@ function runPage(scriptPath, responses, opts = {}) {
     }
     deletePlot(label) { this.param.plot.splice(this.findPlot(label), 1); }
     setData(i, x, y, z) { this.data[i] = { x, y, z }; }
+    // mplot.js folds the per-plot xMin/xMax/yMin/yMax the caller set into the
+    // graph-level bounds drawYAxis() reads. Modelled rather than stubbed
+    // empty: a page that sets per-plot bounds and never has them folded draws
+    // an axis over the wrong range, and a no-op here would pass that.
+    calcMinMax() {
+      const vals = (k) => this.param.plot
+        .map((p) => p[k])
+        .filter((v) => typeof v === "number" && isFinite(v));
+      const lo = (k) => (vals(k).length ? Math.min.apply(null, vals(k)) : undefined);
+      const hi = (k) => (vals(k).length ? Math.max.apply(null, vals(k)) : undefined);
+      this.xMin = lo("xMin"); this.xMax = hi("xMax");
+      this.yMin = lo("yMin"); this.yMax = hi("yMax");
+      this.calcs = (this.calcs || 0) + 1;
+    }
     draw() { this.draws++; }
     redraw() { this.draws++; }
     resize() { this.resizes++; }
