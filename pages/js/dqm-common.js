@@ -52,6 +52,7 @@ const DEFAULTS = {
     "Event ID": 1,
     "Waveform Bank": "AD00",
     "Hit Time Bank": "AT00",
+    "Collector Bank": "AC00",
     "Sample Period ns": 0.625,
     "Buffer": "SYSTEM"
   },

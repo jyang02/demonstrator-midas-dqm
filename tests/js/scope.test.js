@@ -314,3 +314,61 @@ test("unticking one board's channel leaves the other boards drawn", async () => 
   assert.strictEqual(graphOf(page).param.plot.length, before - 1,
     "unticking one channel removed more or fewer than one trace");
 });
+
+
+// --- AT00 telemetry and AC00, where an operator can read them ---------------
+
+test("a demonstrator event shows its readout telemetry and collector record", async () => {
+  const ev = DEMO.events[0];
+  const page = await boot([ev]);
+  await pump(page, 2);
+
+  const at = page.doc.getElementById("at-telemetry");
+  assert.ok(at, "no telemetry table");
+  const cells = at.byTag("td").map((c) => c.textContent);
+  // Filled, so real numbers rather than the not-reported dash.
+  assert.ok(!cells.includes("—"), `telemetry read as not reported: ${cells}`);
+  assert.ok(cells.includes(String(ev.decoded.timing.sp_total_us_sum)),
+    "the summed readout time is not on the page");
+  assert.ok(cells.includes(String(ev.decoded.timing.sp_total_us_max)),
+    "the worst-chip readout time is not on the page");
+  assert.match(text(page, "at-parents"), new RegExp(`${ev.decoded.timing.nparents} parent`));
+
+  const c = ev.decoded.collector;
+  assert.match(text(page, "ac-note"), new RegExp(`${c.total_hits} hits`));
+  assert.match(text(page, "ac-note"), new RegExp(`${c.collector_timestamp_ns} ns`));
+  const acCells = page.doc.getElementById("ac-timing").byTag("td").map((x) => x.textContent);
+  assert.deepStrictEqual(acCells, [String(c.wait_us), String(c.group_build_us),
+                                   String(c.finalize_us), String(c.total_us)]);
+});
+
+test("a repackaged event says its telemetry is absent rather than showing zeros", async () => {
+  // Run 108 has AT00 with every telemetry field zero and no AC00 at all.
+  const ev = REAL.events[0];
+  const page = await boot([ev]);
+  await pump(page, 2);
+
+  const cells = page.doc.getElementById("at-telemetry").byTag("td")
+    .map((c) => c.textContent).filter((c) => c !== "sum" && c !== "max");
+  assert.ok(cells.every((c) => c === "—"),
+    `zeros shown as measurements: ${cells}`);
+  assert.match(text(page, "ac-note"), /No collector bank/);
+});
+
+test("a collector that disagrees with the banks it collected is reported", async () => {
+  const ev = DEMO.events[0];
+  const page = await boot([ev]);
+  await pump(page, 2);
+  assert.ok(!/AC00 collected/.test(text(page, "scope-status")),
+    "a consistent event should not be flagged");
+
+  // Corrupt total_hits in the AC00 payload: u32 at offset 12 of the record.
+  const bad = JSON.parse(JSON.stringify(ev));
+  const raw = Buffer.from(bad.banks_b64.AC00, "base64");
+  raw.writeUInt32LE(99, 12);
+  bad.banks_b64.AC00 = raw.toString("base64");
+
+  const page2 = await boot([bad]);
+  await pump(page2, 2);
+  assert.match(text(page2, "scope-status"), /AC00 collected 99 hits but AD00 carries/);
+});

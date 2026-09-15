@@ -181,6 +181,7 @@ function onEvent(event) {
     eventId: state.cfg["Event ID"],
     waveformBank: state.cfg["Waveform Bank"],
     hitTimeBank: state.cfg["Hit Time Bank"],
+    collectorBank: state.cfg["Collector Bank"],
   });
   if (!decoded) { state.emptyPolls++; return update(); }
 
@@ -363,6 +364,16 @@ function update() {
     bits.push(`AT00 claims ${state.event.timing.nhits} hits but AD00 carries `
               + `${state.event.hits.length}.`);
   }
+  // Same fault, one level up: AC00 is the collector's own count of what it
+  // built the event from. It disagreeing with the banks that arrived means the
+  // event was assembled from parts that did not belong together, which no
+  // per-hit plot on this page could show.
+  if (state.event.collector
+      && state.event.collector.total_hits !== state.event.hits.length) {
+    status.className = "dqm-diagnosis red";
+    bits.push(`AC00 collected ${state.event.collector.total_hits} hits but AD00 `
+              + `carries ${state.event.hits.length}.`);
+  }
   // Said rather than truncated. A page that drops traces to stay readable is
   // hiding hits, and on a hit-based detector the hits are the measurement.
   if (state.busy) {
@@ -387,10 +398,83 @@ function setText(id, text) {
 DQMPage.register("raw_event", function (ctx) {
   ctx.body.appendChild(el("div", { class: "dqm-note", id: "raw-note" },
     "Fills from the same event as the waveforms above."));
+  ctx.body.appendChild(el("div", { id: "raw-timing" }));
   ctx.body.appendChild(el("div", { id: "raw-table" }));
 });
 
+//: Microseconds, or an em dash. AT00's telemetry is zero in anything that
+//: repackages a recording, so a column of "0" would read as "the readout took
+//: no time" rather than "nobody reported it".
+function us(v, reported) {
+  return reported ? `${v}` : "—";
+}
+
+/**
+ * AT00's readout telemetry and AC00's collector record, as two small tables.
+ *
+ * Neither is plotted anywhere: they are per-event scalars about how the DAQ
+ * assembled the event, and the place to read them is beside the event they
+ * describe. What they are good for is spotting an event that was built wrong --
+ * a collector that disagrees with the banks it collected, or a chip whose
+ * readout took far longer than its siblings.
+ */
+function updateTimingTables() {
+  const host = document.getElementById("raw-timing");
+  if (!host || !state.event) return;
+  host.innerHTML = "";
+
+  const t = state.event.timing;
+  if (t) {
+    // Zero throughout means the frontend does not report it, which is the case
+    // for every repackaged recording. Say that once rather than tabulate zeros.
+    const reported = ADBanks.AT_TELEMETRY_FIELDS.some((f) => t[f] > 0);
+    host.appendChild(el("div", { class: "dqm-note" },
+      reported
+        ? "AT00 readout telemetry, microseconds, per chip summed and worst-case."
+        : "AT00 carries no readout telemetry in this file: every field is zero, "
+          + "which is what a repackaged recording writes."));
+
+    const table = el("table", { class: "dqm-table mtable", id: "at-telemetry" });
+    table.appendChild(el("tr", {},
+      el("th", { class: "label" }, ""), el("th", {}, "prepare"),
+      el("th", {}, "read"), el("th", {}, "decode"), el("th", {}, "total")));
+    [["sum", "sum"], ["max", "max"]].forEach(function (row) {
+      table.appendChild(el("tr", {},
+        el("td", { class: "label" }, row[0]),
+        el("td", {}, us(t[`sp_prepare_us_${row[1]}`], reported)),
+        el("td", {}, us(t[`sp_read_us_${row[1]}`], reported)),
+        el("td", {}, us(t[`sp_decode_us_${row[1]}`], reported)),
+        el("td", {}, us(t[`sp_total_us_${row[1]}`], reported))));
+    });
+    host.appendChild(table);
+    host.appendChild(el("div", { class: "dqm-note", id: "at-parents" },
+      `${t.nparents} parent${t.nparents === 1 ? "" : "s"}, `
+      + `acquisition retries ${us(t.sp_acq_retry_sum, reported)} `
+      + `(worst chip ${us(t.sp_acq_retry_max, reported)}).`));
+  }
+
+  const c = state.event.collector;
+  if (!c) {
+    host.appendChild(el("div", { class: "dqm-note", id: "ac-note" },
+      "No collector bank in this event: nothing describes how it was built."));
+    return;
+  }
+  host.appendChild(el("div", { class: "dqm-note", id: "ac-note" },
+    `AC00 collector: ${c.n_events} event${c.n_events === 1 ? "" : "s"}, `
+    + `${c.total_hits} hits, stamped ${c.collector_timestamp_ns} ns.`));
+
+  const ac = el("table", { class: "dqm-table mtable", id: "ac-timing" });
+  ac.appendChild(el("tr", {},
+    el("th", {}, "wait"), el("th", {}, "group build"),
+    el("th", {}, "finalize"), el("th", {}, "total")));
+  ac.appendChild(el("tr", {},
+    el("td", {}, String(c.wait_us)), el("td", {}, String(c.group_build_us)),
+    el("td", {}, String(c.finalize_us)), el("td", {}, String(c.total_us))));
+  host.appendChild(ac);
+}
+
 function updateRawEvent() {
+  updateTimingTables();
   const host = document.getElementById("raw-table");
   if (!host || !state.event) return;
   host.innerHTML = "";

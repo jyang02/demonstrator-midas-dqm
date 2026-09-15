@@ -105,6 +105,24 @@ AD00 hit count, and a disagreement means the event was assembled from parts
 that did not belong together. Only generated files carry this bank; a recording
 repackaged from `.bin` or `.root` has no collector to describe.
 
+## Where these are shown
+
+The waveforms are the Scope page's plot. AT00's telemetry and AC00 are
+per-event scalars about how the DAQ assembled the event rather than about the
+physics in it, so they are not plotted anywhere: they sit beside the event they
+describe, in the raw-event panel under the traces.
+
+Two of their numbers are checks rather than readings, and the Scope page's
+status line reddens on either. `AT00.nhits` is what the frontend clustered;
+`AC00.total_hits` is what the collector believes it built the event from; the
+AD00 hit count is what actually arrived. Those disagreeing means the event was
+assembled from parts that did not belong together, and no per-hit plot could
+show it.
+
+Telemetry that is all zero is displayed as absent, not as zero microseconds: a
+repackaged recording has nothing to put there, and a column of zeros reads as
+"the readout took no time".
+
 ## Bank framing
 
 `bk_init32a` (`flags = 0x31`), banks zero-padded to 8-byte alignment,

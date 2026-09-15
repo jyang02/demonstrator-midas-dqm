@@ -66,6 +66,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Event ID": 1,
         "Waveform Bank": "AD00",
         "Hit Time Bank": "AT00",
+        "Collector Bank": "AC00",
         # Not in the bank. The period lives in the SAMPIC .bin header
         # (1e3 / sampling_freq_msps ns) and does not survive into MIDAS, so the
         # page has to be told it. The default is the demonstrator's 1.6 GSPS.
