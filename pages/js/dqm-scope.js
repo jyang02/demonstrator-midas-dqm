@@ -287,8 +287,28 @@ function draw() {
       label: "every channel unticked", type: "scatter",
       line: { draw: true, width: 1 }, marker: { draw: false },
       xData: [], yData: [],
+      xMin: 0, xMax: 1, yMin: 0, yMax: 1,
     });
   }
+
+  // mplot fills in a plot's xMin/xMax/yMin/yMax in exactly two places:
+  // setData() and its ODB-loading path. This page assigns param.plot directly,
+  // because setData() can replace a trace's data but cannot add or remove
+  // traces and the hit count changes every event. Without the bounds, draw()
+  // returns immediately after painting the background -- a white panel with no
+  // axes, no trace and no error raised anywhere, which is this page set's own
+  // stated failure mode arriving by a different door.
+  state.graph.param.plot.forEach(function (p) {
+    if (!p.xData.length) return;
+    p.xMin = Math.min.apply(null, p.xData);
+    p.xMax = Math.max.apply(null, p.xData);
+    p.yMin = Math.min.apply(null, p.yData);
+    p.yMax = Math.max.apply(null, p.yData);
+  });
+  // ...and calcMinMax() turns those per-plot bounds into the graph-level
+  // this.xMin/this.yMax that drawYAxis() needs.
+  state.graph.calcMinMax();
+
   state.busy = drawn.length > BUSY_OVERLAY;
   state.graph.redraw();
 }
