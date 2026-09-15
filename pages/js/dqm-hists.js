@@ -28,7 +28,7 @@
 (function () {
 "use strict";
 
-const { el, chip, blocked, editButton } = DQMPage;
+const { el, chip, blocked, editButton, probeThisBox } = DQMPage;
 
 //: Panel id -> the histogram the analyzer publishes for it.
 //:
@@ -57,12 +57,12 @@ const PANELS = {
 //: these pages is one reason and not two.
 //:
 //: They stay in PANELS, and /DQM/<page>/Histograms goes on naming them, on
-//: purpose. The analyzer still accumulates all four and the page still checks
-//: that it publishes them, so the probe footnote a blocked tile already carries
-//: says so underneath the placeholder -- the tile is empty because this file
-//: chose not to paint it, not because the data stopped. Nothing is lost by
-//: waiting, either: these are accumulating histograms, so whatever arrives
-//: while they are held back is still in them when they come back.
+//: purpose. The analyzer still accumulates all four and the page still asks
+//: whether it publishes them, and heldBackPanel() puts that answer underneath
+//: the placeholder -- so the tile says the data is there and that this file
+//: chose not to paint it, rather than leaving a reader to guess which. Nothing
+//: is lost by waiting, either: these are accumulating histograms, so whatever
+//: arrives while they are held back is still in them when they come back.
 //:
 //: Taking a name out of this set puts its plot straight back, with no other
 //: change anywhere.
@@ -225,20 +225,23 @@ function histPanel(name) {
  * useful thing on the tile.
  *
  * The sentence is about this page's own choice rather than about the analyzer,
- * because that is the true reason and because the probe footnote directly
- * below it is already saying whether the analyzer is answering. A shifter who
- * reads both learns the thing that matters: the data is there and is being
- * accumulated, and it is this page that is not drawing it.
+ * because that is the true reason. It says the histogram is still being
+ * accumulated, though, which is a claim about the analyzer -- so the box goes
+ * to probeThisBox() and the probe footnote lands underneath saying whether
+ * that client is answering and publishing this name. Checked, not asserted,
+ * which is the whole reason the probe exists. A shifter who reads both learns
+ * the thing that matters: the data is there, and it is this page that is not
+ * drawing it.
  */
 function heldBackPanel(name) {
   return function (ctx) {
-    blocked(ctx.body,
+    probeThisBox(blocked(ctx.body,
       `Held back rather than missing. The analyzer is still accumulating `
       + `${name} and this page is still asking for it; what is switched off is `
       + `drawing it. As a colormap it is one rectangle per bin repainted on `
       + `every fetch, which is what made this page lag. Remove this panel from `
       + `HELD_BACK in pages/js/dqm-hists.js to put the plot back.`,
-      ctx.panel);
+      ctx.panel));
   };
 }
 

@@ -139,6 +139,23 @@ async function probeAnalyzer(page) {
   });
 }
 
+/**
+ * Have the analyzer probe footnote this box too.
+ *
+ * The probe normally reaches only panels nobody renders, which was right while
+ * "no renderer" and "no analyzer" were the same sentence. A panel that renders
+ * a placeholder *about* the analyzer -- dqm-hists.js holds the 2D plots back
+ * for the browser's sake, not the analyzer's -- needs the same footnote, and
+ * needs it more: its placeholder claims the histogram is still being
+ * accumulated, and this is the line that checks rather than asserts it.
+ *
+ * Called from a renderer during render(), which is before probeAnalyzer() runs.
+ */
+function probeThisBox(box) {
+  if (box) blockedBoxes.push(box);
+  return box;
+}
+
 function fail(message) {
   const rootEl = document.getElementById("dqm-root");
   if (rootEl) {
@@ -440,7 +457,7 @@ function chip(label, valueNode, unit, cls) {
 // Publish. `DQMPage` in a browser, module.exports under node --test.
 // ---------------------------------------------------------------------------
 const DQMPage = { boot, register, render, blocked, editButton, setAlarm, SHAPE,
-                  probeAnalyzer,
+                  probeAnalyzer, probeThisBox,
                   el, modb, watch, chip, statusChip, reasonFor };
 root.DQMPage = DQMPage;
 if (typeof module !== "undefined" && module.exports) module.exports = DQMPage;
