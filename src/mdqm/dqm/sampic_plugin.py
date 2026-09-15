@@ -369,7 +369,7 @@ class SampicPlugin:
                 f"(RMS of the first {PRESAMPLES} samples)", "RMS (V)"),
         }
 
-    def reconfigure(self, roles, binning, window=None) -> None:
+    def reconfigure(self, roles, binning) -> None:
         """A histogram with different bins is a different histogram.
 
         Dropped and rebuilt rather than re-binned, which is the contract
@@ -378,7 +378,11 @@ class SampicPlugin:
         """
         self.roles = dict(roles or {})
         self.binning = {**self.DEFAULT_BINNING, **(binning or {})}
-        self.window = {**self.DEFAULT_WINDOW, **(window or {})}
+        # self.window is deliberately left alone. It is not part of a
+        # histogram's shape, it arrives by its own path (set_window, which
+        # apply_settings calls on every apply and before this), and taking it
+        # as an argument here would both clobber that and add a third
+        # positional to a protocol every plugin has to implement.
         for name in self._names():
             self.store.remove(name)
         # The rings go the same way and for the same reason: a ring of a

@@ -227,8 +227,7 @@ class Analyzer:
             self.plugin.set_window(new.get("Window", {}))
 
         if changed_shape and hasattr(self.plugin, "reconfigure"):
-            self.plugin.reconfigure(new["Channel roles"], new["Binning"],
-                                    new.get("Window", {}))
+            self.plugin.reconfigure(new["Channel roles"], new["Binning"])
             self.reconfigures += 1
             if first:
                 print(f"{DEFAULT_CLIENT}: applied binning from {odb_settings.ROOT}",
