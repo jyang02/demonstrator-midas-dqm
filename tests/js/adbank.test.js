@@ -108,6 +108,36 @@ test("the AT00 telemetry decodes field by field, in order", () => {
   assert.strictEqual(AD.decodeAT(buf(wide.payload_b64)).sp_total_us_sum, 4294967295);
 });
 
+test("global_channel separates boards that share a board-local channel", () => {
+  const c = CASES.cases.find((x) => x.name === "two boards, same board-local channel");
+  assert.ok(c, "no multi-board case in the fixture");
+
+  const hits = AD.decodeAD(buf(c.payload_b64));
+  hits.forEach(function (got, i) {
+    assert.strictEqual(got.global_channel, c.hits[i].global_channel,
+      "Python and JavaScript disagree about the global index");
+  });
+  // Both hits say channel 5; only the global index tells them apart.
+  assert.strictEqual(hits[0].channel, hits[1].channel);
+  assert.notStrictEqual(hits[0].global_channel, hits[1].global_channel);
+
+  // And the event's channel list keeps them separate, which is what decides
+  // how many panels the Scope page draws.
+  const ev = AD.decodeEvent({ [AD.AD_BANK]: buf(c.payload_b64) }, {});
+  assert.deepStrictEqual(ev.channels, [5, 197]);
+});
+
+test("global_channel is the channel number on a single-board recording", () => {
+  for (const ev of REAL.events) {
+    const banks = {};
+    for (const [name, b64] of Object.entries(ev.banks_b64)) banks[name] = buf(b64);
+    AD.decodeEvent(banks, {}).hits.forEach(function (h) {
+      assert.strictEqual(h.fe_board_index, 0, "the fixture is single-board");
+      assert.strictEqual(h.global_channel, h.channel);
+    });
+  }
+});
+
 test("the AC00 collector record decodes", () => {
   assert.strictEqual(AD.AC_RECORD_BYTES, CASES.ac_record_bytes);
   CASES.collector.forEach(function (c) {

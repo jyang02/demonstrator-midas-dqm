@@ -42,6 +42,12 @@ AD_MAX_SAMPLES = 64
 #: One SAMPIC chip. channel // 16 is the chip, channel % 16 the input on it.
 CHANNELS_PER_SAMPIC = 16
 
+#: One FE board. ``channel`` counts within a board, so it is NOT unique across
+#: an experiment: board 0 channel 5 and board 3 channel 5 are different readout
+#: channels that both report ``channel == 5``. ``global_channel`` below is the
+#: identity to key on; ``channel`` remains what the hardware calls it.
+CHANNELS_PER_BOARD = 64
+
 #: 11 x int32 HitHeader, then AD_MAX_SAMPLES x float32 volts, then HitScalars.
 _HEADER = struct.Struct("<11i")
 _WAVEFORM = struct.Struct(f"<{AD_MAX_SAMPLES}f")
@@ -91,6 +97,16 @@ AC_FIELDS = ("collector_timestamp_ns", "n_events", "total_hits",
 TOT_ABSENT = -1.0
 
 
+def global_channel(hit) -> int:
+    """``fe_board_index * CHANNELS_PER_BOARD + channel``.
+
+    A single-board recording has ``fe_board_index == 0``, so this is the
+    channel number itself and nothing about such a file changes.
+    """
+    return (int(hit.get("fe_board_index", 0)) * CHANNELS_PER_BOARD
+            + int(hit["channel"]))
+
+
 def encode_hit(hit: dict) -> bytes:
     """One 344-byte AD record from a dict of the field names above."""
     waveform = list(hit.get("waveform", ()))
@@ -131,6 +147,10 @@ def decode_hit(blob: bytes, offset: int = 0) -> dict:
     # plot that includes it shows a cliff to 0 V that looks like a real edge.
     n = max(0, min(int(hit["data_size"]), AD_MAX_SAMPLES))
     hit["waveform"] = list(wf[:n])
+    # Derived, not in the bank: the identity of the readout channel across
+    # boards. Anything keyed on "which channel is this" wants this rather than
+    # `channel`, which repeats once per board.
+    hit["global_channel"] = global_channel(hit)
     return hit
 
 

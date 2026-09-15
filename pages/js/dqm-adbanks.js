@@ -37,6 +37,13 @@ const AD_HIT_BYTES = 344;             // 11*4 header + 64*4 waveform + 40 scalar
 const AT_RECORD_BYTES = 56;
 const AC_RECORD_BYTES = 32;
 
+// One FE board. `channel` counts within a board, so it is not unique across an
+// experiment: board 0 channel 5 and board 3 channel 5 are different readout
+// channels that both report channel == 5. `global_channel` is the identity to
+// key on; `channel` stays what the hardware calls it. A single-board recording
+// has fe_board_index 0, so the two are the same number and nothing changes.
+const CHANNELS_PER_BOARD = 64;
+
 // Everything after nparents in AT00. Zero means "not reported": the .bin and
 // .root repackagers leave these empty and only generated files fill them.
 const AT_TELEMETRY_FIELDS = [
@@ -87,6 +94,8 @@ function decodeHit(view, offset) {
   hit.first_cell_timestamp = view.getFloat64(p, true);
 
   hit.haveTot = hit.tot_value !== TOT_ABSENT;
+  // Derived, not in the bank: see CHANNELS_PER_BOARD above.
+  hit.global_channel = hit.fe_board_index * CHANNELS_PER_BOARD + hit.channel;
   return hit;
 }
 
@@ -199,7 +208,9 @@ function decodeEvent(banks, opts) {
   // within an event rather than channel order. Sorting by channel is what makes
   // a per-channel panel layout stable between events -- otherwise the same
   // channel moves around the screen from one refresh to the next.
-  out.channels = out.hits.map((h) => h.channel)
+  // Keyed on the global index, not `channel`: two boards' channel 5 are two
+  // channels, and collapsing them put four boards' traces on one panel.
+  out.channels = out.hits.map((h) => h.global_channel)
     .filter((c, i, a) => a.indexOf(c) === i)
     .sort((a, b) => a - b);
   return out;
@@ -297,7 +308,7 @@ function minMaxDecimate(xs, ys, columns) {
 
 const ADBanks = { AD_BANK, AT_BANK, AC_BANK, AD_HIT_BYTES, AD_MAX_SAMPLES,
                   AT_RECORD_BYTES, AC_RECORD_BYTES, AT_TELEMETRY_FIELDS,
-                  CHANNELS_PER_SAMPIC, TOT_ABSENT, HEADER_FIELDS,
+                  CHANNELS_PER_SAMPIC, CHANNELS_PER_BOARD, TOT_ABSENT, HEADER_FIELDS,
                   decodeAD, decodeAT, decodeAC, decodeHit, decodeEvent, fromEvent,
                   bankBuffer, sampleTimes, minMaxDecimate };
 root.ADBanks = ADBanks;

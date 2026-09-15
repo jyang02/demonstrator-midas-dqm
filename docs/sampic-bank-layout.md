@@ -71,6 +71,24 @@ information the waveform bank does not already have. `nparents` does not: a
 repackager writes `nparents == nhits`, while a demonstrator file writes the
 number of distinct SAMPIC chips the event touched.
 
+### Which channel is this?
+
+`channel` is board-local, so it is not unique: board 0 channel 5 and board 3
+channel 5 are different readout channels that both report `channel == 5`. Both
+decoders therefore derive
+
+    global_channel = fe_board_index * 64 + channel
+
+on every hit, and everything keyed on channel identity — the analyzer's
+per-channel axes, the Scope page's channel picker, its trace colours and its hit
+table — uses that rather than `channel`. `channel` stays what the hardware calls
+it, and a single-board recording is unaffected: `fe_board_index` is 0, so the
+two numbers are the same.
+
+It is also the order the ODB's parallel `Channel map detector`,
+`Channel map channel id` and `Channel map is active` arrays use, so bin *i* and
+map entry *i* are the same readout channel.
+
 ## AC00
 
 Exactly one 32-byte record, `<Q6I`: `collector_timestamp_ns` u64, then

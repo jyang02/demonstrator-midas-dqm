@@ -179,6 +179,14 @@ def test_channel_axis_separates_boards(plugin):
     assert len(populated) == 2, "board 0 ch 5 and board 3 ch 5 shared a bin"
 
 
+def test_decoded_hits_carry_the_global_channel(plugin):
+    """The decoder derives it, so a consumer does not have to know the rule."""
+    raw = sampic.encode_ad([{**_hit(channel=5), "fe_board_index": 3}])
+    got = sampic.decode_ad(raw)[0]
+    assert got["channel"] == 5, "the hardware number is unchanged"
+    assert got["global_channel"] == 3 * sampic.CHANNELS_PER_BOARD + 5
+
+
 def test_channel_axis_is_board_local_index_when_there_is_one_board():
     """A single-board recording is unchanged: board 0 means index == channel."""
     from mdqm.dqm.sampic_plugin import _global_channel

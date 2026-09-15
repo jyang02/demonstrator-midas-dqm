@@ -63,7 +63,12 @@ def _cases():
              baseline=0.7413, amplitude=-0.4313, peak=0.31, tot_value=2.75,
              raw_tot_value=44, time_index=3.0, time_amplitude=-0.21),
     ]
-
+    # Two boards reporting the same board-local channel. `channel` alone cannot
+    # tell them apart, which is the bug global_channel exists to close.
+    yield "two boards, same board-local channel", [
+        _hit(fe_board_index=0, channel=5, waveform=[0.7] * 4, amplitude=-0.1),
+        _hit(fe_board_index=3, channel=5, waveform=[0.7] * 4, amplitude=-0.2),
+    ]
 
 def test_generate_adbank_cases():
     cases = []
@@ -119,4 +124,4 @@ def test_generate_adbank_cases():
     }, indent=1) + "\n")
 
     assert OUT.exists()
-    assert len(cases) == 6
+    assert len(cases) == 7

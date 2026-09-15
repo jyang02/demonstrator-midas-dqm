@@ -43,6 +43,7 @@
      "time_instant": 9430971.0,
      "time_amplitude": 0.0,
      "first_cell_timestamp": 9430965.3,
+     "global_channel": 5,
      "waveform": [
       0.699999988079071,
       0.7009999752044678,
@@ -137,6 +138,7 @@
      "time_instant": 0.0,
      "time_amplitude": 0.0,
      "first_cell_timestamp": 0.0,
+     "global_channel": 1,
      "waveform": [
       0.7699999809265137,
       0.7599999904632568,
@@ -171,6 +173,7 @@
      "time_instant": 0.0,
      "time_amplitude": 0.0,
      "first_cell_timestamp": 0.0,
+     "global_channel": 21,
      "waveform": [
       0.5,
       0.4000000059604645
@@ -203,6 +206,7 @@
      "time_instant": 0.0,
      "time_amplitude": 0.0,
      "first_cell_timestamp": 0.0,
+     "global_channel": 9,
      "waveform": [
       0.10000000149011612,
       0.20000000298023224
@@ -229,6 +233,7 @@
      "time_instant": 0.0,
      "time_amplitude": 0.0,
      "first_cell_timestamp": 0.0,
+     "global_channel": 2,
      "waveform": [
       0.30000001192092896
      ]
@@ -254,6 +259,7 @@
      "time_instant": 0.0,
      "time_amplitude": 0.0,
      "first_cell_timestamp": 0.0,
+     "global_channel": 31,
      "waveform": [
       0.4000000059604645,
       0.5,
@@ -292,6 +298,7 @@
      "time_instant": 0.0,
      "time_amplitude": -0.20999999344348907,
      "first_cell_timestamp": 0.0,
+     "global_channel": 6,
      "waveform": [
       0.7400000095367432,
       0.7400000095367432,
@@ -299,6 +306,70 @@
       0.3100000023841858,
       0.550000011920929,
       0.7300000190734863
+     ]
+    }
+   ]
+  },
+  {
+   "name": "two boards, same board-local channel",
+   "payload_b64": "AAAAAAUAAAAAAAAAAAAAAAUAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzMzM/MzMzPzMzMz8zMzM/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgL/NzMy9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAABQAAAAAAAAAAAAAABQAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADMzMz8zMzM/MzMzPzMzMz8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAv83MTL4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+   "hits": [
+    {
+     "fe_board_index": 0,
+     "channel": 5,
+     "hit_number": 0,
+     "sampic_index": 0,
+     "channel_index": 5,
+     "data_size": 4,
+     "inl_corrected": 0,
+     "adc_corrected": 0,
+     "residual_pedestal_corrected": 0,
+     "cell_info": 0,
+     "first_cell_physical_index": 0,
+     "raw_tot_value": 0,
+     "tot_value": -1.0,
+     "amplitude": -0.10000000149011612,
+     "baseline": 0.0,
+     "peak": 0.0,
+     "time_index": 0.0,
+     "time_instant": 0.0,
+     "time_amplitude": 0.0,
+     "first_cell_timestamp": 0.0,
+     "global_channel": 5,
+     "waveform": [
+      0.699999988079071,
+      0.699999988079071,
+      0.699999988079071,
+      0.699999988079071
+     ]
+    },
+    {
+     "fe_board_index": 3,
+     "channel": 5,
+     "hit_number": 0,
+     "sampic_index": 0,
+     "channel_index": 5,
+     "data_size": 4,
+     "inl_corrected": 0,
+     "adc_corrected": 0,
+     "residual_pedestal_corrected": 0,
+     "cell_info": 0,
+     "first_cell_physical_index": 0,
+     "raw_tot_value": 0,
+     "tot_value": -1.0,
+     "amplitude": -0.20000000298023224,
+     "baseline": 0.0,
+     "peak": 0.0,
+     "time_index": 0.0,
+     "time_instant": 0.0,
+     "time_amplitude": 0.0,
+     "first_cell_timestamp": 0.0,
+     "global_channel": 197,
+     "waveform": [
+      0.699999988079071,
+      0.699999988079071,
+      0.699999988079071,
+      0.699999988079071
      ]
     }
    ]

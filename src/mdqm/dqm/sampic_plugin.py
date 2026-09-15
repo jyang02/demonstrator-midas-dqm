@@ -63,27 +63,18 @@ PRESAMPLES = 8
 #: which is musip's selector semantics and what HistStore.clear implements.
 PREFIX = "sampic"
 
-#: Board-local channels per FE board. ``channel`` in an AD record counts within
-#: one board, so it is NOT unique on its own: board 0 channel 5 and board 3
-#: channel 5 are different readout channels that both report ``channel == 5``.
-#: Every per-channel axis here uses the global index below instead.
-CHANNELS_PER_BOARD = 64
-
-
 def _global_channel(hit) -> float:
-    """``fe_board_index * 64 + channel``, the index every channel axis uses.
+    """The index every per-channel axis here uses.
 
-    This is the same global index the ODB's parallel ``Channel map detector``,
-    ``Channel map channel id`` and ``Channel map is active`` arrays are ordered
-    by, so occupancy bin i and channel-map entry i are the same readout
-    channel and a detector label can be read straight off a file that carries
-    one.
-
-    ``fe_board_index`` is absent from single-board recordings, where treating
-    it as 0 reproduces the previous behaviour exactly.
+    ``sampic.decode_hit`` already derives it, so this only recomputes it for a
+    hit built by hand. It is the same order the ODB's parallel ``Channel map
+    detector`` / ``channel id`` / ``is active`` arrays use, so occupancy bin i
+    and channel-map entry i are the same readout channel and a detector label
+    can be read straight off a file that carries one.
     """
-    return float(int(hit.get("fe_board_index", 0)) * CHANNELS_PER_BOARD
-                 + int(hit["channel"]))
+    if "global_channel" in hit:
+        return float(hit["global_channel"])
+    return float(sampic.global_channel(hit))
 
 
 def _global_channels(hits) -> np.ndarray:

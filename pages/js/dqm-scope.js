@@ -261,7 +261,7 @@ function draw() {
   const drawn = [];
 
   state.event.hits.forEach(function (hit) {
-    if (excluded().has(hit.channel)) return;
+    if (excluded().has(hit.global_channel)) return;
     // With no period configured, plot against sample index rather than a row of
     // zeros: an honest axis in the wrong unit beats every point stacked at x=0.
     const xs = dt ? ADBanks.sampleTimes(hit, dt)
@@ -269,10 +269,10 @@ function draw() {
     // A 64-sample hit never needs reducing; this is here so a longer waveform
     // format does not silently become a 4000-point polyline per channel.
     const cut = ADBanks.minMaxDecimate(xs, hit.waveform, 600);
-    const label = `ch ${hit.channel}${hit.hit_number ? ` #${hit.hit_number}` : ""}`;
+    const label = `ch ${hit.global_channel}${hit.hit_number ? ` #${hit.hit_number}` : ""}`;
     state.graph.param.plot.push({
       label: label, type: "scatter",
-      line: { draw: true, width: 1, color: colourFor(hit.channel) },
+      line: { draw: true, width: 1, color: colourFor(hit.global_channel) },
       marker: { draw: false },
       xData: cut.x, yData: cut.y,
     });
@@ -409,7 +409,7 @@ function updateRawEvent() {
 
   state.event.hits.forEach(function (h) {
     table.appendChild(el("tr", {},
-      el("td", { class: "label" }, String(h.channel)),
+      el("td", { class: "label" }, String(h.global_channel)),
       el("td", { class: "label" }, `${h.sampic_index}/${h.channel_index}`),
       el("td", {}, String(h.data_size)),
       el("td", {}, h.baseline.toFixed(4)),
