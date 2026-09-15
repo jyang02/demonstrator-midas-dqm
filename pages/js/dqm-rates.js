@@ -132,9 +132,9 @@ function checkStalled() {
 /**
  * A trend, but only for the equipment MIDAS actually recorded.
  *
- * docs/dqm_inventory.md says in one place that Statistics are history-logged
- * and implies in another that history covers Variables only. Both cannot be
- * relied on, so this assumes neither: ask mlogger what it has, offer a tile
+ * Whether MIDAS history covers an equipment's Statistics or only its Variables
+ * is not something to assume -- it depends on how the logger was configured.
+ * So this assumes neither: ask mlogger what it has, offer a tile
  * where the answer is yes, and a popup button where it is no. The popup costs
  * no page area and is honest about being a different question -- "is anything
  * arriving" is one number, "has the rate changed since the run started" is not.
