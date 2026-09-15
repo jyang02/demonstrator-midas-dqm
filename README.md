@@ -30,7 +30,7 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
 | **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
 | **Channels** | Is every channel behaving? | analyzer | **live** — occupancy and hits per event draw from the `sampic` plugin; baseline and noise are accumulated but held back (see `HELD_BACK`); the other seven need layers, T0 or banks nothing writes |
-| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | persistence and amplitude by channel are accumulated but held back (see `HELD_BACK`), so nothing on it draws today; "what it is worth" still wants an energy calibration with an owner |
+| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence draws; amplitude by channel is accumulated but held back (see `HELD_BACK`); "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
 
@@ -41,10 +41,10 @@ panels -- some drawing, the rest each explaining its own absence -- has been
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Four of those forty draw real data against a replay today: two on Scope and
-two on Channels. Four more could -- baseline and noise on Channels, persistence
-and amplitude by channel on Pulses -- and are held back for the paint cost of a
-colormap, not for want of data. Their `blocked` chip comes from the spec and has
+Five of those forty draw real data against a replay today: two on Scope, two on
+Channels and persistence on Pulses. Three more could -- baseline and noise on
+Channels, amplitude by channel on Pulses -- and are held back for the paint cost
+of a colormap, not for want of data. Their `blocked` chip comes from the spec and has
 not caught up, which is worth knowing before reading a chip as a verdict. Six more
 have a renderer that still has nothing to draw -- five on SlowControls and the
 trigger settings on Rates -- and those render the absence itself, key by key,
@@ -196,16 +196,19 @@ channel on Pulses -- each fetching one histogram and handing it to mplot
 through `BRPC.display()`. The mapping from panel to histogram is the one
 page-shaped fact in that file; everything else is generic.
 
-Two of the six draw today. The four 2D ones -- baseline, noise, amplitude by
-channel and persistence -- are **held back**, listed in `HELD_BACK` in that
-file, and carry a placeholder instead. A 2D plot here is a colormap: one
+Three of the six draw today. The three per-channel colormaps -- baseline and
+noise on Channels, amplitude by channel on Pulses -- are **held back**, listed
+in `HELD_BACK` in that file, and carry a placeholder instead. A colormap is one
 rectangle per bin, all of them repainted on every fetch, and at the default
-binning the three per-channel maps are 25600 bins each. Refetching them less
-often (`refreshFor`, below) fixed the wire and server cost and not the paint
-cost, which was the one making these pages crawl. The analyzer goes on
-accumulating all four and the pages go on asking for them, so nothing is lost
-while they are held back and taking a name out of `HELD_BACK` puts its plot
-back.
+binning each of these is 25600 bins. Refetching them less often (`refreshFor`,
+below) fixed the wire and server cost and not the paint cost, which was the one
+making these pages crawl. The analyzer goes on accumulating all three and the
+pages go on asking for them, so nothing is lost while they are held back and
+taking a name out of `HELD_BACK` puts its plot back.
+
+Bin count is the criterion, not dimensionality: persistence is 2D as well and
+draws, because at 64 x 110 it is 7040 bins -- under a third of one colormap --
+and it is the only plot on Pulses.
 
 The other nine keep the empty state and their own reason, which is the correct
 outcome: crosstalk and hit-time-between-layers need a channel-to-layer map that
@@ -236,15 +239,18 @@ W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
 scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
 scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 3"
-# Channels and Pulses draw from the analyzer, so the Channels count depends on
-# whether one is running: with mdqm-analyzer up, its two 1D tiles -- occupancy
-# and hits per event -- render a histogram instead of an explanation, and $W is
-# 9. Without it every panel says which client it tried and $W is 11. Pulses is
-# 4 either way: both its tiles that claim a renderer are held back (above), so
-# with the analyzer up they show a placeholder over a probe footnote saying it
-# is answering.
+# These two hold whether or not mdqm-analyzer is running, which is worth knowing
+# before reading a failure as "the analyzer is down". $W counts .dqm-empty-why,
+# and a held-back tile emits one unconditionally while a drawing tile that
+# cannot reach the analyzer reports it as a .dqm-diagnosis instead -- so on
+# Channels it is the seven unclaimed panels plus baseline and noise either way,
+# and on Pulses the two energy panels plus amplitude by channel. What does move
+# with the analyzer is whether occupancy, hits per event and persistence show a
+# plot or a red line naming the client they tried. (Blanking
+# /DQM/Common/Analyzer Client is the one thing that would move these: with no
+# name to try, a drawing tile falls back to an empty-why and $W goes up.)
 scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 9"
-scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
+scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 3"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
 scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
 ```
