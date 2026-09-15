@@ -56,10 +56,18 @@ const DEFAULTS = {
     "Buffer": "SYSTEM"
   },
   "Channels": {
-    "Histograms": [""]
+    "Histograms": [
+      "sampic/occupancy",
+      "sampic/hits_per_event",
+      "sampic/baseline_by_channel",
+      "sampic/noise_by_channel"
+    ]
   },
   "Pulses": {
-    "Histograms": [""]
+    "Histograms": [
+      "sampic/persistence",
+      "sampic/amplitude_by_channel"
+    ]
   },
   "Physics": {
     "Histograms": [""]

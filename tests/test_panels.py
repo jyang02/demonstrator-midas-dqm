@@ -171,3 +171,43 @@ def test_the_sketch_vocabulary_is_known():
     """A sketch the renderer has no sentence for renders an empty empty-state."""
     seen = {e["sketch"] for e in _elements("panel") if e.get("sketch")}
     assert seen <= SKETCHES, f"unknown sketch kinds: {sorted(seen - SKETCHES)}"
+
+
+# ---------------------------------------------------------------------------
+# The renderers on Channels and Pulses
+# ---------------------------------------------------------------------------
+
+def _panel_histograms() -> dict[str, str]:
+    """The PANELS mapping out of dqm-hists.js: panel id -> histogram name.
+
+    Bare identifiers as keys, so this is not JSON and is read with a regex. The
+    literal is anchored on a closing ``};`` at column 0, the same convention the
+    DEFAULTS literal in dqm-common.js uses and for the same reason.
+    """
+    text = (REPO / "pages" / "js" / "dqm-hists.js").read_text()
+    m = re.search(r"\nconst PANELS = \{(.*?)\n\};\n", text, re.S)
+    assert m, "could not find `const PANELS = {...};` in dqm-hists.js"
+    return dict(re.findall(r'(\w+):\s*"([^"]+)"', m.group(1)))
+
+
+def test_every_rendered_panel_is_a_panel_that_exists():
+    """A renderer claiming an id nothing publishes would never run, silently."""
+    ids = {e["id"] for e in _elements()}
+    unknown = sorted(set(_panel_histograms()) - ids)
+    assert not unknown, f"dqm-hists.js renders ids not in the catalogue: {unknown}"
+
+
+def test_the_pages_ask_for_exactly_the_histograms_they_render():
+    """PANELS and /DQM/<page>/Histograms are one decision written twice.
+
+    The renderer decides which plot goes in which tile; the config list is what
+    probeAnalyzer checks against what the analyzer publishes. If they drift, a
+    panel draws a histogram the page never asked for, or the page reports a
+    histogram missing that no tile would have shown.
+    """
+    from mdqm.install.config_defaults import DEFAULTS
+
+    asked = set()
+    for page in ("Channels", "Pulses", "Physics"):
+        asked |= {h for h in DEFAULTS[page]["Histograms"] if h}
+    assert asked == set(_panel_histograms().values())

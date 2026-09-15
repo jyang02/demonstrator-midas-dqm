@@ -34,23 +34,32 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
 | **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
-| **Channels** | Is every channel behaving? | analyzer | **analyzer built** — `sampic` publishes occupancy, baseline, noise and multiplicity; the panels wait on renderers |
-| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above for persistence and amplitude; "what it is worth" still wants an energy calibration with an owner |
+| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy, hits per event, baseline and noise draw from the `sampic` plugin; the other seven need layers, T0 or banks nothing writes |
+| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel; "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
 
-Forty of the forty-one panels are blocked, and **every one of them says so
-in the panel**, naming what it is waiting for. That is the point of registering
-them: a shifter who opens Channels at 3am and finds eleven titled panels each
-explaining its own absence has been told the state of the experiment. One who
-finds a blank page has not, and stops trusting the menu.
+The spec marks forty of the forty-one panels blocked, and **every panel that is
+still empty says why**, naming what it is waiting for. That is the point of
+registering them: a shifter who opens Channels at 3am and finds eleven titled
+panels -- some drawing, the rest each explaining its own absence -- has been
+told the state of the experiment. One who finds a blank page has not, and stops
+trusting the menu.
+
+Eight of those forty draw real data against a replay today: two on Scope, four
+on Channels, two on Pulses. Their `blocked` chip comes from the spec and has not
+caught up, which is worth knowing before reading a chip as a verdict. Six more
+have a renderer that still has nothing to draw -- five on SlowControls and the
+trigger settings on Rates -- and those render the absence itself, key by key,
+rather than a sentence about it.
 
 The three pages backed by an analyzer check for one at load rather than
 asserting its absence, so the reason they show is about this experiment now.
 
-Scope is the exception, and the reason is below: its bank layout turned out to
-be documented, so the browser decoder is written and tested against real bytes.
-Point it at a replay of an existing run and it draws today.
+Scope was the first exception, and the reason is below: its bank layout turned
+out to be documented, so the browser decoder is written and tested against real
+bytes. Point it at a replay of an existing run and it draws today -- and the
+same bank, decoded again in the analyzer, is what Channels and Pulses draw.
 
 One blocker has since moved. `docs/sampic-bank-verification.md` records what
 `~/sampic-to-midas` settles: the physics event id, both bank names and the full
@@ -185,11 +194,23 @@ publishes no time-over-threshold and no time-between-hits: `tot_value` is the
 `time_instant`, so both would be spikes that read as measurements. The module
 docstring lists the rest of what the data will not support.
 
-The panels on Channels and Pulses still show their empty state, because naming a
-histogram in `/DQM/<page>/Histograms` tells the page what to *ask for* and not
-how to draw it -- no panel on those pages claims a renderer yet. What changes
-today is the footnote: it goes from "nothing is running under that name" to
-naming what the analyzer publishes.
+`pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
+hits per event, baseline and noise on Channels, persistence and amplitude by
+channel on Pulses -- each fetching one histogram every two seconds and handing
+it to mplot through `BRPC.display()`. The mapping from panel to histogram is the
+one page-shaped fact in that file; everything else is generic.
+
+The other nine keep the empty state and their own reason, which is the correct
+outcome: crosstalk and hit-time-between-layers need a channel-to-layer map that
+exists nowhere, the time-vs-T0 panels need T0 in the same event record, MuPix
+and calorimeter panels need banks nothing writes, and the two energy panels want
+a calibration with an owner. `channel_health` is left unclaimed deliberately --
+"dead, noisy or drifting" is a verdict rather than a histogram, and the three
+tiles beside it each answer one third of it.
+
+With no analyzer running, a claimed panel says so itself rather than throwing:
+it names the client it tried. If the analyzer stops after a plot is drawn, the
+panel says the plot is stale instead of leaving it looking live.
 
 Each plugin owns the binning its detector needs. `status()` reports an
 `edge_fraction` per histogram -- the share of entries in under/overflow -- so a
@@ -208,8 +229,12 @@ W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
 scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
 scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 3"
-scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 11"
-scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
+# Channels and Pulses draw from the analyzer, so these two counts depend on
+# whether one is running: with mdqm-analyzer up, four tiles on Channels and two
+# on Pulses render a histogram instead of an explanation. Without it, the $W
+# counts are 11 and 4 and every panel says which client it tried.
+scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 7"
+scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 2"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
 scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
 ```

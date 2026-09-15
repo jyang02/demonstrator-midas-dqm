@@ -108,9 +108,9 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("Scope", "scope.html", True,
           "one event, decoded in the browser (needs a frontend writing AD00)"),
     Entry("Channels", "channels.html", True,
-          "is every channel behaving (needs an analyzer; none exists)"),
+          "is every channel behaving (occupancy, baseline and noise from the analyzer)"),
     Entry("Pulses", "pulses.html", True,
-          "what a pulse looks like and what it is worth (needs an analyzer)"),
+          "what a pulse looks like (persistence and amplitude); \"worth\" needs a calibration"),
     Entry("Physics", "physics.html", True,
           "does this look like stopped muons (needs an analyzer)"),
     Entry("SlowControls", "slowcontrols.html", True,
@@ -131,6 +131,8 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("dqm-slow.js", "js/dqm-slow.js", False,
           "the five ODB panels on the SlowControls page"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
+    Entry("dqm-hists.js", "js/dqm-hists.js", False,
+          "the analyzer-backed panels on Channels and Pulses"),
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
 )
 

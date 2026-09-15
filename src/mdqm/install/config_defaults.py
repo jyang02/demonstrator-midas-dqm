@@ -31,8 +31,8 @@ DEFAULTS: dict[str, dict[str, object]] = {
     # --- every page ------------------------------------------------------
     "Common": {
         # The client name the mechanism-C pages ask for accumulated
-        # histograms. Nothing answers to it yet; those pages check rather
-        # than assert, and say which name they tried.
+        # histograms. mdqm-analyzer registers under exactly this name; the
+        # pages still check rather than assert, and say which name they tried.
         "Analyzer Client": "mdqm_analyzer",
         "Refresh ms": 1000,
     },
@@ -79,11 +79,22 @@ DEFAULTS: dict[str, dict[str, object]] = {
     },
 
     # --- the analyzer pages ----------------------------------------------
-    # Empty until somebody writes an analyzer and decides what it publishes.
-    # The pages ask it for its list and name what they did not find, rather
-    # than hardcoding a histogram nobody has agreed to.
-    "Channels": {"Histograms": [""]},
-    "Pulses": {"Histograms": [""]},
+    # What these pages ask the analyzer for. Kept in step with PANELS in
+    # pages/js/dqm-hists.js, which decides which plot goes in which tile;
+    # tests/test_panels.py asserts the two agree, so the duplication is a
+    # checked invariant rather than two places to forget.
+    #
+    # A page still asks for its list and names what it did not find rather than
+    # assuming: these are the histograms the SAMPIC plugin publishes today, not
+    # a contract any analyzer has to satisfy.
+    "Channels": {"Histograms": ["sampic/occupancy",
+                                "sampic/hits_per_event",
+                                "sampic/baseline_by_channel",
+                                "sampic/noise_by_channel"]},
+    "Pulses": {"Histograms": ["sampic/persistence",
+                              "sampic/amplitude_by_channel"]},
+    # Empty on purpose: nothing the SAMPIC plugin can publish answers a question
+    # on Physics. Every panel there needs track finding or an energy scale.
     "Physics": {"Histograms": [""]},
 
     # --- SlowControls: ODB and history, needs only a frontend ------------
