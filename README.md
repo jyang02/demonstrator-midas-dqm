@@ -259,15 +259,16 @@ scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$
 # These two hold whether or not mdqm-analyzer is running, which is worth knowing
 # before reading a failure as "the analyzer is down". $W counts .dqm-empty-why,
 # and a colormap tile emits one while it is off, whereas a drawing tile that
-# cannot reach the analyzer reports a .dqm-diagnosis instead -- so on Channels it
-# is the seven unclaimed panels plus baseline and noise, and on Pulses the two
-# energy panels plus persistence and amplitude by channel. Both counts are for a
+# cannot reach the analyzer reports a .dqm-diagnosis instead -- so Channels is
+# its seven unclaimed panels and nothing else, and Pulses is the two energy
+# panels plus persistence and amplitude by channel. The Pulses count is for a
 # freshly opened page, before anything is toggled on; each Show plot takes one
-# off. What moves with the analyzer is whether occupancy and hits per event show
-# a plot or a red line naming the client they tried. (Blanking
+# off. What moves with the analyzer is whether the four tiles that draw on open
+# -- occupancy, hits per event, and the baseline and noise scatters -- show a
+# plot or a red line naming the client they tried. (Blanking
 # /DQM/Common/Analyzer Client is the one thing that would move these: with no
 # name to try, a drawing tile falls back to an empty-why and $W goes up.)
-scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 9"
+scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 7"
 scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
 scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
