@@ -43,11 +43,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = REPO_ROOT / "pages" / "js" / "dqm-panels.js"
 
-#: The group with no ``page`` of its own lands here. The spec's own renderer
-#: calls it "Custom", which as a /Custom key would read as /Custom/Custom -- so
-#: it is renamed on the way in. Passing ``--generic-page`` keeps that a flag
-#: rather than a fact, for the day the spec declares a name itself.
-DEFAULT_GENERIC_PAGE = "Retired"
+#: The group with no ``page`` of its own has no page here. It used to become the
+#: Retired page -- three panels the conversion decided against, kept so the
+#: decisions were not re-argued -- and that page has been removed; the group is
+#: dropped from the catalogue rather than rehomed, because a panel with nowhere
+#: to appear should not ship in a file whose every field is meant to have a
+#: reader. The spec does not declare the group a page either: ``chrome
+#: .custom_pages`` names the six real ones and stops.
+#:
+#: Passing ``--generic-page NAME`` puts it back under that name, which keeps
+#: this a flag rather than a fact, for the day the spec declares one itself.
+DEFAULT_GENERIC_PAGE = None
 
 #: Carried into the catalogue; everything else in the spec is dropped.
 #:
@@ -66,8 +72,10 @@ def elements_of(group: dict, generic_page: str) -> list[dict]:
     for el in group["elements"]:
         item = {k: el[k] for k in PANEL_FIELDS if el.get(k) not in (None, "", {})}
         # A dropped panel has no blocked_by -- it is not waiting for anything,
-        # it was decided against. Its _note is the only thing it can say, and
-        # the Retired page is nothing but those three.
+        # it was decided against. Its _note is the only thing it can say. The
+        # spec's dropped panels are all in the generic group, which no longer
+        # has a page, so this carries nothing today; it stays because the field
+        # is what a dropped panel on a kept page would have to rely on.
         if el.get("status") == "dropped" and el.get("_note"):
             item["note"] = el["_note"]
         odb = (el.get("targets") or {}).get("odb")
@@ -77,15 +85,22 @@ def elements_of(group: dict, generic_page: str) -> list[dict]:
     return out
 
 
-def catalogue(spec: dict, generic_page: str = DEFAULT_GENERIC_PAGE) -> list[dict]:
-    """Spec -> the PAGES array, in spec order with the generic page last."""
+def catalogue(spec: dict, generic_page: str | None = DEFAULT_GENERIC_PAGE) -> list[dict]:
+    """Spec -> the PAGES array, in spec order with the generic page last.
+
+    With no ``generic_page``, the group the spec gives no page of its own is
+    left out entirely rather than rendered somewhere a shifter cannot reach.
+    """
     declared = list(spec.get("chrome", {}).get("custom_pages", []))
     pages, generic = [], []
     for group in spec["groups"]:
         name = group.get("page")
-        target = generic if name in (None, "Custom") else pages
+        is_generic = name in (None, "Custom")
+        if is_generic and not generic_page:
+            continue
+        target = generic if is_generic else pages
         target.append({
-            "page": generic_page if name in (None, "Custom") else name,
+            "page": generic_page if is_generic else name,
             "group": group["id"],
             "name": group["name"],
             "question": group["question"],
@@ -166,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="path to demonstrator-shifter-ui/spec/dqm_shifter.json")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--generic-page", default=DEFAULT_GENERIC_PAGE,
-                    help="key for the group the spec gives no page of its own")
+                    help="give the group the spec names no page for a page of "
+                         "this name; by default it is left out of the catalogue")
     ap.add_argument("--check", action="store_true",
                     help="diff against the committed file and exit 1 if stale")
     args = ap.parse_args(argv)

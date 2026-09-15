@@ -94,7 +94,7 @@ ssh -N -L 8090:localhost:8090 pioneer@192.168.40.106
 
 Then open <http://localhost:8090/?cmd=custom&page=Scope>. The waveform panel
 should show a trace per hit, the raw-event table the decoded hit scalars, and
-the status line the event serial and hit count. The other five pages are in the
+the status line the event serial and hit count. The other four pages are in the
 side menu and will all be explaining themselves, since that experiment has no
 equipment.
 
@@ -106,7 +106,6 @@ equipment.
 | Scope | **live** from the replay |
 | Channels / Pulses / Physics | every panel blocked, each naming the analyzer it asked for and got no answer from |
 | SlowControls | six panels, each waiting for `ATAR_SC` / `ATAR_HV` / `Motion` |
-| Retired | three dropped panels and why |
 
 ### Cleaning up
 

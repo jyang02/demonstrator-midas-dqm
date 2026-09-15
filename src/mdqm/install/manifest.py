@@ -115,8 +115,6 @@ ENTRIES: tuple[Entry, ...] = (
           "does this look like stopped muons (needs an analyzer)"),
     Entry("SlowControls", "slowcontrols.html", True,
           "temperature, bias, leakage and position, straight from the ODB"),
-    Entry("Retired", "retired.html", True,
-          "what the retired webapp carried that these pages do not"),
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
     Entry("dqm-panels.js", "js/dqm-panels.js", False,
           "the panel catalogue, generated from demonstrator-shifter-ui's spec"),

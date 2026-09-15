@@ -251,11 +251,21 @@ def test_seeding_creates_one_subtree_per_page():
             assert c.odb_exists(f"{CONFIG_ROOT}/{page}/{key}"), f"{page}/{key}"
 
 
-def test_seeding_creates_no_subtree_for_a_page_with_no_config():
-    """A /DQM key nobody reads is a key somebody will edit expecting an effect."""
+def test_seeding_creates_no_subtree_for_a_page_with_no_config(monkeypatch):
+    """A /DQM key nobody reads is a key somebody will edit expecting an effect.
+
+    Every shipped page declares something today -- the one that did not was
+    Retired, which has been removed -- so the empty case is supplied here rather
+    than taken from the real defaults. The rule still holds in seed_config.
+    """
+    from mdqm.install import config_defaults
+
+    monkeypatch.setattr(config_defaults, "DEFAULTS",
+                        {"Rates": {"Expected Prescale": 1}, "Silent": {}})
     c = FakeClient()
     rp.seed_config(c, CONFIG_ROOT, dry_run=False)
-    assert not any(p.startswith(f"{CONFIG_ROOT}/Retired") for p in c.odb)
+    assert not any(p.startswith(f"{CONFIG_ROOT}/Silent") for p in c.odb)
+    assert c.odb_exists(f"{CONFIG_ROOT}/Rates/Expected Prescale")
 
 
 def test_seeding_never_overwrites_an_operator_edit():

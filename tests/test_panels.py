@@ -37,8 +37,10 @@ needs_spec = pytest.mark.skipif(
 #: What the spec said when this catalogue was generated. A structural test, not
 #: a guess: if a panel is added or dropped upstream the drift test says so, and
 #: this number is what makes the change visible in a suite run without the
-#: sibling checkout.
-EXPECTED_ELEMENTS = 48
+#: sibling checkout. It counts what the catalogue ships, not what the spec
+#: holds: the spec's 48 include the three-element generic group, which has not
+#: been rendered since the Retired page was removed.
+EXPECTED_ELEMENTS = 45
 
 #: Every ``sketch`` the renderer must have a sentence for. From the spec's own
 #: vocabulary; dqm-page.js's SHAPE map has to cover it.
@@ -122,7 +124,12 @@ def test_every_blocked_element_gives_a_reason():
 
 
 def test_every_dropped_element_carries_its_note():
-    """The Retired page has nothing else to show: no blocked_by, no data."""
+    """A dropped panel has no blocked_by and no data -- the note is all it has.
+
+    Vacuous while the spec keeps every dropped panel in the generic group, which
+    has had no page since the Retired page was removed. It guards the field a
+    dropped panel on a kept page would depend on.
+    """
     silent = [e["id"] for e in _elements() if e["status"] == "dropped" and not e.get("note")]
     assert not silent, f"dropped with no note: {silent}"
 

@@ -619,47 +619,6 @@ const PAGES = [
         }
       }
     ]
-  },
-  {
-    "page": "Retired",
-    "group": "retired",
-    "name": "Dropped in the conversion",
-    "question": "What did the webapp carry that these pages do not?",
-    "elements": [
-      {
-        "id": "daq_heartbeat",
-        "kind": "panel",
-        "label": "DAQ status",
-        "question": "Is the stream running, and at what rate right now?",
-        "why": "it is the first thing anyone looks at, every time",
-        "status": "dropped",
-        "size": "m",
-        "sketch": "status",
-        "note": "Dropped by commit 9. MIDAS maintains the run state, the event counters and the per-equipment rates on its own Status page, and a spec that restated them would be restating a fact it does not own (CLAUDE.md section 11). The DAQ spec already draws that page. What this tile added over it was the alarm on a stalled counter, which is a MIDAS alarm condition and belongs with them."
-      },
-      {
-        "id": "trigger_rate",
-        "kind": "panel",
-        "label": "Trigger rate over time",
-        "question": "Has the rate changed since the run started?",
-        "why": "slide 8 asks for rates and a cumulative plot cannot answer this",
-        "status": "dropped",
-        "size": "l",
-        "sketch": "trend",
-        "note": "Dropped by commit 9, superseded rather than abandoned. Its question -- has the rate changed since the run started -- is what every tile on the Rates page answers now, because MIDAS histories what a frontend writes into Variables and mhistory.js draws it. The long reason this panel carried, about Statistics not being in the history, is exactly why the Rates page specifies frontend-written Variables keys instead."
-      },
-      {
-        "id": "open_alarms",
-        "kind": "panel",
-        "label": "Open alarms",
-        "question": "Has anything raised an alarm that nobody has cleared?",
-        "why": "slide 8 asks for an alarm system and two of them are in play",
-        "status": "dropped",
-        "size": "l",
-        "sketch": "table",
-        "note": "Dropped by commit 9, and it was two things. MIDAS has an alarm system that evaluates conditions on ODB values and comes free with the frontends, which the DAQ spec already draws (CLAUDE.md section 11). The UDB's own alarm table is for what only the DQM can see, and no custom page can read the UDB (decision 3), so that half is a link out rather than a tile in. Neither half is a panel on this screen."
-      }
-    ]
   }
 ];
 

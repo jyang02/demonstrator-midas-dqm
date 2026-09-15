@@ -12,8 +12,9 @@ paths and types want confirming against the build actually running at PSI.
 Correcting one should be an ODB edit during a shift, not a patch.
 
 One subtree per menu page, plus ``Common`` for what every page reads. A page
-with an empty dict creates no subtree, which is correct: ``/DQM/Retired`` has
-no configuration and should not appear.
+with an empty dict creates no subtree, which is correct: a page with nothing to
+configure should not appear under /DQM at all. Every page has something today,
+so nothing exercises that rule but ``seed_config`` itself.
 
 Keep this in step with ``DEFAULTS`` in ``pages/js/dqm-common.js`` -- the JS copy
 is the one that runs when the subtree is missing. ``tests/test_manifest.py``
@@ -107,7 +108,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "History Timescale": "1h",
     },
 
-    # Retired has no configuration and declares none, so no subtree is created
-    # for it. A /DQM key nobody reads is a key somebody will eventually edit
-    # expecting something to happen.
+    # A page that declares nothing here gets no subtree at all. A /DQM key
+    # nobody reads is a key somebody will eventually edit expecting something
+    # to happen.
 }

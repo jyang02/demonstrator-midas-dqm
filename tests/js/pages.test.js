@@ -27,7 +27,7 @@ globalThis.BRPC = require(path.join(JS, "dqm-brpc.js"));
 
 //: Every page the manifest registers. Kept here rather than derived from the
 //: catalogue so that a page silently vanishing from one of them is a failure.
-const PAGES = ["Rates", "Scope", "Channels", "Pulses", "Physics", "SlowControls", "Retired"];
+const PAGES = ["Rates", "Scope", "Channels", "Pulses", "Physics", "SlowControls"];
 
 //: Which pages load dqm-brpc.js, and therefore probe for an analyzer. The three
 //: mechanism-C pages and no others: a page whose panels wait on a frontend
@@ -190,7 +190,7 @@ test("only the analyzer-backed pages probe for an analyzer", async () => {
   const fs = require("node:fs");
   const HTML = path.join(__dirname, "..", "..", "pages");
   const file = { Rates: "rates", Scope: "scope", Channels: "channels", Pulses: "pulses",
-                 Physics: "physics", SlowControls: "slowcontrols", Retired: "retired" };
+                 Physics: "physics", SlowControls: "slowcontrols" };
   for (const name of PAGES) {
     const text = fs.readFileSync(path.join(HTML, `${file[name]}.html`), "utf8");
     assert.strictEqual(text.includes("dqm-brpc.js"), PROBES.has(name),

@@ -38,9 +38,8 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | **Pulses** | What does a pulse look like, and what is it worth? | analyzer | the above, plus an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
-| **Retired** | What did the webapp carry that these pages do not? | — | nothing; it records three decisions so they are not re-argued |
 
-Forty-one of the forty-four panels are blocked, and **every one of them says so
+Forty of the forty-one panels are blocked, and **every one of them says so
 in the panel**, naming what it is waiting for. That is the point of registering
 them: a shifter who opens Channels at 3am and finds eleven titled panels each
 explaining its own absence has been told the state of the experiment. One who
@@ -186,7 +185,6 @@ scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$
 scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
 scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
-scripts/shoot.py "$B=Retired"      /tmp/retired.png      --console --wait-for "$T === 3"
 ```
 
 The `$W` counts are the useful ones to watch, because they say how many panels
