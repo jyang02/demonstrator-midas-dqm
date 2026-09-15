@@ -1,4 +1,4 @@
-# The AD00 and AT00 bank layout
+# The AD00, AT00 and AC00 bank layout
 
 This is the written specification the Scope page and the analyzer decode against.
 Both decoders are written from it: `src/mdqm/dqm/sampic.py` in Python and
@@ -14,6 +14,7 @@ Everything here is little-endian.
 | physics event id | `1` |
 | waveform bank | `AD00` |
 | hit-timing bank | `AT00` |
+| collector-timing bank | `AC00` |
 | samples per hit | 64, fixed, zero-padded |
 | channels per SAMPIC | 16 |
 | ADC to volts | `sample / 1e4`, applied before the bank is written |
@@ -50,12 +51,41 @@ Two traps worth knowing before reading a waveform out of one:
 
 ## AT00
 
-Exactly one 56-byte record, `<QII10I`: `fe_timestamp_ns` u64, `nhits` u32,
-`nparents` u32, then ten reserved u32.
+Exactly one 56-byte record, `<Q12I`: `fe_timestamp_ns` u64, `nhits` u32,
+`nparents` u32, then ten u32 of readout telemetry, in this order:
+
+    sp_prepare_us_sum  sp_read_us_sum  sp_decode_us_sum  sp_total_us_sum
+    sp_prepare_us_max  sp_read_us_max  sp_decode_us_max  sp_total_us_max
+    sp_acq_retry_max   sp_acq_retry_sum
+
+`<Q12I` and the `<QII10I` this was previously written as are byte-identical;
+the difference is only that the ten can now be named.
+
+The telemetry is **zero in anything that repackages a recording** — the `.bin`
+and `.root` converters have nothing to put there — and filled with per-chip
+readout timings, in microseconds, by generated demonstrator files. A page
+showing it has to read zero as *not reported* rather than *took no time*.
 
 `nhits` has matched the AD00 hit count in every event measured, so it carries no
-information the waveform bank does not already have. The event timestamp is the
-part worth reading.
+information the waveform bank does not already have. `nparents` does not: a
+repackager writes `nparents == nhits`, while a demonstrator file writes the
+number of distinct SAMPIC chips the event touched.
+
+## AC00
+
+Exactly one 32-byte record, `<Q6I`: `collector_timestamp_ns` u64, then
+`n_events`, `total_hits`, `wait_us`, `group_build_us`, `finalize_us`,
+`total_us`, each u32. It is the event builder's own account of assembling the
+event.
+
+The size check is exact rather than "at least", mirroring the unpacker, which
+refuses any other size outright instead of reading the first 32 bytes of
+something else.
+
+`total_hits` is the one worth checking: it should equal AT00's `nhits` and the
+AD00 hit count, and a disagreement means the event was assembled from parts
+that did not belong together. Only generated files carry this bank; a recording
+repackaged from `.bin` or `.root` has no collector to describe.
 
 ## Bank framing
 

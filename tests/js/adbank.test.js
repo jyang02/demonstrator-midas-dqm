@@ -1,5 +1,5 @@
 //
-// The AD00/AT00 browser decoder, against bytes it did not write.
+// The AD00/AT00/AC00 browser decoder, against bytes it did not write.
 //
 // Two sources, deliberately:
 //   adbank-cases.json     encoded by mdqm.dqm.sampic, regenerated every Python
@@ -88,6 +88,38 @@ test("the AT00 record decodes, including a timestamp past 2^32", () => {
   assert.ok(big, "no case exercises the high word");
 });
 
+test("the AT00 telemetry decodes field by field, in order", () => {
+  const fields = CASES.at_telemetry_fields;
+  assert.deepStrictEqual(fields, AD.AT_TELEMETRY_FIELDS,
+    "the telemetry field order disagrees between Python and JavaScript");
+  CASES.timing.forEach(function (t) {
+    const got = AD.decodeAT(buf(t.payload_b64));
+    fields.forEach(function (name) {
+      assert.strictEqual(got[name], t.decoded[name], name);
+    });
+  });
+  // Distinct values in one record: a decoder reading them in the wrong order
+  // would still match a record of all zeros.
+  const filled = CASES.timing.find((t) => t.decoded.sp_prepare_us_sum !== 0);
+  assert.ok(filled, "no case fills the telemetry");
+  // And one at 2^32-1: read as int32 that is -1.
+  const wide = CASES.timing.find((t) => t.decoded.sp_total_us_sum === 4294967295);
+  assert.ok(wide, "no case exercises the top of the u32 range");
+  assert.strictEqual(AD.decodeAT(buf(wide.payload_b64)).sp_total_us_sum, 4294967295);
+});
+
+test("the AC00 collector record decodes", () => {
+  assert.strictEqual(AD.AC_RECORD_BYTES, CASES.ac_record_bytes);
+  CASES.collector.forEach(function (c) {
+    const got = AD.decodeAC(buf(c.payload_b64));
+    Object.keys(c.decoded).forEach(function (name) {
+      assert.strictEqual(got[name], c.decoded[name], name);
+    });
+  });
+  const big = CASES.collector.find((c) => c.decoded.collector_timestamp_ns > 4294967295);
+  assert.ok(big, "no case exercises the high word");
+});
+
 // --- the layout disagreement, refused rather than half-read -----------------
 
 test("a payload that is not a whole number of hits throws", () => {
@@ -97,6 +129,12 @@ test("a payload that is not a whole number of hits throws", () => {
 
 test("a truncated AT00 throws rather than reading zeros", () => {
   assert.throws(() => AD.decodeAT(new ArrayBuffer(12)), /expected 56/);
+});
+
+test("an AC00 of the wrong size throws rather than reading a prefix", () => {
+  assert.throws(() => AD.decodeAC(new ArrayBuffer(12)), /expected 32/);
+  // Exact, not "at least": 40 bytes is a different record, not a long one.
+  assert.throws(() => AD.decodeAC(new ArrayBuffer(40)), /expected 32/);
 });
 
 // --- real bytes -------------------------------------------------------------

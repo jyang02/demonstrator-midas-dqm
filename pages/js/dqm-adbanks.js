@@ -1,5 +1,5 @@
 //
-// dqm-adbanks.js -- SAMPIC AD00 / AT00 bank decoding, in the browser.
+// dqm-adbanks.js -- SAMPIC AD00 / AT00 / AC00 bank decoding, in the browser.
 //
 // This is the browser half of mechanism B: mhttpd hands the page one raw event
 // out of the shared buffer and the page decodes it here, with no analyzer in
@@ -30,10 +30,20 @@
 
 const AD_BANK = "AD00";
 const AT_BANK = "AT00";
+const AC_BANK = "AC00";
 const AD_MAX_SAMPLES = 64;            // kMaxSamples in EventBankUnpacker.hh
 const CHANNELS_PER_SAMPIC = 16;
 const AD_HIT_BYTES = 344;             // 11*4 header + 64*4 waveform + 40 scalars
 const AT_RECORD_BYTES = 56;
+const AC_RECORD_BYTES = 32;
+
+// Everything after nparents in AT00. Zero means "not reported": the .bin and
+// .root repackagers leave these empty and only generated files fill them.
+const AT_TELEMETRY_FIELDS = [
+  "sp_prepare_us_sum", "sp_read_us_sum", "sp_decode_us_sum", "sp_total_us_sum",
+  "sp_prepare_us_max", "sp_read_us_max", "sp_decode_us_max", "sp_total_us_max",
+  "sp_acq_retry_max", "sp_acq_retry_sum",
+];
 
 //: The converter writes this into tot_value where the standalone .bin format
 //: carries no time-over-threshold. A sentinel, not a measurement: a page that
@@ -117,10 +127,42 @@ function decodeAT(buffer) {
   // make every arithmetic site below have to know that.
   const lo = view.getUint32(0, true);
   const hi = view.getUint32(4, true);
-  return {
+  const out = {
     timestamp_ns: hi * 4294967296 + lo,
     nhits: view.getUint32(8, true),
     nparents: view.getUint32(12, true),
+  };
+  // The ten telemetry words. Read by name rather than skipped: they are the
+  // only per-chip readout timing there is, and they are zero in files whose
+  // frontend does not report them.
+  AT_TELEMETRY_FIELDS.forEach(function (name, i) {
+    out[name] = view.getUint32(16 + 4 * i, true);
+  });
+  return out;
+}
+
+/**
+ * The AC00 payload: exactly one 32-byte collector-timing record.
+ *
+ * Exact rather than "at least", mirroring the unpacker, which refuses any
+ * other size instead of reading the first 32 bytes of something else.
+ */
+function decodeAC(buffer) {
+  const bytes = buffer.byteLength !== undefined ? buffer : new Uint8Array(buffer).buffer;
+  if (bytes.byteLength !== AC_RECORD_BYTES) {
+    throw new Error(`AC00 is ${bytes.byteLength} bytes, expected ${AC_RECORD_BYTES}`);
+  }
+  const view = new DataView(bytes);
+  const lo = view.getUint32(0, true);
+  const hi = view.getUint32(4, true);
+  return {
+    collector_timestamp_ns: hi * 4294967296 + lo,
+    n_events: view.getUint32(8, true),
+    total_hits: view.getUint32(12, true),
+    wait_us: view.getUint32(16, true),
+    group_build_us: view.getUint32(20, true),
+    finalize_us: view.getUint32(24, true),
+    total_us: view.getUint32(28, true),
   };
 }
 
@@ -136,8 +178,10 @@ function decodeEvent(banks, opts) {
   const o = opts || {};
   const adName = o.waveformBank || AD_BANK;
   const atName = o.hitTimeBank || AT_BANK;
+  const acName = o.collectorBank || AC_BANK;
 
-  const out = { hits: [], timing: null, channels: [], haveAD: false, haveAT: false };
+  const out = { hits: [], timing: null, collector: null, channels: [],
+                haveAD: false, haveAT: false, haveAC: false };
   if (banks[adName]) {
     out.hits = decodeAD(banks[adName]);
     out.haveAD = true;
@@ -145,6 +189,10 @@ function decodeEvent(banks, opts) {
   if (banks[atName]) {
     out.timing = decodeAT(banks[atName]);
     out.haveAT = true;
+  }
+  if (banks[acName]) {
+    out.collector = decodeAC(banks[acName]);
+    out.haveAC = true;
   }
 
   // Hits arrive in the order the frontend clustered them, which is time order
@@ -247,10 +295,11 @@ function minMaxDecimate(xs, ys, columns) {
   return { x: x, y: y };
 }
 
-const ADBanks = { AD_BANK, AT_BANK, AD_HIT_BYTES, AD_MAX_SAMPLES, AT_RECORD_BYTES,
+const ADBanks = { AD_BANK, AT_BANK, AC_BANK, AD_HIT_BYTES, AD_MAX_SAMPLES,
+                  AT_RECORD_BYTES, AC_RECORD_BYTES, AT_TELEMETRY_FIELDS,
                   CHANNELS_PER_SAMPIC, TOT_ABSENT, HEADER_FIELDS,
-                  decodeAD, decodeAT, decodeHit, decodeEvent, fromEvent, bankBuffer,
-                  sampleTimes, minMaxDecimate };
+                  decodeAD, decodeAT, decodeAC, decodeHit, decodeEvent, fromEvent,
+                  bankBuffer, sampleTimes, minMaxDecimate };
 root.ADBanks = ADBanks;
 if (typeof module !== "undefined" && module.exports) module.exports = ADBanks;
 

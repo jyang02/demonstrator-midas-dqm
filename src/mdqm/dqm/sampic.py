@@ -1,4 +1,4 @@
-"""The AD00 and AT00 bank layouts, as bytes.
+"""The AD00, AT00 and AC00 bank layouts, as bytes.
 
 This module exists so the browser decoder in ``pages/js/dqm-adbanks.js`` has a
 Python twin that cannot drift from it: ``tests/generate_adbank_cases.py``
@@ -15,9 +15,14 @@ Two things worth knowing before reading a waveform out of here:
   the bank is written, so a decoder that scales again produces a plot that is
   wrong by four orders of magnitude and still looks plausible.
 * **the sampling period is not in the bank.** It lives in the SAMPIC ``.bin``
-  header (``1e3 / sampling_freq_msps`` ns, 0.15625 ns at 6400 MS/s) and does not
+  header (``1e3 / sampling_freq_msps`` ns: 0.625 ns at the demonstrator's
+  1.6 GSPS, 0.15625 ns at the 6400 MS/s run 108 was taken at) and does not
   survive into MIDAS. Anything drawing a time axis has to be told it, which is
   why ``/DQM/Scope/Sample Period ns`` exists.
+* **AT00's telemetry is only sometimes filled.** The ten fields after
+  ``nparents`` are zero in anything the .bin/.root repackagers write and carry
+  real per-chip readout timings in generated demonstrator files, so a page
+  showing them has to treat zero as "not reported" rather than "took no time".
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ import struct
 #: which belong to a different digitiser.
 AD_BANK = "AD00"
 AT_BANK = "AT00"
+AC_BANK = "AC00"
 
 #: kMaxSamples in EventBankUnpacker.hh. Every hit carries all 64 slots whatever
 #: its data_size says; the unused tail is zero and must not be plotted.
@@ -54,9 +60,30 @@ SCALAR_FIELDS = ("raw_tot_value", "tot_value", "amplitude", "baseline", "peak",
                  "time_index", "time_instant", "time_amplitude",
                  "first_cell_timestamp")
 
-#: One 56-byte EventTiming record: fe_timestamp_ns, nhits, nparents, 10 reserved.
-AT_RECORD = struct.Struct("<QII10I")
+#: One 56-byte EventTiming record. Spelled "<Q12I" rather than "<QII10I" --
+#: byte-identical, and both unpack to a 13-tuple -- so the ten fields after
+#: nparents can be named instead of discarded.
+AT_RECORD = struct.Struct("<Q12I")
 assert AT_RECORD.size == 56
+
+AT_FIELDS = ("timestamp_ns", "nhits", "nparents",
+             "sp_prepare_us_sum", "sp_read_us_sum", "sp_decode_us_sum",
+             "sp_total_us_sum", "sp_prepare_us_max", "sp_read_us_max",
+             "sp_decode_us_max", "sp_total_us_max",
+             "sp_acq_retry_max", "sp_acq_retry_sum")
+
+#: Everything after nparents: per-chip readout timings, microseconds, and the
+#: acquisition retry counters. Zero means "not reported" -- see the note above.
+AT_TELEMETRY_FIELDS = AT_FIELDS[3:]
+
+#: One 32-byte CollectorTiming record, the AC00 bank. The event builder's own
+#: account of assembling the event: when it stamped it, how many events and
+#: hits went in, and where the time went.
+AC_RECORD = struct.Struct("<Q6I")
+assert AC_RECORD.size == 32
+
+AC_FIELDS = ("collector_timestamp_ns", "n_events", "total_hits",
+             "wait_us", "group_build_us", "finalize_us", "total_us")
 
 #: Written into tot_value where the standalone .bin format carries no
 #: time-over-threshold. It is a sentinel, not a measurement, and a page that
@@ -115,13 +142,51 @@ def decode_ad(blob: bytes) -> list[dict]:
     return [decode_hit(blob, i) for i in range(0, len(blob), AD_HIT_BYTES)]
 
 
-def encode_at(timestamp_ns: int, nhits: int, nparents: int | None = None) -> bytes:
-    return AT_RECORD.pack(int(timestamp_ns), int(nhits),
-                          int(nhits if nparents is None else nparents), *([0] * 10))
+def encode_at(timestamp_ns: int, nhits: int, nparents: int | None = None,
+              **telemetry) -> bytes:
+    """One AT00 record. Telemetry defaults to zero, as the repackagers write it.
+
+    An unknown telemetry name is an error rather than a silently dropped typo.
+    """
+    unknown = set(telemetry) - set(AT_TELEMETRY_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown AT00 telemetry field(s): {sorted(unknown)}")
+    return AT_RECORD.pack(
+        int(timestamp_ns), int(nhits),
+        int(nhits if nparents is None else nparents),
+        *(int(telemetry.get(name, 0)) for name in AT_TELEMETRY_FIELDS))
 
 
 def decode_at(blob: bytes) -> dict:
+    """All 13 AT00 fields by name.
+
+    The ten telemetry fields used to be discarded here because everything
+    writing this bank left them zero. Generated files fill them, so throwing
+    them away now loses the only per-chip readout timing there is.
+    """
     if len(blob) < AT_RECORD.size:
         raise ValueError(f"AT00 payload is {len(blob)} bytes, expected {AT_RECORD.size}")
-    ts, nhits, nparents, *_ = AT_RECORD.unpack_from(blob, 0)
-    return {"timestamp_ns": ts, "nhits": nhits, "nparents": nparents}
+    return dict(zip(AT_FIELDS, AT_RECORD.unpack_from(blob, 0)))
+
+
+def encode_ac(collector_timestamp_ns: int, n_events: int, total_hits: int,
+              wait_us: int = 0, group_build_us: int = 0, finalize_us: int = 0,
+              total_us: int = 0) -> bytes:
+    """One 32-byte AC00 record, in the order the unpacker reads it."""
+    return AC_RECORD.pack(int(collector_timestamp_ns), int(n_events),
+                          int(total_hits), int(wait_us), int(group_build_us),
+                          int(finalize_us), int(total_us))
+
+
+def decode_ac(blob: bytes) -> dict:
+    """The AC00 payload: exactly one 32-byte record.
+
+    Exact rather than "at least", mirroring the unpacker, which rejects any
+    other size outright instead of reading the first 32 bytes of something
+    else. ``total_hits`` is the checkable one: it should equal AT00's nhits and
+    the AD00 hit count, and a disagreement means the event was assembled from
+    parts that did not belong together.
+    """
+    if len(blob) != AC_RECORD.size:
+        raise ValueError(f"AC00 payload is {len(blob)} bytes, expected {AC_RECORD.size}")
+    return dict(zip(AC_FIELDS, AC_RECORD.unpack(blob)))
