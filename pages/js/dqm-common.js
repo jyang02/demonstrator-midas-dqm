@@ -37,7 +37,7 @@
 const DEFAULTS = {
   "Common": {
     "Analyzer Client": "mdqm_analyzer",
-    "Refresh ms": 1000
+    "Refresh ms": 5000
   },
   "Rates": {
     "Rate Equipment": [""],

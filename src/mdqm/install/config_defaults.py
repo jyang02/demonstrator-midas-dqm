@@ -34,7 +34,14 @@ DEFAULTS: dict[str, dict[str, object]] = {
         # histograms. mdqm-analyzer registers under exactly this name; the
         # pages still check rather than assert, and say which name they tried.
         "Analyzer Client": "mdqm_analyzer",
-        "Refresh ms": 1000,
+        # mhttpd's own poll, not ours: mhttpd_set_refresh_interval() in
+        # dqm-page.js, which is what keeps the header, the alarm banner and the
+        # run state current. Five seconds rather than one because it is a round
+        # trip per tile-less second for a banner that changes a few times a
+        # run, and because anyone reading these pages over an ssh tunnel pays
+        # that latency on every one of them. The histogram tiles keep their own
+        # cadence, in REFRESH_MS in dqm-hists.js, and are unaffected by this.
+        "Refresh ms": 5000,
     },
 
     # --- Rates: ODB and history, needs only a frontend -------------------
