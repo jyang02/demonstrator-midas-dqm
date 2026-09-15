@@ -7,12 +7,13 @@
 // knows nothing about which histograms exist -- so the only thing this file
 // adds is the one page-shaped fact: which plot belongs in which tile.
 //
-// Three of the six draw today. The other three are the per-channel colormaps,
-// which are one rectangle per bin -- 25600 of them each -- repainted on every
-// fetch. That is what made these pages lag, and HELD_BACK below is the decision
-// to stop drawing them until it is fixed rather than ship a page nobody can
-// use. Bin count is the criterion there, not dimensionality: persistence is 2D
-// too and draws, because it is under a third the size.
+// Four of the six draw today. The two still held back are the per-channel
+// colormaps on Channels, which are one rectangle per bin -- 25600 of them each
+// -- repainted on every fetch. That is what made these pages lag, and
+// HELD_BACK below is the decision to stop drawing them until it is fixed
+// rather than ship a page nobody can use. What is costly is bins per second
+// rather than bins: persistence draws because it is small, and amplitude by
+// channel draws at the same 25600 bins because a 32 s cadence makes it cheap.
 //
 // The nine it does not claim are not oversights. Crosstalk and the time-between
 // -layers panels need a channel-to-layer map that exists nowhere; the three
@@ -49,20 +50,22 @@ const PANELS = {
 
 //: The panels whose plot is held back: the tile carries an explanation instead.
 //:
-//: These are the three per-channel colormaps. A colormap is one rectangle per
-//: bin, and at the default binning each of these is 256 x 100 = 25600 bins --
-//: two on Channels, one on Pulses. refreshFor() below cut how often they
-//: arrive, which fixed the wire cost and the server cost and not the one that
-//: mattered: the browser repaints every rectangle on every arrival, and three
-//: of these tiles is more than it can keep up with.
+//: Both of these are per-channel colormaps: 256 x 100 = 25600 bins at the
+//: default binning, one rectangle per bin, all of them repainted on every
+//: arrival. Both are on Channels, which is what makes them worth holding --
+//: they land in the same tab as each other and as occupancy and hits per
+//: event, so their cost arrives all at once.
 //:
-//: Size is the whole criterion, so persistence is not in here even though it is
-//: 2D as well: at 64 x 110 it is 7040 bins, under a third of one of these, and
-//: it is the only plot on Pulses. What makes a tile expensive is its bin count
-//: and not the number of axes it has.
+//: Size is the criterion rather than dimensionality. Persistence is 2D as well
+//: and draws: at 64 x 110 it is 7040 bins, under a third of one of these.
+//: Amplitude by channel is a full 25600 and draws too, on Pulses, because
+//: REFRESH_MS going to 10 s puts it on a 32 s cadence -- 800 bins a second
+//: against the 4000 it was repainting when this set was first written, which
+//: was the rate that made the page crawl. What is expensive is bins per
+//: second, not bins.
 //:
 //: They stay in PANELS, and /DQM/<page>/Histograms goes on naming them, on
-//: purpose. The analyzer still accumulates all three and the page still asks
+//: purpose. The analyzer still accumulates both and the page still asks
 //: whether it publishes them, and heldBackPanel() puts that answer underneath
 //: the placeholder -- so the tile says the data is there and that this file
 //: chose not to paint it, rather than leaving a reader to guess which. Nothing
@@ -74,7 +77,6 @@ const PANELS = {
 const HELD_BACK = new Set([
   "baseline_by_channel",
   "noise_by_channel",
-  "amplitude_by_channel",
 ]);
 
 //: How often to re-fetch a small histogram. These are accumulating histograms,
