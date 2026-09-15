@@ -207,8 +207,14 @@ for them, so nothing is lost while they are held back and taking a name out of
 What is costly is bins per *second* rather than bins, which is why the set is
 not simply the big plots. Persistence draws because it is small (7040 bins).
 Amplitude by channel draws at a full 25600, because `REFRESH_MS` at 10 s puts
-it on a 32 s cadence through `refreshFor` -- 800 bins a second, against the
-4000 it repainted back when the base was 2 s and this page crawled.
+it on a 33 s cadence through `refreshFor` -- 800 bins a second, against the
+4000 it repainted back when the base was 2 s and this page crawled. Measured
+after it came back: 1.5 ms a draw, the same as persistence.
+
+That 33 s is off the 26316 cells that actually arrive, not the 25600 the
+binning names: the wire carries the under- and overflow bins, so a colormap is
+`(nx+2) x (ny+2)`. The cadence chip on the tile always says which interval it
+ended up on.
 
 The other nine keep the empty state and their own reason, which is the correct
 outcome: crosstalk and hit-time-between-layers need a channel-to-layer map that

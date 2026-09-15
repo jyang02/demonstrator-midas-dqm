@@ -59,10 +59,17 @@ const PANELS = {
 //: Size is the criterion rather than dimensionality. Persistence is 2D as well
 //: and draws: at 64 x 110 it is 7040 bins, under a third of one of these.
 //: Amplitude by channel is a full 25600 and draws too, on Pulses, because
-//: REFRESH_MS going to 10 s puts it on a 32 s cadence -- 800 bins a second
+//: REFRESH_MS going to 10 s puts it on a 33 s cadence -- 800 bins a second
 //: against the 4000 it was repainting when this set was first written, which
 //: was the rate that made the page crawl. What is expensive is bins per
-//: second, not bins.
+//: second, not bins. Measured once it was back: 1.5 ms a draw, the same as
+//: persistence, and no frame over 40 ms in 40 s.
+//:
+//: 33 s and not the 32 the nominal binning implies, because refreshFor is
+//: handed the length of what arrived rather than nx*ny, and the wire carries
+//: the under- and overflow bins: (256+2) x (100+2) = 26316. Worth knowing
+//: before checking one of these numbers against /DQM/Analyzer/Binning and
+//: concluding the cadence is wrong.
 //:
 //: They stay in PANELS, and /DQM/<page>/Histograms goes on naming them, on
 //: purpose. The analyzer still accumulates both and the page still asks
