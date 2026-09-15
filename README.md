@@ -29,8 +29,8 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
 | **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
-| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy, hits per event, baseline and noise draw from the `sampic` plugin; the other seven need layers, T0 or banks nothing writes |
-| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel; "what it is worth" still wants an energy calibration with an owner |
+| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy and hits per event draw from the `sampic` plugin; baseline and noise are accumulated but held back (see `HELD_BACK`); the other seven need layers, T0 or banks nothing writes |
+| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | persistence and amplitude by channel are accumulated but held back (see `HELD_BACK`), so nothing on it draws today; "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
 
@@ -41,9 +41,11 @@ panels -- some drawing, the rest each explaining its own absence -- has been
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Eight of those forty draw real data against a replay today: two on Scope, four
-on Channels, two on Pulses. Their `blocked` chip comes from the spec and has not
-caught up, which is worth knowing before reading a chip as a verdict. Six more
+Four of those forty draw real data against a replay today: two on Scope and
+two on Channels. Four more could -- baseline and noise on Channels, persistence
+and amplitude by channel on Pulses -- and are held back for the paint cost of a
+colormap, not for want of data. Their `blocked` chip comes from the spec and has
+not caught up, which is worth knowing before reading a chip as a verdict. Six more
 have a renderer that still has nothing to draw -- five on SlowControls and the
 trigger settings on Rates -- and those render the absence itself, key by key,
 rather than a sentence about it.
@@ -190,9 +192,20 @@ docstring lists the rest of what the data will not support.
 
 `pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
 hits per event, baseline and noise on Channels, persistence and amplitude by
-channel on Pulses -- each fetching one histogram every two seconds and handing
-it to mplot through `BRPC.display()`. The mapping from panel to histogram is the
-one page-shaped fact in that file; everything else is generic.
+channel on Pulses -- each fetching one histogram and handing it to mplot
+through `BRPC.display()`. The mapping from panel to histogram is the one
+page-shaped fact in that file; everything else is generic.
+
+Two of the six draw today. The four 2D ones -- baseline, noise, amplitude by
+channel and persistence -- are **held back**, listed in `HELD_BACK` in that
+file, and carry a placeholder instead. A 2D plot here is a colormap: one
+rectangle per bin, all of them repainted on every fetch, and at the default
+binning the three per-channel maps are 25600 bins each. Refetching them less
+often (`refreshFor`, below) fixed the wire and server cost and not the paint
+cost, which was the one making these pages crawl. The analyzer goes on
+accumulating all four and the pages go on asking for them, so nothing is lost
+while they are held back and taking a name out of `HELD_BACK` puts its plot
+back.
 
 The other nine keep the empty state and their own reason, which is the correct
 outcome: crosstalk and hit-time-between-layers need a channel-to-layer map that
@@ -223,12 +236,15 @@ W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
 scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
 scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 3"
-# Channels and Pulses draw from the analyzer, so these two counts depend on
-# whether one is running: with mdqm-analyzer up, four tiles on Channels and two
-# on Pulses render a histogram instead of an explanation. Without it, the $W
-# counts are 11 and 4 and every panel says which client it tried.
-scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 7"
-scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 2"
+# Channels and Pulses draw from the analyzer, so the Channels count depends on
+# whether one is running: with mdqm-analyzer up, its two 1D tiles -- occupancy
+# and hits per event -- render a histogram instead of an explanation, and $W is
+# 9. Without it every panel says which client it tried and $W is 11. Pulses is
+# 4 either way: both its tiles that claim a renderer are held back (above), so
+# with the analyzer up they show a placeholder over a probe footnote saying it
+# is answering.
+scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 9"
+scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
 scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
 ```

@@ -1,11 +1,16 @@
 //
 // dqm-hists.js -- the analyzer-backed panels on Channels and Pulses.
 //
-// Six of the fifteen. Every one of them draws a histogram the `sampic` plugin
+// Six of the fifteen. Every one of them names a histogram the `sampic` plugin
 // accumulates from AD00 (src/mdqm/dqm/sampic_plugin.py), fetched over binary
 // RPC and drawn by mplot. The mechanism is entirely generic -- dqm-brpc.js
 // knows nothing about which histograms exist -- so the only thing this file
 // adds is the one page-shaped fact: which plot belongs in which tile.
+//
+// Two of the six draw today. The other four are 2D, and a 2D plot here is a
+// colormap: one rectangle per bin, every one of them repainted on every fetch.
+// That is what made these pages lag, and HELD_BACK below is the decision to
+// stop drawing them until it is fixed rather than ship a page nobody can use.
 //
 // The nine it does not claim are not oversights. Crosstalk and the time-between
 // -layers panels need a channel-to-layer map that exists nowhere; the three
@@ -39,6 +44,34 @@ const PANELS = {
   pulse_persistence:    "sampic/persistence",
   amplitude_by_channel: "sampic/amplitude_by_channel",
 };
+
+//: The panels whose plot is held back: the tile carries an explanation instead.
+//:
+//: These are the four 2D ones. A colormap is one rectangle per bin, and at the
+//: default binning the three per-channel maps are 256 x 100 = 25600 bins each
+//: -- two on Channels, one on Pulses. refreshFor() below cut how often they
+//: arrive, which fixed the wire cost and the server cost and not the one that
+//: mattered: the browser repaints every rectangle on every arrival, and three
+//: of these tiles is more than it can keep up with. Persistence is smaller
+//: (64 x 110) and is held back with them, so that the reason a tile is empty on
+//: these pages is one reason and not two.
+//:
+//: They stay in PANELS, and /DQM/<page>/Histograms goes on naming them, on
+//: purpose. The analyzer still accumulates all four and the page still checks
+//: that it publishes them, so the probe footnote a blocked tile already carries
+//: says so underneath the placeholder -- the tile is empty because this file
+//: chose not to paint it, not because the data stopped. Nothing is lost by
+//: waiting, either: these are accumulating histograms, so whatever arrives
+//: while they are held back is still in them when they come back.
+//:
+//: Taking a name out of this set puts its plot straight back, with no other
+//: change anywhere.
+const HELD_BACK = new Set([
+  "baseline_by_channel",
+  "noise_by_channel",
+  "amplitude_by_channel",
+  "pulse_persistence",
+]);
 
 //: How often to re-fetch a small histogram. These are accumulating histograms,
 //: not a live trace: a shifter watches a shape settle over minutes, and asking
@@ -179,13 +212,45 @@ function histPanel(name) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// One tile, with the plot deliberately not drawn
+// ---------------------------------------------------------------------------
+
+/**
+ * The placeholder a held-back panel shows in place of its colormap.
+ *
+ * It fetches nothing -- not even to print an entry count. Asking for a 25600
+ * bin histogram every few seconds to render one number would keep most of the
+ * cost this placeholder exists to remove, and the number would be the least
+ * useful thing on the tile.
+ *
+ * The sentence is about this page's own choice rather than about the analyzer,
+ * because that is the true reason and because the probe footnote directly
+ * below it is already saying whether the analyzer is answering. A shifter who
+ * reads both learns the thing that matters: the data is there and is being
+ * accumulated, and it is this page that is not drawing it.
+ */
+function heldBackPanel(name) {
+  return function (ctx) {
+    blocked(ctx.body,
+      `Held back rather than missing. The analyzer is still accumulating `
+      + `${name} and this page is still asking for it; what is switched off is `
+      + `drawing it. As a colormap it is one rectangle per bin repainted on `
+      + `every fetch, which is what made this page lag. Remove this panel from `
+      + `HELD_BACK in pages/js/dqm-hists.js to put the plot back.`,
+      ctx.panel);
+  };
+}
+
 Object.keys(PANELS).forEach(function (id) {
-  DQMPage.register(id, histPanel(PANELS[id]));
+  const render = HELD_BACK.has(id) ? heldBackPanel : histPanel;
+  DQMPage.register(id, render(PANELS[id]));
 });
 
 // Reachable for the tests, which assert this agrees with config_defaults.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PANELS, refreshFor, REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS };
+  module.exports = { PANELS, HELD_BACK, refreshFor, REFRESH_MS, BIG_HIST_CELLS,
+                    MAX_REFRESH_MS };
 }
 
 })();
