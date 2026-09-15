@@ -7,13 +7,10 @@
 // knows nothing about which histograms exist -- so the only thing this file
 // adds is the one page-shaped fact: which plot belongs in which tile.
 //
-// Four of the six draw today. The two still held back are the per-channel
-// colormaps on Channels, which are one rectangle per bin -- 25600 of them each
-// -- repainted on every fetch. That is what made these pages lag, and
-// HELD_BACK below is the decision to stop drawing them until it is fixed
-// rather than ship a page nobody can use. What is costly is bins per second
-// rather than bins: persistence draws because it is small, and amplitude by
-// channel draws at the same 25600 bins because a 32 s cadence makes it cheap.
+// Two of the six draw when the page opens: occupancy and hits per event, both
+// 1D and both a few hundred bins. The other four are colormaps and start off,
+// each with a Show plot toggle in its own tile -- see TWO_D below, which
+// carries the reasoning. Off is a real off: no fetch, no draw, no timer.
 //
 // The nine it does not claim are not oversights. Crosstalk and the time-between
 // -layers panels need a channel-to-layer map that exists nowhere; the three
@@ -48,42 +45,39 @@ const PANELS = {
   amplitude_by_channel: "sampic/amplitude_by_channel",
 };
 
-//: The panels whose plot is held back: the tile carries an explanation instead.
+//: The panels whose plot is a colormap. These are off when the page opens, and
+//: each carries its own toggle.
 //:
-//: Both of these are per-channel colormaps: 256 x 100 = 25600 bins at the
-//: default binning, one rectangle per bin, all of them repainted on every
-//: arrival. Both are on Channels, which is what makes them worth holding --
-//: they land in the same tab as each other and as occupancy and hits per
-//: event, so their cost arrives all at once.
+//: A colormap is one rectangle per bin. The three per-channel ones are
+//: (256+2) x (100+2) = 26316 cells on the wire and persistence is 66 x 112 =
+//: 7392, and mplot repaints every rectangle on every arrival. Measured
+//: headless on the DAQ machine that is 1.5 ms a draw and costs nothing; on a
+//: real desktop driving a real compositor, over a tunnel, it is reported as
+//: making the page crawl. Both of those can be true -- headless Firefox
+//: rasterises to an offscreen surface and never composites to a screen -- and
+//: when the measurement and the person disagree about whether a page is
+//: usable, the person is right.
 //:
-//: Size is the criterion rather than dimensionality. Persistence is 2D as well
-//: and draws: at 64 x 110 it is 7040 bins, under a third of one of these.
-//: Amplitude by channel is a full 25600 and draws too, on Pulses, because
-//: REFRESH_MS going to 10 s puts it on a 33 s cadence -- 800 bins a second
-//: against the 4000 it was repainting when this set was first written, which
-//: was the rate that made the page crawl. What is expensive is bins per
-//: second, not bins. Measured once it was back: 1.5 ms a draw, the same as
-//: persistence, and no frame over 40 ms in 40 s.
+//: So the default is off rather than a cadence chosen on the strength of
+//: numbers taken on the wrong machine. Off means off: nothing is fetched and
+//: nothing is drawn until somebody asks, so a page of these costs what a page
+//: of text costs. The toggle is per tile and per page load -- it deliberately
+//: does not persist, because a remembered "on" would bring the slow page back
+//: without saying why, which is the failure this is fixing.
 //:
-//: 33 s and not the 32 the nominal binning implies, because refreshFor is
-//: handed the length of what arrived rather than nx*ny, and the wire carries
-//: the under- and overflow bins: (256+2) x (100+2) = 26316. Worth knowing
-//: before checking one of these numbers against /DQM/Analyzer/Binning and
-//: concluding the cadence is wrong.
+//: Not a permanent answer. What it buys is a page that is usable now and a
+//: way to look at any one of these when it is wanted. The cost is worth
+//: measuring properly on the machine that has the problem -- see the browser
+//: probe in the runbook -- and the answer may well be that mplot's colormap
+//: wants a canvas blit rather than a rectangle per bin.
 //:
-//: They stay in PANELS, and /DQM/<page>/Histograms goes on naming them, on
-//: purpose. The analyzer still accumulates both and the page still asks
-//: whether it publishes them, and heldBackPanel() puts that answer underneath
-//: the placeholder -- so the tile says the data is there and that this file
-//: chose not to paint it, rather than leaving a reader to guess which. Nothing
-//: is lost by waiting, either: these are accumulating histograms, so whatever
-//: arrives while they are held back is still in them when they come back.
-//:
-//: Taking a name out of this set puts its plot straight back, with no other
-//: change anywhere.
-const HELD_BACK = new Set([
+//: The 1D tiles are not in here and always draw: occupancy and hits per event
+//: are a few hundred bins and have never been the problem.
+const TWO_D = new Set([
   "baseline_by_channel",
   "noise_by_channel",
+  "amplitude_by_channel",
+  "pulse_persistence",
 ]);
 
 //: How often to re-fetch a small histogram. These are accumulating histograms,
@@ -155,7 +149,7 @@ function cadenceText(ms, cells) {
 // One histogram, in one tile
 // ---------------------------------------------------------------------------
 
-function histPanel(name) {
+function histPanel(name, twoD) {
   return function (ctx) {
     const client = String(ctx.cfg["Analyzer Client"] || "").trim();
     if (!client) {
@@ -171,9 +165,23 @@ function histPanel(name) {
     const strip = el("div", { class: "dqm-strip" },
       chip("histogram", el("code", {}, name)),
       chip("entries", entries), cadence);
+    ctx.body.appendChild(strip);
+
+    // The off state, built before the plot so it reads above it. Kept in the
+    // DOM and hidden rather than removed: probeAnalyzer() footnotes it once,
+    // after the first paint and never again, so a box that is taken out and
+    // rebuilt on a toggle comes back without the one line saying whether the
+    // analyzer is answering.
+    const offBox = twoD ? probeThisBox(blocked(ctx.body,
+      `Off by default. This is a colormap -- one rectangle per bin, and this `
+      + `one has tens of thousands of them -- and repainting it is what made `
+      + `this page crawl. While it is off nothing is fetched and nothing is `
+      + `drawn, so the tile costs what a paragraph costs. Show plot draws it; `
+      + `the toggle lasts until the page is reloaded.`,
+      ctx.panel)) : null;
+
     const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
     const plotDiv = el("div", { class: "dqm-plot" });
-    ctx.body.appendChild(strip);
     ctx.body.appendChild(note);
     ctx.body.appendChild(plotDiv);
 
@@ -261,54 +269,50 @@ function histPanel(name) {
           + "the analyzer these panels are waiting for.";
     };
 
-    // Deferred for the same reason the Scope page defers: MPlotGraph reads
-    // clientWidth in its constructor, and a div that has not been laid out yet
-    // reports zero.
-    setTimeout(function () { updater.start(); }, 0);
-  };
-}
+    if (!twoD) {
+      // Deferred for the same reason the Scope page defers: MPlotGraph reads
+      // clientWidth in its constructor, and a div that has not been laid out
+      // yet reports zero.
+      setTimeout(function () { updater.start(); }, 0);
+      return;
+    }
 
-// ---------------------------------------------------------------------------
-// One tile, with the plot deliberately not drawn
-// ---------------------------------------------------------------------------
+    // A colormap: off until asked for. The button lives in the strip, beside
+    // the chips, so it is in the same place on every one of these tiles and is
+    // reachable in both states -- a control that only exists in the off state
+    // is one you cannot find again once you have used it.
+    const toggle = el("button", { class: "mbutton", id: `${name}-toggle` }, "");
+    strip.appendChild(toggle);
 
-/**
- * The placeholder a held-back panel shows in place of its colormap.
- *
- * It fetches nothing -- not even to print an entry count. Asking for a 25600
- * bin histogram every few seconds to render one number would keep most of the
- * cost this placeholder exists to remove, and the number would be the least
- * useful thing on the tile.
- *
- * The sentence is about this page's own choice rather than about the analyzer,
- * because that is the true reason. It says the histogram is still being
- * accumulated, though, which is a claim about the analyzer -- so the box goes
- * to probeThisBox() and the probe footnote lands underneath saying whether
- * that client is answering and publishing this name. Checked, not asserted,
- * which is the whole reason the probe exists. A shifter who reads both learns
- * the thing that matters: the data is there, and it is this page that is not
- * drawing it.
- */
-function heldBackPanel(name) {
-  return function (ctx) {
-    probeThisBox(blocked(ctx.body,
-      `Held back rather than missing. The analyzer is still accumulating `
-      + `${name} and this page is still asking for it; what is switched off is `
-      + `drawing it. As a colormap it is one rectangle per bin repainted on `
-      + `every fetch, which is what made this page lag. Remove this panel from `
-      + `HELD_BACK in pages/js/dqm-hists.js to put the plot back.`,
-      ctx.panel));
+    let on = false;
+    function setOn(next) {
+      on = next;
+      toggle.textContent = on ? "Hide plot" : "Show plot";
+      toggle.title = on
+        ? `Stop drawing ${name}, and stop fetching it.`
+        : `Draw ${name}. Nothing is being fetched for this tile until you do.`;
+      // Display rather than removal, so the graph survives a hide and the
+      // second Show is instant. plotDiv must be visible before the updater
+      // runs: MPlotGraph reads clientWidth in its constructor and a hidden div
+      // reports zero, which is the blank-plot failure this page has hit before.
+      if (offBox) offBox.style.display = on ? "none" : "";
+      note.style.display = on ? "" : "none";
+      plotDiv.style.display = on ? "" : "none";
+      if (on) updater.start();
+      else updater.stop();
+    }
+    toggle.addEventListener("click", function () { setOn(!on); });
+    setOn(false);
   };
 }
 
 Object.keys(PANELS).forEach(function (id) {
-  const render = HELD_BACK.has(id) ? heldBackPanel : histPanel;
-  DQMPage.register(id, render(PANELS[id]));
+  DQMPage.register(id, histPanel(PANELS[id], TWO_D.has(id)));
 });
 
 // Reachable for the tests, which assert this agrees with config_defaults.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PANELS, HELD_BACK, refreshFor, cadenceText, REFRESH_MS,
+  module.exports = { PANELS, TWO_D, refreshFor, cadenceText, REFRESH_MS,
                     BIG_HIST_CELLS, MAX_REFRESH_MS };
 }
 

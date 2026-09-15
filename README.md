@@ -29,8 +29,8 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
 | **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
-| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy and hits per event draw from the `sampic` plugin; baseline and noise are accumulated but held back (see `HELD_BACK`); the other seven need layers, T0 or banks nothing writes |
-| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel both draw; "what it is worth" still wants an energy calibration with an owner |
+| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy and hits per event draw from the `sampic` plugin; baseline and noise are colormaps, off by default behind a per-tile toggle; the other seven need layers, T0 or banks nothing writes |
+| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel are both there, off by default behind a per-tile toggle; "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
 
@@ -41,10 +41,10 @@ panels -- some drawing, the rest each explaining its own absence -- has been
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Six of those forty draw real data against a replay today: two on Scope, two on
-Channels and both tiles on Pulses. Two more could -- baseline and noise on
-Channels -- and are held back for the paint cost of a colormap, not for want of
-data. Their `blocked` chip comes from the spec and has
+Six of those forty can draw real data against a replay today: two on Scope, two
+on Channels and both tiles on Pulses. Four of those six are colormaps and open
+off, a click from drawing -- held for the paint cost of a colormap, not for want
+of data. Their `blocked` chip comes from the spec and has
 not caught up, which is worth knowing before reading a chip as a verdict. Six more
 have a renderer that still has nothing to draw -- five on SlowControls and the
 trigger settings on Rates -- and those render the absence itself, key by key,
@@ -196,25 +196,21 @@ channel on Pulses -- each fetching one histogram and handing it to mplot
 through `BRPC.display()`. The mapping from panel to histogram is the one
 page-shaped fact in that file; everything else is generic.
 
-Four of the six draw today. The two per-channel colormaps on Channels --
-baseline and noise -- are **held back**, listed in `HELD_BACK` in that file,
-and carry a placeholder instead. A colormap is one rectangle per bin, all of
-them repainted on every fetch, and at the default binning each of these is
-25600 bins. The analyzer goes on accumulating both and the pages go on asking
-for them, so nothing is lost while they are held back and taking a name out of
-`HELD_BACK` puts its plot back.
+Two of the six draw when the page opens: occupancy and hits per event, both 1D
+and both a few hundred bins. The other four are **colormaps and start off**,
+listed in `TWO_D` in that file, each with a `Show plot` button in its own tile.
+Off is a real off -- no fetch, no draw, no timer -- so a page of these costs
+what a page of text costs, and the toggle lasts until the page is reloaded.
 
-What is costly is bins per *second* rather than bins, which is why the set is
-not simply the big plots. Persistence draws because it is small (7040 bins).
-Amplitude by channel draws at a full 25600, because `REFRESH_MS` at 10 s puts
-it on a 33 s cadence through `refreshFor` -- 800 bins a second, against the
-4000 it repainted back when the base was 2 s and this page crawled. Measured
-after it came back: 1.5 ms a draw, the same as persistence.
-
-That 33 s is off the 26316 cells that actually arrive, not the 25600 the
-binning names: the wire carries the under- and overflow bins, so a colormap is
-`(nx+2) x (ny+2)`. The cadence chip on the tile always says which interval it
-ended up on.
+That default is not a measurement, it is a deferral. A colormap is one
+rectangle per bin and mplot repaints every one of them on every arrival;
+measured headless on the DAQ machine that is 1.5 ms a draw and free, but on a
+real desktop over a tunnel it is reported as making the page crawl. Headless
+Firefox rasterises offscreen and never composites to a screen, so both can be
+true -- and when the numbers and the person disagree about whether a page is
+usable, the person is right. The real fix is probably a canvas blit rather than
+a rectangle per bin, and wants measuring on the machine that has the problem;
+until then the page is usable and any one plot is a click away.
 
 The other nine keep the empty state and their own reason, which is the correct
 outcome: crosstalk and hit-time-between-layers need a channel-to-layer map that
@@ -247,16 +243,17 @@ scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$
 scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 3"
 # These two hold whether or not mdqm-analyzer is running, which is worth knowing
 # before reading a failure as "the analyzer is down". $W counts .dqm-empty-why,
-# and a held-back tile emits one unconditionally while a drawing tile that
-# cannot reach the analyzer reports it as a .dqm-diagnosis instead -- so on
-# Channels it is the seven unclaimed panels plus baseline and noise either way,
-# and on Pulses the two energy panels alone. What does move with the analyzer is
-# whether occupancy, hits per event, persistence and amplitude by channel show a
-# plot or a red line naming the client they tried. (Blanking
+# and a colormap tile emits one while it is off, whereas a drawing tile that
+# cannot reach the analyzer reports a .dqm-diagnosis instead -- so on Channels it
+# is the seven unclaimed panels plus baseline and noise, and on Pulses the two
+# energy panels plus persistence and amplitude by channel. Both counts are for a
+# freshly opened page, before anything is toggled on; each Show plot takes one
+# off. What moves with the analyzer is whether occupancy and hits per event show
+# a plot or a red line naming the client they tried. (Blanking
 # /DQM/Common/Analyzer Client is the one thing that would move these: with no
 # name to try, a drawing tile falls back to an empty-why and $W goes up.)
 scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 9"
-scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 2"
+scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
 scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
 scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
 ```
