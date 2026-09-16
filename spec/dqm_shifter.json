@@ -333,26 +333,6 @@
           ]
         },
         {
-          "id": "event_display_position",
-          "kind": "panel",
-          "label": "Event display — position",
-          "question": "Does a single event look like a muon stopping in the ATAR?",
-          "why": "it is the panel that makes a problem obvious without a fit",
-          "status": "blocked",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "event",
-          "targets": {},
-          "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. Under MIDAS it reads an ATAR bank through mhttpd and decodes it in the browser, and neither the bank nor its layout document exists. The channel to strip map it needs in order to draw position is a setting in the frontend that reads those channels, which is a cabling review rather than a thing to build -- see decision 2.",
-          "proposed_figure": "dqm-event-position",
-          "_note": "Its readiness was a property of the web application, not of this panel: the figure type it named is registered by demonstrator-dqm/webapp/index.js, which goes away with the conversion. Carrying the old status across would have been a panel that reads as drawn while nothing draws it.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
-        },
-        {
           "id": "event_display_energy",
           "kind": "panel",
           "label": "Event display — energy",

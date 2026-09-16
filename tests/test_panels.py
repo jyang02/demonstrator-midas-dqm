@@ -42,8 +42,12 @@ needs_spec = pytest.mark.skipif(
 #: a guess: if a panel is added or dropped in the spec the drift test says so, and
 #: this number is what makes the change visible in a suite run without the
 #: spec file. It counts what the catalogue ships, not what the spec holds: the
-#: spec's 48 include the three-element generic group, which has no page here.
-EXPECTED_ELEMENTS = 45
+#: spec's 47 include the three-element generic group, which has no page here.
+#:
+#: 45 until event_display_position was dropped: position and energy were two
+#: views of one event display, and the energy one carries the position on its
+#: x axis, so the pair became event_display_energy alone.
+EXPECTED_ELEMENTS = 44
 
 #: Every ``sketch`` the renderer must have a sentence for. From the spec's own
 #: vocabulary; dqm-page.js's SHAPE map has to cover it.

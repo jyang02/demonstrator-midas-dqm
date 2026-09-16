@@ -6,12 +6,16 @@
 // buffer as an ArrayBuffer, bkToObj() in midas.js splits it into banks,
 // dqm-adbanks.js turns AD00 into volts, and mplot.js draws it.
 //
-// Two of the five panels here are live. calo_waveforms has no calorimeter
-// frontend and no bank; event_display_position needs the channel-to-strip map,
-// which is a cabling review rather than code; event_display_energy needs
-// per-strip energy that is not in the data at all. Those three keep their
-// reasons from the catalogue and get no renderer, which is the correct amount
-// of code to write for them.
+// Three of the five panels here are live. event_display_energy draws the same
+// event as the waveforms, as energy against strip position: one row per layer
+// pair, x on the left and y on the right, matching the column order of the
+// waveforms above it. calo_waveforms is the one that keeps its reason from the
+// catalogue and gets no renderer -- there is no calorimeter frontend and no
+// bank, which no amount of code here will fix.
+//
+// event_display_position is gone from the spec rather than sitting blocked
+// beside this one. Position and energy were two views of one event display,
+// and the energy one carries the position on its x axis.
 //
 // On the shared read pointer (MIDAS elog 2391): mhttpd holds ONE event-buffer
 // read pointer for the whole process. With get_recent:true each poll drains the
@@ -46,6 +50,8 @@ const state = {
   excluded: null,          // channels the operator has explicitly unticked
   graph: null,
   cfg: null,
+  edHost: null,            // the energy display's host div, once it renders
+  energyGraphs: null,      // one entry per layer cell in that display
 };
 
 const STORE = "dqm-scope-settings";
@@ -224,9 +230,23 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
             + "Settings carries no ATAR geometry, and which layer a channel is "
             + "in cannot be guessed from the bank.";
         }
+        const edNote = document.getElementById("scope-ed-note");
+        if (edNote) {
+          edNote.className = "dqm-diagnosis";
+          edNote.textContent = "No energy display: it plots against strip "
+            + "position, and /Equipment/SAMPIC/Settings carries no ATAR "
+            + "geometry to place a channel on a layer or a strip.";
+        }
         return;
       }
       buildLayerPanels(ctx.body, plot, map);
+      // The energy panel below may have rendered before this resolved, in
+      // which case its host is waiting and empty.
+      if (state.edHost) {
+        const edNote = document.getElementById("scope-ed-note");
+        if (edNote) edNote.textContent = energyNote(map);
+        buildEnergyPanels(state.edHost, map);
+      }
       if (state.event) draw();
     });
     // An event can easily arrive before this timeout runs -- the poll starts
@@ -261,13 +281,19 @@ function buildLayerPanels(body, firstPlot, map) {
   const host = el("div", { id: "scope-layer-panels" });
   body.insertBefore(host, firstPlot);
 
-  // Two columns, odd layers left and even layers right. Layers alternate
+  // Two columns, even layers left and odd layers right. Layers alternate
   // orientation, so that is the same thing as putting each strip direction in
   // its own column -- a track crossing the target is read down one column for
   // one coordinate and down the other for the other, instead of zig-zagging
   // between orientations the way a single stack does.
+  //
+  // Even first, which puts the vertical strips -- the x coordinate -- on the
+  // left, because the event display below reads energy against x on the left
+  // and energy against y on the right. Two sections on one page disagreeing
+  // about which coordinate is which side is a way to misread a track that
+  // costs nothing to avoid.
   const columns = new Map();
-  [["odd", 1], ["even", 0]].forEach(function (pair) {
+  [["even", 0], ["odd", 1]].forEach(function (pair) {
     const parity = pair[1];
     const col = el("div", { class: "dqm-layer-col", id: `scope-col-${pair[0]}` });
     // The layers actually present with this parity, so the heading describes
@@ -546,6 +572,10 @@ function draw() {
 
   state.busy = drawn.length > BUSY_OVERLAY;
   panels.forEach(function (p) { p.graph.redraw(); });
+
+  // The energy display is the same event, so it is redrawn from here rather
+  // than from its own loop. One place decides what is on screen.
+  drawEnergyDisplay();
 }
 
 //: matplotlib's tab10. Used for a channel the map cannot place: with no strip
@@ -662,6 +692,200 @@ function update() {
 function setText(id, text) {
   const e = document.getElementById(id);
   if (e) e.textContent = text;
+}
+
+// ---------------------------------------------------------------------------
+// event_display_energy -- energy against position, one row per layer pair
+// ---------------------------------------------------------------------------
+
+/**
+ * The waveform's integral, baseline-subtracted, in V.ns.
+ *
+ * "Energy" in the loosest sense the data supports, which is why the axis says
+ * V.ns and not MeV. Turning this into MeV needs a per-channel calibration with
+ * an owner, which is the blocker the two energy panels on Pulses already name;
+ * an axis labelled MeV that is really volts is the kind of plot that gets
+ * believed for a month.
+ *
+ * Baseline-subtracted and sign-flipped so it comes out positive: the pulses are
+ * negative-going from a baseline near 0.75 V, so a raw integral would be
+ * dominated by the baseline's own area and would *fall* as the pulse grew.
+ *
+ * Over the whole record rather than an integration window around the peak.
+ * With no window defined anywhere, picking one here would be inventing a
+ * calibration constant in the middle of a display -- and decode_hit already
+ * truncates to data_size, so this is the real record and never zero padding.
+ */
+function energyOf(hit, dt) {
+  const w = hit.waveform;
+  if (!w || !w.length) return 0;
+  const base = hit.baseline;
+  let sum = 0;
+  for (let i = 0; i < w.length; i++) sum += base - w[i];
+  // Without a sample period, the integral is in volt-samples. Reported anyway
+  // rather than zeroed: the shape across strips is the point here, and the
+  // axis title says which unit it is in.
+  return dt ? sum * dt : sum;
+}
+
+/**
+ * Build the 4x2 grid: one row per layer pair, x on the left and y on the right.
+ *
+ * A layer has one strip orientation, so it carries one coordinate and not the
+ * other. Pairing consecutive layers into a row puts the two coordinates of
+ * roughly the same depth side by side, which is how a track is actually read:
+ * across a row for where the particle was, down the rows for how deep it got.
+ *
+ * Which parity goes on the left is read from the ODB rather than assumed, the
+ * same way the waveform columns do it -- a target built the other way round
+ * would otherwise put every label on the wrong side.
+ */
+function buildEnergyPanels(host, map) {
+  if (!host || host.dataset.built) return;
+  host.dataset.built = "1";
+  host.innerHTML = "";
+
+  const evens = map.layers.filter((L) => L % 2 === 0);
+  const odds = map.layers.filter((L) => L % 2 === 1);
+  const evenOrient = evens.length ? orientationOf(map, evens[0]) : null;
+  // Vertical strips measure x. Default to evens-on-the-left when the ODB does
+  // not say, which is the order the waveform columns above use.
+  const leftIsEven = evenOrient !== "horizontal";
+  const left = leftIsEven ? evens : odds;
+  const right = leftIsEven ? odds : evens;
+  const coordOf = (orient) => (orient === "horizontal" ? "y" : "x");
+
+  const head = el("div", { class: "dqm-ed-row dqm-ed-head" });
+  [left, right].forEach(function (col) {
+    const orient = col.length ? orientationOf(map, col[0]) : null;
+    head.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
+      orient ? `energy vs ${coordOf(orient)} — ${orient} strips`
+             : "energy vs position"));
+  });
+  host.appendChild(head);
+
+  state.energyGraphs = [];
+  const rows = Math.max(left.length, right.length);
+  for (let r = 0; r < rows; r++) {
+    const row = el("div", { class: "dqm-ed-row" });
+    host.appendChild(row);
+    [left[r], right[r]].forEach(function (layer) {
+      const cell = el("div", { class: "dqm-ed-cell" });
+      row.appendChild(cell);
+      // A pair with only one layer still gets its empty half, so the columns
+      // stay aligned and "nothing in this orientation" reads as a gap rather
+      // than as a row that has shifted sideways.
+      if (layer === undefined) return;
+      const orient = orientationOf(map, layer);
+      const coord = coordOf(orient);
+      cell.appendChild(el("div", { class: "dqm-subhead" },
+        `Layer ${layer} — energy vs ${coord}`));
+      const div = el("div", { class: "dqm-scope-plot", id: `scope-ed-L${layer}` });
+      cell.appendChild(div);
+      const g = new MPlotGraph(div, {
+        title: { text: "" },
+        stats: { show: false },
+        legend: { show: false },
+        mouseWheelZoom: false,
+        xAxis: { title: { text: `${coord} (strip centre)` } },
+        yAxis: { title: { text: dtLabel() } },
+        plot: [],
+      });
+      div.mpg = g;
+      state.energyGraphs.push({ layer: layer, graph: g, div: div, coord: coord });
+      g.resize();
+    });
+  }
+}
+
+//: What the energy axis is in, which depends on whether a sample period is set.
+function dtLabel() {
+  return Number(state.cfg && state.cfg["Sample Period ns"])
+    ? "energy (V\u00b7ns)" : "energy (V\u00b7samples)";
+}
+
+/**
+ * Draw the current event's energies. Same event as the waveforms above it.
+ *
+ * Called from draw(), so there is exactly one place that decides which event is
+ * on screen and both sections follow it -- including the pause button and the
+ * channel ticks, which is the behaviour anyone comparing the two would assume
+ * without being told.
+ */
+function drawEnergyDisplay() {
+  if (!state.energyGraphs || !state.energyGraphs.length || !state.event) return;
+  const dt = Number(state.cfg["Sample Period ns"]) || 0;
+  const cells = new Map(state.energyGraphs.map((p) => [p.layer, p]));
+  state.energyGraphs.forEach(function (p) { p.graph.param.plot = []; p.pts = []; });
+
+  state.event.hits.forEach(function (hit) {
+    if (excluded().has(hit.global_channel)) return;
+    const layer = layerOf(hit);
+    const strip = stripOf(hit);
+    // A channel the map cannot place has no position to plot against, so it is
+    // left out here rather than guessed at. It is still drawn as a waveform in
+    // the unmapped panel above, which is where a hit nobody can place belongs.
+    if (layer === null || strip === null) return;
+    const cell = cells.get(layer);
+    if (cell) cell.pts.push([strip, energyOf(hit, dt)]);
+  });
+
+  // One scale for every cell, not one per cell. The question a row answers is
+  // "where did it deposit and how much", and a per-cell scale would draw a
+  // 2 keV blip and a minimum-ionising hit the same height on adjacent panels --
+  // which is exactly the comparison this display exists to make.
+  let yHi = 0;
+  state.energyGraphs.forEach(function (p) {
+    p.pts.forEach(function (pt) { if (pt[1] > yHi) yHi = pt[1]; });
+  });
+  if (!(yHi > 0)) yHi = 1;
+
+  const xLo = layerMap.stripLo - 0.5;
+  const xHi = layerMap.stripHi + 0.5;
+  state.energyGraphs.forEach(function (p) {
+    p.graph.param.plot.push({
+      label: `layer ${p.layer}`,
+      type: "scatter",
+      // Markers and no line: the strips either side of a hit are neighbours in
+      // space but a line between two deposits would draw a shape the event does
+      // not have.
+      line: { draw: false },
+      marker: { draw: true, size: 4, style: "circle",
+                color: stripColour(p.layer, 0, Math.max(1, layerMap.layers.length - 1)) },
+      xData: p.pts.map((a) => a[0]),
+      yData: p.pts.map((a) => a[1]),
+      // The four bounds by hand, including on an empty cell: mplot sets them
+      // only in setData(), and a plot without them makes draw() return after
+      // painting the background -- a white panel, no axes, no error.
+      xMin: xLo, xMax: xHi, yMin: 0, yMax: yHi * 1.05,
+    });
+    p.graph.calcMinMax();
+    p.graph.redraw();
+  });
+}
+
+DQMPage.register("event_display_energy", function (ctx) {
+  const note = el("div", { class: "dqm-note", id: "scope-ed-note" },
+    "Reading the channel map\u2026");
+  const host = el("div", { id: "scope-ed-panels" });
+  ctx.body.appendChild(note);
+  ctx.body.appendChild(host);
+  state.edHost = host;
+
+  // The map may already be in hand: this panel renders after the waveform one,
+  // and whether its load has resolved yet is a race nobody should have to win.
+  if (layerMap) {
+    note.textContent = energyNote(layerMap);
+    buildEnergyPanels(host, layerMap);
+    if (state.event) drawEnergyDisplay();
+  }
+});
+
+function energyNote(map) {
+  return `Energy against strip position for the event shown above, one row per `
+    + `layer pair, from ${map.source}. Energy is the baseline-subtracted `
+    + `integral of the waveform -- not a calibrated one, which is why the axis `
+    + `says volts and not MeV.`;
 }
 
 // ---------------------------------------------------------------------------

@@ -54,9 +54,11 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    layer holding the hits is four screens below the one you are looking at.
    The point of a per-layer view is seeing the whole target at once, so they
    are short enough that all eight fit. */
-/* Two columns: odd layers left, even right. Layers alternate orientation, so
-   each column holds one strip direction. Collapses to one column when there is
-   not room for two side by side rather than squeezing both. */
+/* Two columns: even layers left, odd right. Layers alternate orientation, so
+   each column holds one strip direction -- even first puts the vertical strips,
+   the x coordinate, on the left, which is the order the energy display below
+   uses. Collapses to one column when there is not room for two side by side
+   rather than squeezing both. */
 #scope-layer-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 @media (max-width: 1500px) { #scope-layer-panels { grid-template-columns: 1fr; } }
 #scope-layer-panels .dqm-scope-plot { height: 170px; margin-top: 2px; min-width: 0; }
@@ -70,6 +72,23 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
+
+/* Energy against position: one row per layer pair, energy vs x on the left and
+   energy vs y on the right. A row is the two coordinates of roughly the same
+   depth, so it is read across for where the particle was and down for how deep
+   it got -- which only works if the two halves of a row stay side by side, so
+   this collapses later than the waveform columns do. */
+#scope-ed-panels .dqm-ed-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px;
+}
+#scope-ed-panels .dqm-scope-plot { height: 180px; margin-top: 2px; min-width: 0; }
+#scope-ed-panels .dqm-col-head {
+  font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px;
+}
+#scope-ed-panels .dqm-subhead { margin-top: 8px; font-weight: 600; }
+@media (max-width: 1100px) {
+  #scope-ed-panels .dqm-ed-row { grid-template-columns: 1fr; }
+}
 
 /* Event display. The asymmetry is deliberate: the first few channels carry
    pulses you read, the rest tell you whether something fired. */

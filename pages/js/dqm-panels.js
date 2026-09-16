@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       fe92acfecb8eddc5049954aea35abd3d6eb8d4275540a944aac4af333d087f35
+// sha256:       a4e9fee9efd706b5f0fb6b413648db8bd3d51bdfdba3b1efcdc6fb3741d81a3c
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "fe92acfecb8eddc5049954aea35abd3d6eb8d4275540a944aac4af333d087f35";
+const SPEC_SHA256 = "a4e9fee9efd706b5f0fb6b413648db8bd3d51bdfdba3b1efcdc6fb3741d81a3c";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -181,17 +181,6 @@ const PAGES = [
         "size": "l",
         "sketch": "event",
         "blocked_by": "No calorimeter bank and no document describing one; docs/frontend_requirements.md lists the quantities nobody writes because there is no fecalo. Same requirement as the ATAR waveforms and the same failure mode if the layout is assumed rather than written. Wishlist 3i."
-      },
-      {
-        "id": "event_display_position",
-        "kind": "panel",
-        "label": "Event display \u2014 position",
-        "question": "Does a single event look like a muon stopping in the ATAR?",
-        "why": "it is the panel that makes a problem obvious without a fit",
-        "status": "blocked",
-        "size": "l",
-        "sketch": "event",
-        "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. Under MIDAS it reads an ATAR bank through mhttpd and decodes it in the browser, and neither the bank nor its layout document exists. The channel to strip map it needs in order to draw position is a setting in the frontend that reads those channels, which is a cabling review rather than a thing to build -- see decision 2."
       },
       {
         "id": "event_display_energy",

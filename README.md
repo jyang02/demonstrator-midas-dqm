@@ -28,7 +28,7 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | page | asks | mechanism | waiting on |
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
-| **Scope** | What does this event look like? | event buffer | **decoder built** — waits only on a frontend writing `AD00`/`AT00` into a live buffer |
+| **Scope** | What does this event look like? | event buffer | **decoder built** — waveforms by layer and an energy-against-position event display, both off one event; waits only on a frontend writing `AD00`/`AT00` into a live buffer |
 | **Channels** | Is every channel behaving? | analyzer | **live** — occupancy, hits per event, and baseline and noise as recent-value scatters; the other seven need layers, T0 or banks nothing writes |
 | **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel are both there, off by default behind a per-tile toggle; "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
@@ -41,8 +41,8 @@ panels -- some drawing, the rest each explaining its own absence -- has been
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Six of those forty can draw real data against a replay today: two on Scope, two
-on Channels and both tiles on Pulses. Four of those six are colormaps and open
+Seven of those forty can draw real data against a replay today: three on Scope,
+two on Channels and both tiles on Pulses. Four of those six are colormaps and open
 off, a click from drawing -- held for the paint cost of a colormap, not for want
 of data. Their `blocked` chip comes from the spec and has
 not caught up, which is worth knowing before reading a chip as a verdict. Six more
@@ -177,7 +177,8 @@ With the run stopped, mlogger is not reading the buffer and nothing reaches disk
 
 `mdqm-analyzer` samples the same buffer and serves accumulated histograms over
 binary RPC. The `sampic` plugin decodes AD00 with `mdqm.dqm.sampic` -- the same
-layout the Scope page decodes in the browser -- and publishes seven histograms:
+layout the Scope page decodes in the browser -- and publishes five histograms
+and two recent-value series:
 
 ```bash
 mdqm-analyzer --experiment DEMODQM --plugin sampic
@@ -255,7 +256,7 @@ T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
 scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
-scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 5 && $W === 3"
+scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 4 && $W === 1"
 # These two hold whether or not mdqm-analyzer is running, which is worth knowing
 # before reading a failure as "the analyzer is down". $W counts .dqm-empty-why,
 # and a colormap tile emits one while it is off, whereas a drawing tile that
@@ -276,8 +277,9 @@ scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$
 
 The `$W` counts are the useful ones to watch, because they say how many panels
 are still explaining themselves. SlowControls drops from 6 to 5 the day
-`featar_sc` exists; Scope is already at 3 of 5 because its waveform and
-raw-event panels are built. Those invocations failing is the signal to update
+`featar_sc` exists; Scope is down to 1 of 4, because its waveform, raw-event
+and energy-display panels are all built and only the calorimeter is left
+waiting on a frontend. Those invocations failing is the signal to update
 them.
 
 ### Seeing the page without a browser
