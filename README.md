@@ -258,7 +258,7 @@ B="http://localhost:8088/?cmd=custom&page"
 T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
-scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9"
+scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9 && $W === 7"
 scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 4 && $W === 1"
 # These two hold whether or not mdqm-analyzer is running, which is worth knowing
 # before reading a failure as "the analyzer is down". $W counts .dqm-empty-why,
@@ -274,16 +274,25 @@ scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$
 # name to try, a drawing tile falls back to an empty-why and $W goes up.)
 scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 7"
 scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
-scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6"
-scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 6"
+scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6 && $W === 6"
+scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 1"
 ```
 
 The `$W` counts are the useful ones to watch, because they say how many panels
-are still explaining themselves. SlowControls drops from 6 to 5 the day
-`featar_sc` exists; Scope is down to 1 of 4, because its waveform, raw-event
-and energy-display panels are all built and only the calorimeter is left
-waiting on a frontend. Those invocations failing is the signal to update
-them.
+are still explaining themselves *in a sentence*. Scope is down to 1 of 4: its
+waveform, raw-event and charge-display panels are all built, and only the
+calorimeter is left waiting on a frontend.
+
+SlowControls is the one to read carefully, and it is 1 of 6 rather than the 6 of
+6 this said for a long time. Five of its six tiles have a renderer that draws
+the absence itself, key by key -- which path a key is missing, not a paragraph
+about `featar_sc` -- and a tile doing that emits no `.dqm-empty-why` at all. The
+one that does is humidity, which has no renderer because it is waiting on a name
+in the run-conditions vocabulary rather than on a frontend. So the number does
+not move when `fecaen_hv` and `featar_sc` arrive; what changes is that those
+five stop drawing absences and start drawing trends.
+
+Those invocations failing is the signal to update them.
 
 ### Seeing the page without a browser
 
