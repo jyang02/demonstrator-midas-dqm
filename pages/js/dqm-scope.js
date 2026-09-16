@@ -915,22 +915,40 @@ function drawChargeDisplay() {
 
   if (state.chargeProfile) {
     const p = state.chargeProfile;
-    // Every layer, including the ones with nothing in them. A profile drawn
-    // only through the layers that fired would join across a gap and hide the
-    // very thing the shape is read for.
-    const xs = p.layers;
-    const ys = xs.map((L) => perLayer.get(L) || 0);
+    // Only the layers that recorded something. A layer with no hit did not
+    // measure zero charge, it measured nothing, and drawing it at zero says
+    // the first when the data only supports the second -- which on an event
+    // that fired every other layer turned the profile into a sawtooth that
+    // read as the deposition swinging up and down.
+    const xs = [];
+    const ys = [];
+    p.layers.forEach(function (L) {
+      const q = perLayer.get(L) || 0;
+      if (q > 0) { xs.push(L); ys.push(q); }
+    });
     let hi = 0;
     ys.forEach(function (v) { if (v > hi) hi = v; });
+
+    // The axis still spans every layer, which is the part that must not follow
+    // the data. Fitted to the layers that fired, a track stopping at layer 3
+    // would draw exactly like one crossing all eight -- the same curve, filling
+    // the same width -- and where it stopped is the whole question. Against a
+    // fixed axis the line simply ends early, and the empty space to the right
+    // is the answer.
+    const axLo = Math.min.apply(null, p.layers) - 0.5;
+    const axHi = Math.max.apply(null, p.layers) + 0.5;
     p.graph.param.plot = [{
       label: "charge per layer",
       type: "scatter",
+      // The line still joins across a skipped layer. Left that way because the
+      // gap is already visible as the wider step along a fixed axis, and
+      // breaking the curve into segments made an event that alternates layers
+      // read as several unrelated tracks.
       line: { draw: true, width: 2, color: "#1f77b4" },
       marker: { draw: true, size: 7, style: "circle",
                 lineColor: "#1f77b4", fillColor: "#1f77b4" },
       xData: xs, yData: ys,
-      xMin: Math.min.apply(null, xs) - 0.5,
-      xMax: Math.max.apply(null, xs) + 0.5,
+      xMin: axLo, xMax: axHi,
       yMin: 0, yMax: (hi > 0 ? hi : 1) * 1.1,
     }];
     p.graph.calcMinMax();
