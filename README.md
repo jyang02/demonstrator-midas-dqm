@@ -28,7 +28,7 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | page | asks | mechanism | waiting on |
 |---|---|---|---|
 | **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
-| **Scope** | What does this event look like? | event buffer | **decoder built** — waveforms by layer and an energy-against-position event display, both off one event; waits only on a frontend writing `AD00`/`AT00` into a live buffer |
+| **Scope** | What does this event look like? | event buffer | **decoder built** — waveforms by layer and a charge-against-position event display, both off one event; waits only on a frontend writing `AD00`/`AT00` into a live buffer |
 | **Channels** | Is every channel behaving? | analyzer | **live** — occupancy, hits per event, and baseline and noise as recent-value scatters; the other seven need layers, T0 or banks nothing writes |
 | **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel are both there, off by default behind a per-tile toggle; "what it is worth" still wants an energy calibration with an owner |
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |

@@ -7,7 +7,7 @@
 // dqm-adbanks.js turns AD00 into volts, and mplot.js draws it.
 //
 // Three of the five panels here are live. event_display_energy draws the same
-// event as the waveforms, as energy against strip position: one row per layer
+// event as the waveforms, as charge against strip position: one row per layer
 // pair, x on the left and y on the right, matching the column order of the
 // waveforms above it. calo_waveforms is the one that keeps its reason from the
 // catalogue and gets no renderer -- there is no calorimeter frontend and no
@@ -50,8 +50,8 @@ const state = {
   excluded: null,          // channels the operator has explicitly unticked
   graph: null,
   cfg: null,
-  edHost: null,            // the energy display's host div, once it renders
-  energyGraphs: null,      // one entry per layer cell in that display
+  edHost: null,            // the charge display's host div, once it renders
+  chargeGraphs: null,      // one entry per layer cell in that display
 };
 
 const STORE = "dqm-scope-settings";
@@ -233,19 +233,19 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
         const edNote = document.getElementById("scope-ed-note");
         if (edNote) {
           edNote.className = "dqm-diagnosis";
-          edNote.textContent = "No energy display: it plots against strip "
+          edNote.textContent = "No charge display: it plots against strip "
             + "position, and /Equipment/SAMPIC/Settings carries no ATAR "
             + "geometry to place a channel on a layer or a strip.";
         }
         return;
       }
       buildLayerPanels(ctx.body, plot, map);
-      // The energy panel below may have rendered before this resolved, in
+      // The charge panel below may have rendered before this resolved, in
       // which case its host is waiting and empty.
       if (state.edHost) {
         const edNote = document.getElementById("scope-ed-note");
-        if (edNote) edNote.textContent = energyNote(map);
-        buildEnergyPanels(state.edHost, map);
+        if (edNote) edNote.textContent = chargeNote(map);
+        buildChargePanels(state.edHost, map);
       }
       if (state.event) draw();
     });
@@ -288,8 +288,8 @@ function buildLayerPanels(body, firstPlot, map) {
   // between orientations the way a single stack does.
   //
   // Even first, which puts the vertical strips -- the x coordinate -- on the
-  // left, because the event display below reads energy against x on the left
-  // and energy against y on the right. Two sections on one page disagreeing
+  // left, because the event display below reads charge against x on the left
+  // and charge against y on the right. Two sections on one page disagreeing
   // about which coordinate is which side is a way to misread a track that
   // costs nothing to avoid.
   const columns = new Map();
@@ -573,9 +573,9 @@ function draw() {
   state.busy = drawn.length > BUSY_OVERLAY;
   panels.forEach(function (p) { p.graph.redraw(); });
 
-  // The energy display is the same event, so it is redrawn from here rather
+  // The charge display is the same event, so it is redrawn from here rather
   // than from its own loop. One place decides what is on screen.
-  drawEnergyDisplay();
+  drawChargeDisplay();
 }
 
 //: matplotlib's tab10. Used for a channel the map cannot place: with no strip
@@ -695,17 +695,18 @@ function setText(id, text) {
 }
 
 // ---------------------------------------------------------------------------
-// event_display_energy -- energy against position, one row per layer pair
+// event_display_energy -- charge against position, one row per layer pair
 // ---------------------------------------------------------------------------
 
 /**
  * The waveform's integral, baseline-subtracted, in V.ns.
  *
- * "Energy" in the loosest sense the data supports, which is why the axis says
- * V.ns and not MeV. Turning this into MeV needs a per-channel calibration with
- * an owner, which is the blocker the two energy panels on Pulses already name;
- * an axis labelled MeV that is really volts is the kind of plot that gets
- * believed for a month.
+ * Called charge and not energy, which is the more honest of the two names for
+ * what this is: the integral of a voltage over time, which is a charge up to
+ * the input impedance, and is a *deposited energy* only after a per-channel
+ * calibration that does not exist. That calibration is the blocker the two
+ * energy panels on Pulses already name. Even "charge" is uncalibrated here --
+ * hence V.ns on the axis rather than coulombs.
  *
  * Baseline-subtracted and sign-flipped so it comes out positive: the pulses are
  * negative-going from a baseline near 0.75 V, so a raw integral would be
@@ -716,7 +717,7 @@ function setText(id, text) {
  * calibration constant in the middle of a display -- and decode_hit already
  * truncates to data_size, so this is the real record and never zero padding.
  */
-function energyOf(hit, dt) {
+function chargeOf(hit, dt) {
   const w = hit.waveform;
   if (!w || !w.length) return 0;
   const base = hit.baseline;
@@ -740,7 +741,7 @@ function energyOf(hit, dt) {
  * same way the waveform columns do it -- a target built the other way round
  * would otherwise put every label on the wrong side.
  */
-function buildEnergyPanels(host, map) {
+function buildChargePanels(host, map) {
   if (!host || host.dataset.built) return;
   host.dataset.built = "1";
   host.innerHTML = "";
@@ -759,12 +760,12 @@ function buildEnergyPanels(host, map) {
   [left, right].forEach(function (col) {
     const orient = col.length ? orientationOf(map, col[0]) : null;
     head.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
-      orient ? `energy vs ${coordOf(orient)} — ${orient} strips`
-             : "energy vs position"));
+      orient ? `charge vs ${coordOf(orient)} — ${orient} strips`
+             : "charge vs position"));
   });
   host.appendChild(head);
 
-  state.energyGraphs = [];
+  state.chargeGraphs = [];
   const rows = Math.max(left.length, right.length);
   for (let r = 0; r < rows; r++) {
     const row = el("div", { class: "dqm-ed-row" });
@@ -779,7 +780,7 @@ function buildEnergyPanels(host, map) {
       const orient = orientationOf(map, layer);
       const coord = coordOf(orient);
       cell.appendChild(el("div", { class: "dqm-subhead" },
-        `Layer ${layer} — energy vs ${coord}`));
+        `Layer ${layer} — charge vs ${coord}`));
       const div = el("div", { class: "dqm-scope-plot", id: `scope-ed-L${layer}` });
       cell.appendChild(div);
       const g = new MPlotGraph(div, {
@@ -792,16 +793,16 @@ function buildEnergyPanels(host, map) {
         plot: [],
       });
       div.mpg = g;
-      state.energyGraphs.push({ layer: layer, graph: g, div: div, coord: coord });
+      state.chargeGraphs.push({ layer: layer, graph: g, div: div, coord: coord });
       g.resize();
     });
   }
 }
 
-//: What the energy axis is in, which depends on whether a sample period is set.
+//: What the charge axis is in, which depends on whether a sample period is set.
 function dtLabel() {
   return Number(state.cfg && state.cfg["Sample Period ns"])
-    ? "energy (V\u00b7ns)" : "energy (V\u00b7samples)";
+    ? "charge (V\u00b7ns)" : "charge (V\u00b7samples)";
 }
 
 /**
@@ -812,11 +813,11 @@ function dtLabel() {
  * channel ticks, which is the behaviour anyone comparing the two would assume
  * without being told.
  */
-function drawEnergyDisplay() {
-  if (!state.energyGraphs || !state.energyGraphs.length || !state.event) return;
+function drawChargeDisplay() {
+  if (!state.chargeGraphs || !state.chargeGraphs.length || !state.event) return;
   const dt = Number(state.cfg["Sample Period ns"]) || 0;
-  const cells = new Map(state.energyGraphs.map((p) => [p.layer, p]));
-  state.energyGraphs.forEach(function (p) { p.graph.param.plot = []; p.pts = []; });
+  const cells = new Map(state.chargeGraphs.map((p) => [p.layer, p]));
+  state.chargeGraphs.forEach(function (p) { p.graph.param.plot = []; p.pts = []; });
 
   state.event.hits.forEach(function (hit) {
     if (excluded().has(hit.global_channel)) return;
@@ -827,22 +828,22 @@ function drawEnergyDisplay() {
     // the unmapped panel above, which is where a hit nobody can place belongs.
     if (layer === null || strip === null) return;
     const cell = cells.get(layer);
-    if (cell) cell.pts.push([strip, energyOf(hit, dt)]);
+    if (cell) cell.pts.push([strip, chargeOf(hit, dt)]);
   });
 
   // One scale for every cell, not one per cell. The question a row answers is
   // "where did it deposit and how much", and a per-cell scale would draw a
-  // 2 keV blip and a minimum-ionising hit the same height on adjacent panels --
+  // small deposit and a large one the same height on adjacent panels --
   // which is exactly the comparison this display exists to make.
   let yHi = 0;
-  state.energyGraphs.forEach(function (p) {
+  state.chargeGraphs.forEach(function (p) {
     p.pts.forEach(function (pt) { if (pt[1] > yHi) yHi = pt[1]; });
   });
   if (!(yHi > 0)) yHi = 1;
 
   const xLo = layerMap.stripLo - 0.5;
   const xHi = layerMap.stripHi + 0.5;
-  state.energyGraphs.forEach(function (p) {
+  state.chargeGraphs.forEach(function (p) {
     p.graph.param.plot.push({
       label: `layer ${p.layer}`,
       type: "scatter",
@@ -875,17 +876,17 @@ DQMPage.register("event_display_energy", function (ctx) {
   // The map may already be in hand: this panel renders after the waveform one,
   // and whether its load has resolved yet is a race nobody should have to win.
   if (layerMap) {
-    note.textContent = energyNote(layerMap);
-    buildEnergyPanels(host, layerMap);
-    if (state.event) drawEnergyDisplay();
+    note.textContent = chargeNote(layerMap);
+    buildChargePanels(host, layerMap);
+    if (state.event) drawChargeDisplay();
   }
 });
 
-function energyNote(map) {
-  return `Energy against strip position for the event shown above, one row per `
-    + `layer pair, from ${map.source}. Energy is the baseline-subtracted `
-    + `integral of the waveform -- not a calibrated one, which is why the axis `
-    + `says volts and not MeV.`;
+function chargeNote(map) {
+  return `Charge against strip position for the event shown above, one row per `
+    + `layer pair, from ${map.source}. Charge is the baseline-subtracted `
+    + `integral of the waveform, which is a charge up to the input impedance `
+    + `and an energy only after a calibration nobody owns -- hence V\u00b7ns.`;
 }
 
 // ---------------------------------------------------------------------------

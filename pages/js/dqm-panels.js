@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       a4e9fee9efd706b5f0fb6b413648db8bd3d51bdfdba3b1efcdc6fb3741d81a3c
+// sha256:       741a770c851a107de476de6c3d743385b223ad49e6c36a8c8b96eda4f1306c48
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "a4e9fee9efd706b5f0fb6b413648db8bd3d51bdfdba3b1efcdc6fb3741d81a3c";
+const SPEC_SHA256 = "741a770c851a107de476de6c3d743385b223ad49e6c36a8c8b96eda4f1306c48";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -185,9 +185,9 @@ const PAGES = [
       {
         "id": "event_display_energy",
         "kind": "panel",
-        "label": "Event display \u2014 energy",
-        "question": "Does the energy deposited along the track rise the way a stopping muon should?",
-        "why": "slide 8 asks for energy and position and they are not the same panel",
+        "label": "Event display \u2014 charge",
+        "question": "Does the charge deposited along the track rise the way a stopping muon should?",
+        "why": "it is the shape that says a muon stopped rather than passed through",
         "status": "blocked",
         "size": "l",
         "sketch": "event",

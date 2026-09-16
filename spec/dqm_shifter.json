@@ -335,9 +335,9 @@
         {
           "id": "event_display_energy",
           "kind": "panel",
-          "label": "Event display — energy",
-          "question": "Does the energy deposited along the track rise the way a stopping muon should?",
-          "why": "slide 8 asks for energy and position and they are not the same panel",
+          "label": "Event display — charge",
+          "question": "Does the charge deposited along the track rise the way a stopping muon should?",
+          "why": "it is the shape that says a muon stopped rather than passed through",
           "status": "blocked",
           "blocked_by": "Per-strip edep is not in the tree. demonstrator-dqm docs/DESIGN.md section 8.5 gates it on a sim_to_tree.py extension, which demonstrator-pim1's proposed_analyses.md items 6 and 7 want anyway.",
           "evidence": "none",
