@@ -695,8 +695,27 @@ function setText(id, text) {
 }
 
 // ---------------------------------------------------------------------------
-// event_display_energy -- charge against position, one row per layer pair
+// event_display_energy -- the target, and how deep the track got
 // ---------------------------------------------------------------------------
+//
+// Two views of one event, because they answer two questions and neither
+// answers the other.
+//
+// The maps are the target seen end-on, one per strip orientation: strip across,
+// layer up, one marker per hit sized and coloured by charge. That is where the
+// particle went -- a track reads as a diagonal, a stop as a diagonal that ends.
+// Eight separate charge-against-strip plots could not show that; the shape was
+// spread across eight axes and had to be assembled by eye.
+//
+// The profile is the total charge in each layer against depth, which is the
+// panel's own question: a muon that stops deposits more as it slows, so the
+// curve rises and peaks where it stopped. A particle that went straight
+// through leaves it flat. No amount of staring at the maps answers that, since
+// the eye is bad at summing marker areas.
+//
+// Charge is encoded twice on the maps, as area and as colour. Redundant on
+// purpose: area carries magnitude at a glance and colour survives the markers
+// overlapping, which they do when two strips either side of a track both fire.
 
 /**
  * The waveform's integral, baseline-subtracted, in V.ns.
@@ -729,16 +748,28 @@ function chargeOf(hit, dt) {
   return dt ? sum * dt : sum;
 }
 
+//: What the charge axis is in, which depends on whether a sample period is set.
+function dtLabel() {
+  return Number(state.cfg && state.cfg["Sample Period ns"])
+    ? "charge (V·ns)" : "charge (V·samples)";
+}
+
+//: Marker radius for a charge, in px. sqrt so that *area* is proportional to
+//: charge -- area is what the eye reads, and scaling the radius linearly makes
+//: a twice-as-large deposit look four times as big.
+const MARK_MIN = 3;
+const MARK_MAX = 15;
+function markerSize(charge, maxCharge) {
+  if (!(maxCharge > 0) || !(charge > 0)) return MARK_MIN;
+  const t = Math.sqrt(Math.min(1, charge / maxCharge));
+  return MARK_MIN + t * (MARK_MAX - MARK_MIN);
+}
+
 /**
- * Build the 4x2 grid: one row per layer pair, x on the left and y on the right.
+ * Build the two target maps and the depth profile.
  *
- * A layer has one strip orientation, so it carries one coordinate and not the
- * other. Pairing consecutive layers into a row puts the two coordinates of
- * roughly the same depth side by side, which is how a track is actually read:
- * across a row for where the particle was, down the rows for how deep it got.
- *
- * Which parity goes on the left is read from the ODB rather than assumed, the
- * same way the waveform columns do it -- a target built the other way round
+ * Which orientation goes on the left is read from the ODB rather than assumed,
+ * the same way the waveform columns do it -- a target built the other way round
  * would otherwise put every label on the wrong side.
  */
 function buildChargePanels(host, map) {
@@ -752,61 +783,59 @@ function buildChargePanels(host, map) {
   // Vertical strips measure x. Default to evens-on-the-left when the ODB does
   // not say, which is the order the waveform columns above use.
   const leftIsEven = evenOrient !== "horizontal";
-  const left = leftIsEven ? evens : odds;
-  const right = leftIsEven ? odds : evens;
-  const coordOf = (orient) => (orient === "horizontal" ? "y" : "x");
+  const cols = leftIsEven ? [evens, odds] : [odds, evens];
 
-  const head = el("div", { class: "dqm-ed-row dqm-ed-head" });
-  [left, right].forEach(function (col) {
-    const orient = col.length ? orientationOf(map, col[0]) : null;
-    head.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
-      orient ? `charge vs ${coordOf(orient)} — ${orient} strips`
-             : "charge vs position"));
-  });
-  host.appendChild(head);
+  const row = el("div", { class: "dqm-ed-row" });
+  host.appendChild(row);
+  state.chargeMaps = [];
 
-  state.chargeGraphs = [];
-  const rows = Math.max(left.length, right.length);
-  for (let r = 0; r < rows; r++) {
-    const row = el("div", { class: "dqm-ed-row" });
-    host.appendChild(row);
-    [left[r], right[r]].forEach(function (layer) {
-      const cell = el("div", { class: "dqm-ed-cell" });
-      row.appendChild(cell);
-      // A pair with only one layer still gets its empty half, so the columns
-      // stay aligned and "nothing in this orientation" reads as a gap rather
-      // than as a row that has shifted sideways.
-      if (layer === undefined) return;
-      const orient = orientationOf(map, layer);
-      const coord = coordOf(orient);
-      cell.appendChild(el("div", { class: "dqm-subhead" },
-        `Layer ${layer} — charge vs ${coord}`));
-      const div = el("div", { class: "dqm-scope-plot", id: `scope-ed-L${layer}` });
-      cell.appendChild(div);
-      const g = new MPlotGraph(div, {
-        title: { text: "" },
-        stats: { show: false },
-        legend: { show: false },
-        mouseWheelZoom: false,
-        xAxis: { title: { text: `${coord} (strip centre)` } },
-        yAxis: { title: { text: dtLabel() } },
-        plot: [],
-      });
-      div.mpg = g;
-      state.chargeGraphs.push({ layer: layer, graph: g, div: div, coord: coord });
-      g.resize();
+  cols.forEach(function (layers) {
+    const cell = el("div", { class: "dqm-ed-cell" });
+    row.appendChild(cell);
+    if (!layers.length) return;
+    const orient = orientationOf(map, layers[0]);
+    const coord = orient === "horizontal" ? "y" : "x";
+    cell.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
+      `${coord} view — ${orient || "unknown"} strips, layers `
+      + layers.join(", ")));
+    const div = el("div", { class: "dqm-scope-plot", id: `scope-ed-map-${coord}` });
+    cell.appendChild(div);
+    const g = new MPlotGraph(div, {
+      title: { text: "" },
+      stats: { show: false },
+      legend: { show: false },
+      mouseWheelZoom: false,
+      xAxis: { title: { text: `${coord} (strip centre)` } },
+      yAxis: { title: { text: "layer" } },
+      plot: [],
     });
-  }
-}
+    div.mpg = g;
+    state.chargeMaps.push({ coord: coord, layers: layers, graph: g, div: div });
+    g.resize();
+  });
 
-//: What the charge axis is in, which depends on whether a sample period is set.
-function dtLabel() {
-  return Number(state.cfg && state.cfg["Sample Period ns"])
-    ? "charge (V\u00b7ns)" : "charge (V\u00b7samples)";
+  const foot = el("div", { class: "dqm-ed-profile" });
+  host.appendChild(foot);
+  foot.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
+    "Charge against depth — every layer, both orientations"));
+  const pdiv = el("div", { class: "dqm-scope-plot", id: "scope-ed-profile" });
+  foot.appendChild(pdiv);
+  const pg = new MPlotGraph(pdiv, {
+    title: { text: "" },
+    stats: { show: false },
+    legend: { show: false },
+    mouseWheelZoom: false,
+    xAxis: { title: { text: "layer (beam enters at the lowest)" } },
+    yAxis: { title: { text: dtLabel() } },
+    plot: [],
+  });
+  pdiv.mpg = pg;
+  state.chargeProfile = { graph: pg, div: pdiv, layers: map.layers.slice() };
+  pg.resize();
 }
 
 /**
- * Draw the current event's energies. Same event as the waveforms above it.
+ * Draw the current event. Same event as the waveforms above it.
  *
  * Called from draw(), so there is exactly one place that decides which event is
  * on screen and both sections follow it -- including the pause button and the
@@ -814,11 +843,12 @@ function dtLabel() {
  * without being told.
  */
 function drawChargeDisplay() {
-  if (!state.chargeGraphs || !state.chargeGraphs.length || !state.event) return;
+  if (!state.event || !state.chargeMaps || !state.chargeMaps.length) return;
   const dt = Number(state.cfg["Sample Period ns"]) || 0;
-  const cells = new Map(state.chargeGraphs.map((p) => [p.layer, p]));
-  state.chargeGraphs.forEach(function (p) { p.graph.param.plot = []; p.pts = []; });
 
+  // One pass over the hits, since both views are the same event read two ways.
+  const hits = [];
+  const perLayer = new Map();
   state.event.hits.forEach(function (hit) {
     if (excluded().has(hit.global_channel)) return;
     const layer = layerOf(hit);
@@ -827,47 +857,78 @@ function drawChargeDisplay() {
     // left out here rather than guessed at. It is still drawn as a waveform in
     // the unmapped panel above, which is where a hit nobody can place belongs.
     if (layer === null || strip === null) return;
-    const cell = cells.get(layer);
-    if (cell) cell.pts.push([strip, chargeOf(hit, dt)]);
+    const q = chargeOf(hit, dt);
+    hits.push({ layer: layer, strip: strip, q: q });
+    perLayer.set(layer, (perLayer.get(layer) || 0) + q);
   });
 
-  // One scale for every cell, not one per cell. The question a row answers is
-  // "where did it deposit and how much", and a per-cell scale would draw a
-  // small deposit and a large one the same height on adjacent panels --
-  // which is exactly the comparison this display exists to make.
-  let yHi = 0;
-  state.chargeGraphs.forEach(function (p) {
-    p.pts.forEach(function (pt) { if (pt[1] > yHi) yHi = pt[1]; });
-  });
-  if (!(yHi > 0)) yHi = 1;
+  let qMax = 0;
+  hits.forEach(function (h) { if (h.q > qMax) qMax = h.q; });
 
   const xLo = layerMap.stripLo - 0.5;
   const xHi = layerMap.stripHi + 0.5;
-  state.chargeGraphs.forEach(function (p) {
-    p.graph.param.plot.push({
-      label: `layer ${p.layer}`,
-      type: "scatter",
-      // Markers and no line: the strips either side of a hit are neighbours in
-      // space but a line between two deposits would draw a shape the event does
-      // not have.
-      line: { draw: false },
-      marker: { draw: true, size: 4, style: "circle",
-                color: stripColour(p.layer, 0, Math.max(1, layerMap.layers.length - 1)) },
-      xData: p.pts.map((a) => a[0]),
-      yData: p.pts.map((a) => a[1]),
-      // The four bounds by hand, including on an empty cell: mplot sets them
-      // only in setData(), and a plot without them makes draw() return after
-      // painting the background -- a white panel, no axes, no error.
-      xMin: xLo, xMax: xHi, yMin: 0, yMax: yHi * 1.05,
+
+  state.chargeMaps.forEach(function (m) {
+    m.graph.param.plot = [];
+    const lo = Math.min.apply(null, m.layers) - 0.5;
+    const hi = Math.max.apply(null, m.layers) + 0.5;
+    const mine = hits.filter((h) => m.layers.indexOf(h.layer) >= 0);
+
+    // One plot per hit, because mplot's marker size and colour are per *plot*
+    // and there is no per-point form. A dozen one-point plots an event is
+    // nothing, and it is the only way to size each marker by its own charge.
+    mine.forEach(function (h) {
+      m.graph.param.plot.push({
+        label: `L${h.layer} s${h.strip}`,
+        type: "scatter",
+        line: { draw: false },
+        marker: { draw: true, style: "circle",
+                  size: markerSize(h.q, qMax),
+                  color: stripColour(h.q, 0, qMax || 1) },
+        xData: [h.strip], yData: [h.layer],
+        xMin: xLo, xMax: xHi, yMin: lo, yMax: hi,
+      });
     });
+    // An empty view keeps its axes: a map with no markers says "nothing in
+    // this projection", where a blank panel says the page is broken.
+    if (!mine.length) {
+      m.graph.param.plot.push({
+        label: "no hits in this view", type: "scatter",
+        line: { draw: false }, marker: { draw: false },
+        xData: [], yData: [], xMin: xLo, xMax: xHi, yMin: lo, yMax: hi,
+      });
+    }
+    m.graph.calcMinMax();
+    m.graph.redraw();
+  });
+
+  if (state.chargeProfile) {
+    const p = state.chargeProfile;
+    // Every layer, including the ones with nothing in them. A profile drawn
+    // only through the layers that fired would join across a gap and hide the
+    // very thing the shape is read for.
+    const xs = p.layers;
+    const ys = xs.map((L) => perLayer.get(L) || 0);
+    let hi = 0;
+    ys.forEach(function (v) { if (v > hi) hi = v; });
+    p.graph.param.plot = [{
+      label: "charge per layer",
+      type: "scatter",
+      line: { draw: true, width: 2, color: "#1f77b4" },
+      marker: { draw: true, size: 5, style: "circle", color: "#1f77b4" },
+      xData: xs, yData: ys,
+      xMin: Math.min.apply(null, xs) - 0.5,
+      xMax: Math.max.apply(null, xs) + 0.5,
+      yMin: 0, yMax: (hi > 0 ? hi : 1) * 1.1,
+    }];
     p.graph.calcMinMax();
     p.graph.redraw();
-  });
+  }
 }
 
 DQMPage.register("event_display_energy", function (ctx) {
   const note = el("div", { class: "dqm-note", id: "scope-ed-note" },
-    "Reading the channel map\u2026");
+    "Reading the channel map…");
   const host = el("div", { id: "scope-ed-panels" });
   ctx.body.appendChild(note);
   ctx.body.appendChild(host);
@@ -883,10 +944,11 @@ DQMPage.register("event_display_energy", function (ctx) {
 });
 
 function chargeNote(map) {
-  return `Charge against strip position for the event shown above, one row per `
-    + `layer pair, from ${map.source}. Charge is the baseline-subtracted `
-    + `integral of the waveform, which is a charge up to the input impedance `
-    + `and an energy only after a calibration nobody owns -- hence V\u00b7ns.`;
+  return `The event shown above, from ${map.source}. The maps are the target `
+    + `end-on -- strip across, layer up, marker area and colour both the `
+    + `charge -- and the profile below is the total charge in each layer. `
+    + `Charge is the baseline-subtracted integral of the waveform, which is an `
+    + `energy only after a calibration nobody owns, hence V·ns.`;
 }
 
 // ---------------------------------------------------------------------------

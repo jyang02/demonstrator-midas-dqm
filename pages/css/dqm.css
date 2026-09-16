@@ -73,15 +73,19 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
 
-/* Energy against position: one row per layer pair, energy vs x on the left and
-   energy vs y on the right. A row is the two coordinates of roughly the same
-   depth, so it is read across for where the particle was and down for how deep
-   it got -- which only works if the two halves of a row stay side by side, so
-   this collapses later than the waveform columns do. */
+/* The target end-on, one map per strip orientation, side by side because the
+   two are the two projections of one event and are read together. The depth
+   profile sits under both at full width: its x axis is the layer number, the
+   same axis the maps use vertically, so stacking them keeps that axis shared
+   down the panel. */
 #scope-ed-panels .dqm-ed-row {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px;
 }
-#scope-ed-panels .dqm-scope-plot { height: 180px; margin-top: 2px; min-width: 0; }
+#scope-ed-panels .dqm-scope-plot { height: 300px; margin-top: 2px; min-width: 0; }
+#scope-ed-panels .dqm-ed-profile { margin-top: 10px; }
+/* Shorter than a map: it carries one curve and needs the width far more than
+   the height. */
+#scope-ed-panels .dqm-ed-profile .dqm-scope-plot { height: 200px; }
 #scope-ed-panels .dqm-col-head {
   font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px;
 }
