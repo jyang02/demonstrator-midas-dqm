@@ -155,7 +155,9 @@ echo $! > ~/demo-dqm/analyzer.pid
 own analyzer runs on it against WDSCALERS -- using the other one keeps the two
 processes apart in `ps`, which is worth the nothing it costs.
 
-It should say it seeded `/DQM/Analyzer` and is serving 7 histograms. Note that
+It should say it seeded `/DQM/Analyzer` and is serving 5 histograms. Five, not
+seven: baseline and noise by channel are recent-value *series* now, served over
+`dqm::series` and deliberately absent from `dqm::list`. Note that
 `mdqm.dqm` is shared infrastructure: Josh runs this same analyzer continuously
 against WDSCALERS, but from his own checkout with its own settings and its own
 ODB, so our `/DQM` edits cannot reach him. Confirm that again before changing
