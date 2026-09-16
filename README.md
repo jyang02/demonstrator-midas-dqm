@@ -34,21 +34,24 @@ Then open the experiment's mhttpd and pick a page from the side menu.
 | **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
 | **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
 
-The spec marks forty of the forty-one panels blocked, and **every panel that is
+The spec marks thirty of the forty panels blocked, and **every panel that is
 still empty says why**, naming what it is waiting for. That is the point of
 registering them: a shifter who opens Channels at 3am and finds eleven titled
 panels -- some drawing, the rest each explaining its own absence -- has been
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Seven of those forty can draw real data against a replay today: three on Scope,
-two on Channels and both tiles on Pulses. Four of those six are colormaps and open
-off, a click from drawing -- held for the paint cost of a colormap, not for want
-of data. Their `blocked` chip comes from the spec and has
-not caught up, which is worth knowing before reading a chip as a verdict. Six more
-have a renderer that still has nothing to draw -- five on SlowControls and the
-trigger settings on Rates -- and those render the absence itself, key by key,
-rather than a sentence about it.
+Nine are `ready` and draw real data against a replay today: three on Scope
+(waveforms, the charge event display, the raw dump), four on Channels
+(occupancy, hits per event, and the baseline and noise scatters) and both tiles
+on Pulses. The two on Pulses are colormaps and open off, a click from drawing --
+held for the paint cost of a colormap, not for want of data, which is a page's
+choice rather than a blocker and so not what the chip reports.
+
+Six more are blocked *and* have a renderer: five on SlowControls and the trigger
+settings on Rates. Those render the absence itself, key by key, rather than a
+sentence about it -- a renderer is not the same thing as data, and the chip
+follows the data.
 
 The three pages backed by an analyzer check for one at load rather than
 asserting its absence, so the reason they show is about this experiment now.

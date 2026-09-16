@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       741a770c851a107de476de6c3d743385b223ad49e6c36a8c8b96eda4f1306c48
+// sha256:       d983b4798065a3fc720ccee71857d277ea94d36d4dfac14ad086ceacaad456c7
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "741a770c851a107de476de6c3d743385b223ad49e6c36a8c8b96eda4f1306c48";
+const SPEC_SHA256 = "d983b4798065a3fc720ccee71857d277ea94d36d4dfac14ad086ceacaad456c7";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -188,10 +188,9 @@ const PAGES = [
         "label": "Event display \u2014 charge",
         "question": "Does the charge deposited along the track rise the way a stopping muon should?",
         "why": "it is the shape that says a muon stopped rather than passed through",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "event",
-        "blocked_by": "Per-strip edep is not in the tree. demonstrator-dqm docs/DESIGN.md section 8.5 gates it on a sim_to_tree.py extension, which demonstrator-pim1's proposed_analyses.md items 6 and 7 want anyway."
+        "sketch": "event"
       },
       {
         "id": "raw_event",
@@ -199,10 +198,9 @@ const PAGES = [
         "label": "Raw EVENT",
         "question": "What is actually on the wire?",
         "why": "it is the panel you open when a plot is empty",
-        "status": "blocked",
+        "status": "ready",
         "size": "m",
-        "sketch": "table",
-        "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. Under MIDAS a raw dump reads the event buffer through mhttpd, which needs a documented bank layout like everything else on that page."
+        "sketch": "table"
       }
     ]
   },
@@ -233,10 +231,9 @@ const PAGES = [
         "label": "Hits per event",
         "question": "Is the trigger selecting what we think it is?",
         "why": "the cheapest single number that says the trigger changed",
-        "status": "blocked",
+        "status": "ready",
         "size": "m",
         "sketch": "hist1d",
-        "blocked_by": "This panel was ready against figure types that demonstrator-dqm registers, and the conversion retires that registry. Mechanism C: it needs the analyzer client nobody has started -- a client that samples the event buffer and serves accumulated histograms -- as well as the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic, which is the frontend the bank would come from.",
         "alarm": {
           "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
           "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
@@ -248,10 +245,9 @@ const PAGES = [
         "label": "Baseline by channel",
         "question": "Is every channel sitting where it should?",
         "why": "a channel whose baseline has walked is the cheapest fault to find",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "hist2d",
-        "blocked_by": "Mechanism C: it needs the analyzer client nobody has started -- a client that samples the event buffer and serves accumulated histograms -- as well as the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic, which is the frontend the bank would come from. Wishlist 3c."
+        "sketch": "hist2d"
       },
       {
         "id": "noise_by_channel",
@@ -259,10 +255,9 @@ const PAGES = [
         "label": "Noise by channel",
         "question": "Which channels are noisier than their neighbours?",
         "why": "noise is what separates a dead channel from a loud one",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "hist2d",
-        "blocked_by": "Mechanism C: it needs the analyzer client nobody has started -- a client that samples the event buffer and serves accumulated histograms -- as well as the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic, which is the frontend the bank would come from. Wishlist 3d."
+        "sketch": "hist2d"
       },
       {
         "id": "crosstalk_by_layer",
@@ -336,10 +331,9 @@ const PAGES = [
         "label": "ATAR occupancy",
         "question": "Is the beam hitting the target where we put it?",
         "why": "it is the fastest check that the geometry matches the ODB",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "hist2d",
-        "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. Under MIDAS it is mechanism C and waits on the analyzer client nobody has started."
+        "sketch": "hist2d"
       }
     ]
   },
@@ -355,10 +349,9 @@ const PAGES = [
         "label": "Persistence waveform",
         "question": "What does a pulse actually look like?",
         "why": "a mean waveform hides the two-population case this one shows immediately",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "hist2d",
-        "blocked_by": "Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. Wishlist 3b."
+        "sketch": "hist2d"
       },
       {
         "id": "amplitude_by_channel",
@@ -366,10 +359,9 @@ const PAGES = [
         "label": "Amplitude by channel",
         "question": "Is every channel seeing the same pulse height?",
         "why": "it is where a channel whose gain has drifted shows up first",
-        "status": "blocked",
+        "status": "ready",
         "size": "l",
-        "sketch": "hist2d",
-        "blocked_by": "Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. Wishlist 3e."
+        "sketch": "hist2d"
       },
       {
         "id": "energy_vs_amplitude",
