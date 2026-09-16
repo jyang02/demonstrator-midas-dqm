@@ -754,11 +754,17 @@ function dtLabel() {
     ? "charge (V·ns)" : "charge (V·samples)";
 }
 
-//: Marker radius for a charge, in px. sqrt so that *area* is proportional to
-//: charge -- area is what the eye reads, and scaling the radius linearly makes
-//: a twice-as-large deposit look four times as big.
-const MARK_MIN = 3;
-const MARK_MAX = 15;
+//: Marker diameter for a charge, in px -- mplot's marker.size is a diameter,
+//: it draws arc(x, y, size / 2). sqrt so that *area* is proportional to charge:
+//: area is what the eye reads, and scaling the diameter linearly would make a
+//: twice-as-large deposit look four times as big.
+//:
+//: The floor is well clear of zero because a marker's job here is first to say
+//: a strip fired at all. A hit that deposited almost nothing is still a hit,
+//: and shrinking it to a dot loses the position, which is the other half of
+//: what this map is for.
+const MARK_MIN = 7;
+const MARK_MAX = 28;
 function markerSize(charge, maxCharge) {
   if (!(maxCharge > 0) || !(charge > 0)) return MARK_MIN;
   const t = Math.sqrt(Math.min(1, charge / maxCharge));
@@ -882,9 +888,14 @@ function drawChargeDisplay() {
         label: `L${h.layer} s${h.strip}`,
         type: "scatter",
         line: { draw: false },
+        // lineColor/fillColor, not color: mplot's drawMarker() reads exactly
+        // those two and silently ignores anything else, so a `color` here
+        // draws every marker in the default dark and the colour half of the
+        // encoding goes missing with no error.
         marker: { draw: true, style: "circle",
                   size: markerSize(h.q, qMax),
-                  color: stripColour(h.q, 0, qMax || 1) },
+                  lineColor: "#00000055",
+                  fillColor: stripColour(h.q, 0, qMax || 1) },
         xData: [h.strip], yData: [h.layer],
         xMin: xLo, xMax: xHi, yMin: lo, yMax: hi,
       });
@@ -915,7 +926,8 @@ function drawChargeDisplay() {
       label: "charge per layer",
       type: "scatter",
       line: { draw: true, width: 2, color: "#1f77b4" },
-      marker: { draw: true, size: 5, style: "circle", color: "#1f77b4" },
+      marker: { draw: true, size: 7, style: "circle",
+                lineColor: "#1f77b4", fillColor: "#1f77b4" },
       xData: xs, yData: ys,
       xMin: Math.min.apply(null, xs) - 0.5,
       xMax: Math.max.apply(null, xs) + 0.5,
