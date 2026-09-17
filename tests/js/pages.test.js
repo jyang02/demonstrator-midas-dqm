@@ -224,7 +224,36 @@ test("boots under its own name and sets the refresh interval", async () => {
   const init = page.calls.find((c) => c.method === "mhttpd_init");
   assert.ok(init, "mhttpd_init was never called");
   assert.strictEqual(init.params[0], PAGE);
-  assert.ok(page.calls.some((c) => c.method === "refresh" && c.params === 1000));
+
+  // Against the built-in defaults, not a number written out here. This asserted
+  // a literal 1000 -- the hardcoded fallback, and right until "Refresh ms"
+  // acquired a default -- and went on asserting it for as long as the suite had
+  // no node to run it. Pinning the mechanism instead means raising the default
+  // is a one-line change in one file, which is what a default is for.
+  const wanted = Number(globalThis.DQM.DEFAULTS.Common["Refresh ms"]);
+  assert.ok(wanted > 0, "the common defaults name no refresh interval");
+  assert.ok(page.calls.some((c) => c.method === "refresh" && c.params === wanted),
+    `the page never set the refresh interval to the default ${wanted}`);
+});
+
+test("the refresh interval comes from the ODB when the ODB says", async () => {
+  // The other half of "sets the refresh interval", and the half a default-only
+  // test cannot see: a page reading its own constant and a page reading /DQM
+  // look identical for as long as the two agree.
+  //
+  // Keys come back lower-cased from db_get_values -- "refresh ms" for
+  // "Refresh ms" -- which is why _merge matches case-insensitively, so the stub
+  // answers in the shape mhttpd really uses rather than the spelling we prefer.
+  const responses = emptyOdb();
+  responses.db_get_values = (p) => ({
+    data: p.paths.map((x) => (x === DQM.CONFIG_ROOT
+      ? { "analyzer client": "mdqm_analyzer", "refresh ms": 2500 } : null)),
+    status: p.paths.map((x) => (x === DQM.CONFIG_ROOT ? 1 : 312)),
+  });
+  const page = bootPage(PAGE, responses);
+  await page.load();
+  assert.ok(page.calls.some((c) => c.method === "refresh" && c.params === 2500),
+    "the page ignored the interval the ODB gave it");
 });
 
 test("says it is using built-in defaults when /DQM is absent", async () => {
@@ -282,8 +311,8 @@ test("the page loads every renderer its tabs need", async () => {
   const text = fs.readFileSync(
     path.join(__dirname, "..", "..", "pages", "atar.html"), "utf8");
   for (const asset of ["dqm-common.js", "dqm-panels.js", "dqm-page.js",
-                       "dqm-brpc.js", "dqm-hists.js", "dqm-adbanks.js",
-                       "dqm-scope.js"]) {
+                       "dqm-brpc.js", "dqm-atar-geom.js", "dqm-hists.js",
+                       "dqm-adbanks.js", "dqm-scope.js"]) {
     assert.ok(text.includes(asset), `atar.html does not load ${asset}`);
   }
 });
@@ -291,6 +320,12 @@ test("the page loads every renderer its tabs need", async () => {
 test("with no analyzer answering, the panels say which name was tried", async () => {
   const page = bootPage(PAGE);
   await page.load();
+  // On the Proposed tab, because a probe footnote goes on an *empty state* and
+  // the tab that opens first has none: every panel on Channels draws. This
+  // looked for probes straight after load() and found none, which is the page
+  // behaving correctly -- the bug was in where the test looked, and it survived
+  // because the suite had no node to run it.
+  openTab(page, "atar_proposed");
   const probes = page.root.byClass("dqm-probe");
   assert.ok(probes.length > 0, "the probe appended nothing");
   assert.match(probes[0].textContent, /No client answered dqm::list as "mdqm_analyzer"/);
@@ -312,17 +347,27 @@ test("a tab opened after the probe answered still carries its footnote", async (
 test("with an analyzer answering, the panels say what it publishes instead", async () => {
   const responses = emptyOdb();
   // dqm-brpc.js's list() decodes a binary reply; stub the decoded layer, which
-  // is the data source, rather than the transport.
+  // is the data source, rather than the transport. Restored afterwards: a stub
+  // left on the shared BRPC would answer for every test that boots a page after
+  // this one, and they would pass or fail on the order node happened to run
+  // them in.
+  const realList = globalThis.BRPC.list;
   globalThis.BRPC.list = async () => ["wd/persistence_ch00", "wd/amplitude_ch00"];
-  const page = bootPage(PAGE, responses);
-  await page.load();
+  let page;
+  try {
+    page = bootPage(PAGE, responses);
+    await page.load();
+  } finally {
+    globalThis.BRPC.list = realList;
+  }
 
+  // Proposed again: the footnote hangs off an empty state, and Channels has
+  // none. See the test above.
+  openTab(page, "atar_proposed");
   const probes = page.root.byClass("dqm-probe");
-  assert.ok(probes.length > 0);
+  assert.ok(probes.length > 0, "the probe appended nothing");
   // The panel names what it wanted and what the client has instead, which is
-  // what makes the mismatch actionable. This asserted a phrasing the page has
-  // never produced -- written in the same commit as the message and never run,
-  // because the JS suite needs a node this repository's checkouts often lack.
+  // what makes the mismatch actionable.
   assert.match(probes[0].textContent, /"mdqm_analyzer" answers and does not publish/);
   assert.match(probes[0].textContent,
     /It publishes: wd\/persistence_ch00, wd\/amplitude_ch00\./);
