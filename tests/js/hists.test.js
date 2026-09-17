@@ -488,6 +488,35 @@ test("with no geometry it is one panel and says why, rather than eight invented 
     "the tile does not say which key it wanted");
 });
 
+// --- how much prose a tile carries ------------------------------------------
+
+test("a tile that draws does not also print why it exists; an empty one does", async () => {
+  // `why` describes itself as what an empty tile most needs to carry, and that
+  // is also the argument against printing it under a tile already showing the
+  // answer: a page of plots each with a paragraph attached is a page people
+  // stop reading, including the paragraphs that matter. It moves to the
+  // heading, where it costs a hover rather than a column inch.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings(),
+    occupancy(N_LAYERS * PER_LAYER, (ch) => 100 + ch));
+
+  const drew = page.doc.getElementById("atar_occupancy");
+  const feet = drew.byClass("dqm-footnote").map((f) => f.textContent).join(" ");
+  assert.doesNotMatch(feet, /Why this panel exists/,
+    "a drawing tile still prints the paragraph about why it is there");
+  // Reachable, not deleted.
+  const head = drew.byClass("dqm-tile-title")[0];
+  assert.match(head.title, /Why this panel exists/,
+    "the why is neither printed nor reachable");
+
+  // A panel nothing draws keeps it in the page, which is the case it is for.
+  page.doc.getElementById("tab-atar_proposed").dispatch("click");
+  const empty = page.doc.getElementById("channel_health");
+  assert.ok(empty, "no unclaimed panel to check");
+  const emptyFeet = empty.byClass("dqm-footnote").map((f) => f.textContent).join(" ");
+  assert.match(emptyFeet, /Why this panel exists/,
+    "a tile that cannot answer for itself dropped the line saying what it was for");
+});
+
 // --- occupancy as the target ------------------------------------------------
 //
 // The tile answers "is the beam hitting the target where we put it", which the
@@ -557,21 +586,6 @@ test("a channel with no hits is blank, not the darkest end of the ramp", async (
   const alive = occCell(page, 78);
   assert.ok(!alive.classList.contains("dqm-heat-zero"));
   assert.ok(alive.style.background);
-});
-
-test("the occupancy tile points at the noise maps in the direction they are", async () => {
-  // It said "above" and then moved to the top of the tab. A cross-reference
-  // that survived the tile it points from being reordered is the kind of stale
-  // sentence a reader trusts and should not.
-  const page = await boot(series(NCH, DEPTH), sampicSettings(),
-    occupancy(NCH, (ch) => 100 + ch));
-
-  const tab = page.doc.getElementById("tabpanel-atar_channels");
-  const order = tab.byClass("dqm-panel").map((e) => e.id);
-  const said = textOf(page.doc.getElementById("atar_occupancy"));
-  const below = order.indexOf("noise_by_channel") > order.indexOf("atar_occupancy");
-  assert.match(said, below ? /noise maps below/ : /noise maps above/,
-    `occupancy sits ${below ? "above" : "below"} the noise maps and says the opposite`);
 });
 
 test("the quietest channels are named, and the count of silent ones is said", async () => {
@@ -788,16 +802,18 @@ test("each key sits above what it explains, and says the scale is shared", async
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
 
   const maps = page.doc.getElementById("noise-maps");
-  const order = [...maps.walk()].filter((e) =>
-    e.classList.contains("dqm-heat-key") || e.id === "noise-map-avg"
-    || e.id === "noise-map-now" || e.id === "noise-map-diff");
-  const names = order.map((e) => e.id || "key");
+  const names = [...maps.walk()]
+    .filter((e) => e.classList.contains("dqm-heat-key") || /^noise-map-/.test(e.id))
+    .map((e) => e.id);
   assert.deepStrictEqual(names,
-    ["key", "noise-map-avg", "noise-map-now", "key", "noise-map-diff"],
+    ["noise-seq-key", "noise-map-avg", "noise-map-now",
+     "noise-diff-key", "noise-map-diff"],
     `keys and maps came out in the order ${names.join(", ")}`);
 
-  // And the sharing is stated, not left to be inferred from two identical ramps.
-  assert.match(textOf(maps), /[Oo]ne scale for both maps below/);
+  // The sharing stays *visible*, not moved to a tooltip: it is the claim the
+  // two maps are read on, and two ramps drawn separately look identical
+  // whether or not they were fitted together.
+  assert.match(textOf(maps), /one scale for both maps below/);
 });
 
 test("hovering a cell names the channel, its layer and its strip", async () => {
@@ -853,10 +869,16 @@ test("one loud channel does not flatten the other 255, and the key says it was c
   // The key has to admit it: a scale that hides a channel and does not say so
   // is a lie told in the one place a reader trusts to turn colour back into
   // volts.
-  const tile = page.doc.getElementById("noise_by_channel");
-  assert.match(textOf(tile), /stops at 1\.5 x IQR/,
-    "the scale hides a channel and the key does not say so");
-  assert.match(textOf(tile), /the highest is 5\.0000 V/,
+  // Marked where it can be seen, explained where it can be asked for. A
+  // clipped scale that gave no visible sign would be a lie told in the one
+  // place a reader trusts; the paragraph on how it clipped is not what makes
+  // it honest, so that lives on the key's tooltip.
+  const key = page.doc.getElementById("noise-seq-key");
+  assert.match(textOf(key), /top clipped/,
+    "the scale hides a channel with no visible sign at all");
+  assert.match(key.title, /1\.5 x IQR/,
+    "the key cannot be asked how it clipped");
+  assert.match(key.title, /the highest is 5\.0000 V/,
     "the key does not say what was cut off");
 });
 
@@ -977,8 +999,11 @@ test("a healthy spread is not clipped, so the mark keeps meaning something", asy
     "an ordinary spread was reported as clipped");
   assert.strictEqual(avg.byClass("dqm-heat-over").length, 0,
     "cells were marked as off the scale on a run with no outlier");
-  assert.doesNotMatch(textOf(page.doc.getElementById("noise_by_channel")),
-    /stops at/, "the key claims a clip that did not happen");
+  const key = page.doc.getElementById("noise-seq-key");
+  assert.doesNotMatch(textOf(key), /clipped/,
+    "the key claims a clip that did not happen");
+  assert.doesNotMatch(key.title, /The top stops at/,
+    "the key explains a clip that did not happen");
 });
 
 // --- naming the outlier -----------------------------------------------------

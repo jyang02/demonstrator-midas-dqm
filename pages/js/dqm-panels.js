@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       836e1dbad69b588fed1a8a8d3464cf8945c303879a2d94e6cb1b90c753b8791d
+// sha256:       97a5bb56d15a1f4fc9e915045f67e2091f523df5e2ce70bc99ca94fe32d7b0ab
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "836e1dbad69b588fed1a8a8d3464cf8945c303879a2d94e6cb1b90c753b8791d";
+const SPEC_SHA256 = "97a5bb56d15a1f4fc9e915045f67e2091f523df5e2ce70bc99ca94fe32d7b0ab";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -38,7 +38,7 @@ const PAGES = [
             "kind": "panel",
             "label": "ATAR occupancy by strip and layer",
             "question": "Is the beam hitting the target where we put it?",
-            "why": "against the global channel a beam spot arrives as four disconnected clumps of bars, because that axis is the readout order and not a position, so the one question this panel exists for has to be reassembled in the reader's head from a cable map; on the strip and layer grid it is simply a spot",
+            "why": "the global-channel axis is the readout order, so a beam spot arrives as four disconnected clumps of bars rather than as a spot",
             "status": "ready",
             "size": "m",
             "sketch": "hist2d"
@@ -72,17 +72,7 @@ const PAGES = [
             "kind": "panel",
             "label": "Noise RMS by strip and layer: the window average, the freshest value, and the difference",
             "question": "Which strips are noisier than their neighbours, and has any of them got louder just now?",
-            "why": "a map by strip and layer puts a loud channel beside its physical neighbours rather than beside the channel that happens to share its cable, and showing the average against the freshest value separates a channel that has always been noisy from one that has changed in the last minute",
-            "status": "ready",
-            "size": "l",
-            "sketch": "hist2d"
-          },
-          {
-            "id": "amplitude_by_channel",
-            "kind": "panel",
-            "label": "Amplitude by channel",
-            "question": "Is every channel seeing the same pulse height?",
-            "why": "it is where a channel whose gain has drifted shows up first",
+            "why": "a strip-and-layer map puts a loud channel beside its physical neighbours, and average against freshest separates one that has always been noisy from one that just changed",
             "status": "ready",
             "size": "l",
             "sketch": "hist2d"
@@ -152,6 +142,16 @@ const PAGES = [
             "status": "ready",
             "size": "m",
             "sketch": "table"
+          },
+          {
+            "id": "amplitude_by_channel",
+            "kind": "panel",
+            "label": "Amplitude by channel",
+            "question": "Is every channel seeing the same pulse height?",
+            "why": "it is where a channel whose gain has drifted shows up first",
+            "status": "ready",
+            "size": "l",
+            "sketch": "hist2d"
           }
         ]
       },

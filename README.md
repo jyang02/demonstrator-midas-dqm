@@ -35,8 +35,8 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise as three more strip-by-layer maps, baseline as eight per-layer trends against time, and amplitude by channel behind a per-tile toggle |
-| **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event; the layer hit rate waits on a counting equipment |
+| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise as three more strip-by-layer maps and baseline as eight per-layer trends against time |
+| **Scope** | What does this event look like? | event buffer | **five of six draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event, plus amplitude by channel behind a per-tile toggle; the layer hit rate waits on a counting equipment |
 | **Trends** | Is the detector's response holding still? | analyzer | persistence draws behind its toggle; the average waveform is proposed, and energy-against-amplitude and the two-track rate want a calibration and track finding |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
 
@@ -231,8 +231,8 @@ publishes no time-over-threshold and no time-between-hits: `tot_value` is the
 docstring lists the rest of what the data will not support.
 
 `pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
-hits per event, baseline, noise and amplitude by channel on the Channels tab,
-and persistence on Trends. Three of those hand a histogram straight to mplot
+hits per event, baseline and noise on the Channels tab, amplitude by channel on
+Scope, and persistence on Trends. Three of those hand a histogram straight to mplot
 through `BRPC.display()`; the other three are the exceptions to the
 one-tile-one-plot shape, and two of them are not mplot at all.
 
@@ -311,7 +311,7 @@ that names the loudest channels and the ones that moved most, because a cell
 carries no label and the global channel number is what the ODB, the frontend
 and the cable map all speak.
 
-The remaining two -- amplitude by channel on Channels, persistence on Trends --
+The remaining two -- amplitude by channel on Scope, persistence on Trends --
 are **colormaps and start off**, listed in `TWO_D` in that file, each with a
 `Show plot` button in its own tile.
 Off is a real off -- no fetch, no draw, no timer -- so a page of these costs
@@ -335,7 +335,7 @@ unclaimed deliberately -- "dead, noisy or drifting" is a verdict rather than a
 histogram, and the three tiles on the Channels tab each answer one third of it.
 
 `amplitude_recent_by_channel` on the Proposed tab is the one worth reading
-twice. The Channels tab shows amplitude as the accumulated colormap, which
+twice. The Scope tab shows amplitude as the accumulated colormap, which
 answers *over the run*; the screenshot this page set was organised from asks for
 the last N events, which is *now*. That is the same argument that already moved
 baseline and noise onto recent-value series, and `RecentByChannel` in
@@ -376,9 +376,10 @@ The first two hold whether or not `mdqm-analyzer` is running, which is worth
 knowing before reading a failure as "the analyzer is down". `$W` counts
 `.dqm-empty-why`, and a colormap tile emits one while it is off, whereas a
 drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
-So Channels is its amplitude colormap and nothing else, and the count is for a
-freshly opened tab, before anything is toggled on -- each `Show plot` takes one
-off. What moves with the analyzer is whether the four tiles that draw on open --
+So Channels is zero now that its colormap has moved to Scope, and the count is
+for a freshly opened tab, before anything is toggled on -- each `Show plot`
+takes one off. What moves with the analyzer is whether the four tiles that draw
+on open --
 the occupancy map, hits per event, the noise maps and the baseline trends --
 show a
 plot or a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`

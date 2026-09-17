@@ -18,11 +18,9 @@
 // which carries the reasoning. Off is a real off: no fetch, no draw, no timer.
 //
 // Nothing here knows which tab it is on, and it must not: a renderer claims a
-// panel id, and where that panel sits is the spec's business. The Channels tab
-// gets occupancy, hits per event, baseline, the noise maps and the amplitude
-// colormap;
-// persistence is on Trends beside the average waveform that has been proposed
-// to sit with it.
+// panel id, and where that panel sits is the spec's business -- which is why
+// moving the amplitude colormap from Channels to Scope was an edit to the spec
+// and not to this file.
 //
 // What it does not claim is not an oversight. Crosstalk and the time-between-
 // layers panel need a channel-to-layer map that exists nowhere, and the two
@@ -240,11 +238,8 @@ function histPanel(name, twoD) {
     // rebuilt on a toggle comes back without the one line saying whether the
     // analyzer is answering.
     const offBox = twoD ? probeThisBox(blocked(ctx.body,
-      `Off by default. This is a colormap -- one rectangle per bin, and this `
-      + `one has tens of thousands of them -- and repainting it is what made `
-      + `this page crawl. While it is off nothing is fetched and nothing is `
-      + `drawn, so the tile costs what a paragraph costs. Show plot draws it; `
-      + `the toggle lasts until the page is reloaded.`,
+      `Off by default -- a colormap of tens of thousands of rectangles. `
+      + `Show plot draws it, until the page is reloaded.`,
       ctx.panel)) : null;
 
     const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
@@ -487,21 +482,21 @@ function occupancyMap(name) {
           },
         });
         mapHost.appendChild(built.grid);
-        geoNote.textContent = map
-          ? `One cell per channel, placed by strip and layer from ${map.source}. `
-            + `The same grid the noise maps below use, so a column is the same `
-            + `strip on both.`
+        geoNote.textContent = "";
+        geoNote.title = map
+          ? `Channel map from ${map.source}. The same grid the noise maps use.`
           : "";
+        geoNote.hidden = !!map;
         if (!map) {
           // Yellow, not red: the analyzer is answering and every channel is on
           // the ribbon. What is missing is the geometry to place them by, which
           // is a caveat on the view rather than a fault.
           geoNote.className = "dqm-diagnosis yellow";
-          geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}, so `
-            + `this is one row of every channel rather than a map of the `
-            + `target -- which means it cannot answer where the beam is `
+          geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}: `
+            + `one row of every channel, not a map.`;
+          geoNote.title = `Without it this cannot answer where the beam is `
             + `landing, only how much each channel took. The layer and strip `
-            + `of a channel cannot be guessed: the pixel id decodes only under `
+            + `of a channel cannot be guessed: a pixel id decodes only under `
             + `the base and the stride it was made with.`;
         }
       }
@@ -551,15 +546,17 @@ function occupancyMap(name) {
 
       keyHost.textContent = "";
       keyHost.appendChild(ATARGeom.heatLegend(0, scale.hi, {
+        id: "occupancy-key",
         label: "hits",
-        note: `Zero at the bottom of the scale, so a pale cell really is a busy `
-          + `channel and not merely the busiest of a quiet set. Cells with no `
-          + `hits at all are left blank rather than drawn at the bottom of the `
-          + `ramp.`
+        note: "zero anchored" + (scale.clipped ? ", top clipped" : ""),
+        detail: `The scale starts at zero rather than at the quietest channel, `
+          + `so a pale cell really is a busy channel and not merely the busiest `
+          + `of a quiet set. A channel with no hits at all is left blank rather `
+          + `than drawn at the bottom of the ramp.`
           + (scale.clipped
-            ? ` The scale stops at ${NOISE_FENCE} x IQR above the upper `
-              + `quartile so that one hot channel does not flatten the rest; `
-              + `the highest is ${top.hi}. Cells past the end are outlined.`
+            ? ` The top stops at ${NOISE_FENCE} x IQR above the upper quartile `
+              + `so one hot channel does not flatten the rest; the highest is `
+              + `${top.hi}, and cells past the end are outlined.`
             : ""),
         decimals: 0,
       }));
@@ -608,11 +605,13 @@ function occupancyMap(name) {
           el("td", {}, String(r.v))));
       });
       rankBox.appendChild(t);
-      rankBox.appendChild(el("div", { class: "dqm-footnote" },
-        `${quiet.length} of ${all} channels, and ${all - hit} took nothing at `
-        + `all. A ranking, not a verdict: a channel outside the beam spot is `
-        + `quiet because the beam is not there, and where its cell sits on the `
-        + `map above is what tells that from a channel that has gone.`));
+      const foot = el("div", { class: "dqm-footnote" },
+        `${quiet.length} of ${all}, ${all - hit} took nothing at all `
+        + `\u2014 a ranking, not a verdict`);
+      foot.title = `A channel outside the beam spot is quiet because the beam `
+        + `is not there, and where its cell sits on the map above is what tells `
+        + `that from a channel that has gone.`;
+      rankBox.appendChild(foot);
     }
 
     const updater = new BRPC.AutoUpdater(tick, REFRESH_MS);
@@ -967,11 +966,12 @@ function noiseMaps(name) {
         .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
       if (moved.length) table("Moved most from their own average", moved);
 
-      rankBox.appendChild(el("div", { class: "dqm-footnote" },
-        `${MAP_RANK} of ${rows.length} channels, ranked. A ranking, not a `
-        + `verdict: there is no threshold here, and on a healthy run these are `
+      const foot = el("div", { class: "dqm-footnote" },
+        `${MAP_RANK} of ${rows.length} \u2014 a ranking, not a verdict`);
+      foot.title = `There is no threshold here, and on a healthy run these are `
         + `simply the least average channels. Several rows sharing a layer is `
-        + `the shape a whole layer going together makes.`));
+        + `the shape a whole layer going together makes.`;
+      rankBox.appendChild(foot);
     }
 
     async function tick() {
@@ -997,21 +997,23 @@ function noiseMaps(name) {
         // The strip axis goes under the last grid only: three identical axes
         // stacked is three times the ink for one fact.
         built.diff = buildGrid(KINDS[2], nChannels, true);
-        geoNote.textContent = map
-          ? `One cell per channel, placed by strip and layer from ${map.source}. `
-            + `The three maps share a grid, so a column is one strip read three `
-            + `ways.`
-          : "";
+        // Nothing on the happy path: the rows are labelled L0..L7 and the axis
+        // is labelled strip, so a sentence saying the cells are laid out by
+        // strip and layer is telling a reader what they are looking at.
+        geoNote.textContent = "";
+        geoNote.title = map ? `Channel map from ${map.source}.` : "";
+        geoNote.hidden = !!map;
         if (!map) {
           // Yellow, not red: nothing is broken. The analyzer is answering and
           // every channel is on the ribbon -- what is missing is the geometry
           // to place them by, which is a caveat on the view and not a fault.
           geoNote.className = "dqm-diagnosis yellow";
-          geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}, so `
-            + `these are one row of every channel rather than a map of the `
-            + `target. The layer and strip of a channel cannot be guessed: the `
-            + `pixel id decodes only under the base and the stride it was made `
-            + `with.`;
+          geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}: `
+            + `one row of every channel, not a map.`;
+          geoNote.title = `The layer and strip of a channel cannot be guessed. `
+            + `A pixel id decodes only under the base and the stride it was `
+            + `made with, and assuming the wrong stride moves a fifth of the `
+            + `channels while looking entirely plausible.`;
         }
       }
 
@@ -1106,28 +1108,37 @@ function noiseMaps(name) {
 
       built.seqKey.textContent = "";
       built.diffKey.textContent = "";
-      const seqNote = seq.clipped
-        ? `The scale stops at ${NOISE_FENCE} x IQR above the upper quartile so `
-          + `that one loud channel does not flatten the rest; the highest is `
-          + `${full.hi.toFixed(4)} V. Cells past the end are outlined, so they `
-          + `are not read as merely the maximum.`
-        : "";
+      // A phrase, and the argument behind it on the key's own tooltip. The
+      // visible mark is what keeps a clipped scale honest; the explanation of
+      // how it clipped is not, and it was four lines under every draw.
+      const seqNote = seq.clipped ? "top clipped" : "";
+      const seqDetail = `One scale for both maps, fenced on whichever of the `
+        + `two is wider: a mean is narrower than a single value by `
+        + `construction, so fencing the pool would cut the freshest map in half.`
+        + (seq.clipped
+          ? ` The top stops at ${NOISE_FENCE} x IQR above the upper quartile so `
+            + `one loud channel does not flatten the rest; the highest is `
+            + `${full.hi.toFixed(4)} V, and cells past the end are outlined.`
+          : "");
       built.seqKey.appendChild(ATARGeom.heatLegend(seq.lo, seq.hi, {
+        id: "noise-seq-key",
         label: unit,
-        // The sharing goes in the note rather than the label: it is a sentence
-        // and not a name, and in the label it pushed the upper bound onto its
-        // own line, which reads as a broken key. Said outright either way,
-        // because it is the claim the two maps are read on and two ramps drawn
-        // separately look identical whether or not they were fitted together.
-        note: `One scale for both maps below.${seqNote ? " " + seqNote : ""}`,
+        // The sharing stays visible, because it is the claim the two maps are
+        // read on and two ramps drawn separately look identical whether or not
+        // they were fitted together. In the label it pushed the upper bound
+        // onto its own line, so it goes in the note.
+        note: `one scale for both maps below${seqNote ? ", " + seqNote : ""}`,
+        detail: seqDetail,
       }));
       built.diffKey.appendChild(ATARGeom.diffLegend(div.hi, {
+        id: "noise-diff-key",
         label: "change (V)",
-        note: `Freshest minus the average of the same window, which includes `
-          + `it: a channel seen n times therefore shows (1 - 1/n) of the move it `
-          + `made, and one seen twice shows half. Kept that way so the three `
-          + `maps subtract cell by cell. A channel seen once has no comparison `
-          + `and is left blank.`
+        note: "freshest minus average" + (div.clipped ? ", top clipped" : ""),
+        detail: `The average is over the same window and includes the freshest `
+          + `value, so a channel seen n times shows (1 - 1/n) of the move it `
+          + `made and one seen twice shows half. Kept that way so the three `
+          + `maps subtract cell by cell. A channel seen once has no average to `
+          + `compare against and is left blank.`
           + (div.clipped ? ` Outlined cells are past the end of this scale.` : ""),
       }));
 

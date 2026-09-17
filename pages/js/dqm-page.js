@@ -402,13 +402,26 @@ function panelNode(p, page) {
   const body = el("div", { class: "dqm-tile-body" });
   sec.appendChild(body);
   if (p.alarm) sec.appendChild(alarmNode(p));
-  // The spec's `help` slot -- the sentence a shifter reads at 3am -- is empty on
-  // every element, so `why` is the only prose besides the blocker. It is the
-  // field that says what you *would* have learned from this panel, which is
-  // what an empty tile most needs to carry.
-  if (p.why) sec.appendChild(el("div", { class: "dqm-footnote" }, "Why this panel exists: " + p.why));
 
   const fn = renderers[p.id];
+  // The spec's `help` slot -- the sentence a shifter reads at 3am -- is empty on
+  // every element, so `why` is the only prose besides the blocker. By its own
+  // description it is the field that says what you *would* have learned from
+  // this panel, "which is what an empty tile most needs to carry" -- and that
+  // sentence is also the argument for not printing it under a tile that is
+  // already showing the answer. A page of plots each carrying a paragraph
+  // about why it is there is a page people stop reading, including the
+  // paragraphs that matter.
+  //
+  // So it is printed on the tiles that cannot answer for themselves, and put
+  // on the heading everywhere else, where it costs a hover rather than a
+  // column inch and nothing is actually lost.
+  if (p.why) {
+    if (fn) sec.firstChild.title = "Why this panel exists: " + p.why;
+    else sec.appendChild(el("div", { class: "dqm-footnote" },
+      "Why this panel exists: " + p.why));
+  }
+
   if (!fn) {
     const box = blocked(body, reasonFor(p), p);
     if (p.status === "blocked") noteBlocked(box);

@@ -299,8 +299,12 @@ function keyNum(v, decimals) {
  * not a harmless stale label: a colour key is read as authority, and this one
  * is how a reader turns a cell back into volts.
  *
- * `note` is where the scale says what it is hiding. A clipped scale that did
- * not say so would be a lie told in the one place a reader trusts.
+ * `note` is where the scale says what it is hiding, and it is kept to a phrase.
+ * A clipped scale that did not say so would be a lie told in the one place a
+ * reader trusts -- but the sentence explaining *how* it clipped is not what
+ * makes it honest, the visible mark is, so that sentence goes in `detail` and
+ * is read by hovering the key. A paragraph under every plot is a paragraph
+ * nobody reads, including the ones that matter.
  */
 function heatLegend(lo, hi, opts) {
   const el = DQMPage.el;
@@ -312,7 +316,10 @@ function heatLegend(lo, hi, opts) {
     el("span", { class: "dqm-heat-end" }, keyNum(hi, o.decimals)),
   ];
   if (o.note) kids.push(el("span", { class: "dqm-heat-note" }, o.note));
-  return el("div", { class: "dqm-heat-key" }, ...kids);
+  const key = el("div", { class: "dqm-heat-key" }, ...kids);
+  if (o.id) key.setAttribute("id", o.id);
+  if (o.detail) key.title = o.detail;
+  return key;
 }
 
 /**
@@ -334,7 +341,10 @@ function diffLegend(hi, opts) {
     el("span", { class: "dqm-heat-end" }, `+${keyNum(hi)}`),
   ];
   if (o.note) kids.push(el("span", { class: "dqm-heat-note" }, o.note));
-  return el("div", { class: "dqm-heat-key" }, ...kids);
+  const key = el("div", { class: "dqm-heat-key" }, ...kids);
+  if (o.id) key.setAttribute("id", o.id);
+  if (o.detail) key.title = o.detail;
+  return key;
 }
 
 //: Label every Nth strip along a grid's bottom axis. A two-digit number does
