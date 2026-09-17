@@ -200,6 +200,13 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-heat-single {
   background: #fff; outline: 1px dotted #999; outline-offset: -1px;
 }
+/* A channel that took no hits at all. Blank rather than the darkest end of the
+   ramp, because "never hit" and "hardly hit" are a dead channel and a live one,
+   and the bottom of a ramp cannot say which it is. Distinct again from
+   dqm-heat-nodata, which is the recent-value maps saying they were told
+   nothing: occupancy is never told nothing, it is told zero. */
+.dqm-heat-zero { background: #fff; outline: 1px solid #e3e3e3; outline-offset: -1px; }
+
 /* A grid position with no channel on it: the layer is simply not instrumented
    there. Distinct from a channel with no data -- one is a fact about the
    detector and the other about the last two minutes -- so it is flat and quiet
@@ -301,6 +308,29 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-tile-s      { max-width: 420px; }
 .dqm-tile-m      { max-width: 660px; }
 .dqm-tile-l      { max-width: 100%; }
+
+/* Tiles sit side by side when the spec says they are small enough to.
+   `size` had been carried all the way from the spec into a class and then used
+   for a max-width and nothing else, so two half-width tiles still took a full
+   row each and the page was one column however wide the window got. The two
+   tiles that answer "is the beam there at all" -- occupancy and hits per event
+   -- are read together, and a screen height between them is a comparison
+   nobody makes.
+
+   No media query, because flex-wrap is the media query: the basis is what a
+   tile needs rather than what a laptop has, so two m tiles share a row above
+   about 1150px of tab and stack below it, and the breakpoint moves by itself
+   when a tile's content changes. Everything else in a tab -- the question, the
+   status strip, a note, an l tile -- takes its own row.
+
+   min-width: 0 on the children or a grid or a long <code> inside a tile
+   refuses to shrink below its intrinsic width and pushes the row wider than
+   the page. */
+.dqm-tabpanel    { display: flex; flex-wrap: wrap; gap: 0 16px;
+                   align-items: flex-start; }
+.dqm-tabpanel > *              { flex: 1 1 100%; min-width: 0; }
+.dqm-tabpanel > .dqm-tile-s    { flex: 1 1 380px; }
+.dqm-tabpanel > .dqm-tile-m    { flex: 1 1 560px; }
 
 /* The left border is the page's only at-a-glance signal, so it says the one
    thing a shifter needs before reading: can this panel be believed right now.

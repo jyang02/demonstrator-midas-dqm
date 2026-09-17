@@ -282,9 +282,13 @@ function keyBar(colourAt) {
   return bar;
 }
 
-//: How many decimals a key end carries. The series arrives rounded to 4 (see
-//: RecentByChannel.points), so printing more would invent precision.
-function keyNum(v) { return Number(v).toFixed(4); }
+//: How many decimals a key end carries by default. The recent-value series
+//: arrives rounded to 4 (see RecentByChannel.points), so printing more would
+//: invent precision. A key over counts passes 0, because "1204.0000 hits"
+//: claims a precision that the word "hits" already rules out.
+function keyNum(v, decimals) {
+  return Number(v).toFixed(decimals === undefined ? 4 : decimals);
+}
 
 /**
  * The key to heatColour: the ramp, its two ends as numbers, and any caveat.
@@ -303,9 +307,9 @@ function heatLegend(lo, hi, opts) {
   const o = opts || {};
   const kids = [
     el("span", { class: "dqm-heat-label" }, o.label || "RMS (V)"),
-    el("span", { class: "dqm-heat-end" }, keyNum(lo)),
+    el("span", { class: "dqm-heat-end" }, keyNum(lo, o.decimals)),
     keyBar(heatColour),
-    el("span", { class: "dqm-heat-end" }, keyNum(hi)),
+    el("span", { class: "dqm-heat-end" }, keyNum(hi, o.decimals)),
   ];
   if (o.note) kids.push(el("span", { class: "dqm-heat-note" }, o.note));
   return el("div", { class: "dqm-heat-key" }, ...kids);
@@ -331,6 +335,109 @@ function diffLegend(hi, opts) {
   ];
   if (o.note) kids.push(el("span", { class: "dqm-heat-note" }, o.note));
   return el("div", { class: "dqm-heat-key" }, ...kids);
+}
+
+//: Label every Nth strip along a grid's bottom axis. A two-digit number does
+//: not fit in a cell, so most columns go unlabelled and the reader counts from
+//: the nearest tick -- which is what an axis is.
+const LABEL_EVERY = 4;
+
+/**
+ * The target as a grid of cells: a row per layer, a column per strip.
+ *
+ * Here rather than in a page file because it is the same claim `layerColumns`
+ * makes -- this is what it takes to draw the target rather than a list of
+ * channels, and more than one tile now needs it. The noise maps ask it for
+ * three grids of RMS and the occupancy tile for one of counts; neither of them
+ * should own the arithmetic that turns a readout channel into a position, and
+ * a second copy of it is a second place for the row order to drift.
+ *
+ * It paints nothing. Every cell comes back in the `dqm-heat-nodata` state with
+ * its identity on it, and the caller fills in colour, class and title -- which
+ * is what keeps the meaning of a cell with the tile that knows it. "No value in
+ * the window" and "no hits all run" are different statements and this cannot
+ * tell which one it is drawing.
+ *
+ * With no map it falls back to a single ribbon of every channel. That is not a
+ * lesser version of the same picture and the caller is expected to say so: the
+ * layer and strip of a channel cannot be guessed, because a pixel id decodes
+ * only under the base and the stride it was made with.
+ */
+function heatGrid(map, opts) {
+  const o = opts || {};
+  const grid = DQMPage.el("div", { class: "dqm-heat" });
+  if (o.id) grid.setAttribute("id", o.id);
+  const byCh = new Map();
+
+  function cell(ch, layer, strip) {
+    const c = DQMPage.el("div", { class: "dqm-heat-cell dqm-heat-nodata" });
+    // Assigned rather than written as a data- attribute: the node tests'
+    // element stub fills dataset only on direct assignment, and a channel read
+    // back out of a display string would make the wording load-bearing.
+    c.dataset.ch = String(ch);
+    if (layer !== null && layer !== undefined) c.dataset.layer = String(layer);
+    if (strip !== null && strip !== undefined) c.dataset.strip = String(strip);
+    if (o.onHover) {
+      // The handler takes no event argument: the stub calls listeners with
+      // none, so one reaching for ev.target would work in the browser and throw
+      // under test, which is the worst asymmetry on offer.
+      c.addEventListener("mouseenter", function () { o.onHover(ch, c); });
+    }
+    byCh.set(ch, c);
+    return c;
+  }
+
+  if (map) {
+    const lo = map.stripLo, hi = map.stripHi;
+    grid.style.gridTemplateColumns =
+      `max-content repeat(${hi - lo + 1}, minmax(0, 1fr))`;
+    // Reversed once per grid: this is walked by position and needs to ask
+    // "which channel is here", where the map answers "where is this channel".
+    const atPos = new Map();
+    map.byChannel.forEach(function (layer, ch) {
+      atPos.set(`${layer}:${stripOf(map, ch)}`, ch);
+    });
+    map.layers.forEach(function (layer) {
+      const orient = orientationOf(map, layer);
+      grid.appendChild(DQMPage.el("div", { class: "dqm-heat-rowlab" },
+        orient ? `L${layer} ${orient.slice(0, 4)}` : `L${layer}`));
+      for (let strip = lo; strip <= hi; strip++) {
+        const ch = atPos.get(`${layer}:${strip}`);
+        if (ch === undefined) {
+          // No channel at this position: the layer is not instrumented here.
+          // A fact about the detector, where an empty cell elsewhere is a fact
+          // about the run, so it does not get painted like one.
+          const gap = DQMPage.el("div", { class: "dqm-heat-cell dqm-heat-empty" });
+          gap.title = `No channel at layer ${layer}, strip ${strip}.`;
+          grid.appendChild(gap);
+          continue;
+        }
+        grid.appendChild(cell(ch, layer, strip));
+      }
+    });
+    if (o.axis) {
+      grid.appendChild(DQMPage.el("div", { class: "dqm-heat-rowlab" }, "strip"));
+      for (let strip = lo; strip <= hi; strip++) {
+        grid.appendChild(DQMPage.el("div", { class: "dqm-heat-collab" },
+          strip % LABEL_EVERY === 0 ? String(strip) : ""));
+      }
+    }
+  } else {
+    grid.classList.add("dqm-heat-ribbon");
+    grid.style.gridTemplateColumns =
+      `max-content repeat(${o.channels || 0}, minmax(0, 1fr))`;
+    grid.appendChild(DQMPage.el("div", { class: "dqm-heat-rowlab" }, "all"));
+    for (let ch = 0; ch < (o.channels || 0); ch++) {
+      grid.appendChild(cell(ch, null, null));
+    }
+  }
+  return { grid: grid, byCh: byCh };
+}
+
+/** Where a channel sits, in words, for a cell title or a hover readout. */
+function whereText(map, cell) {
+  if (!map || cell.dataset.layer === undefined) return "unmapped";
+  return `layer ${cell.dataset.layer}, strip ${cell.dataset.strip}`;
 }
 
 // Exports are what somebody reads, and nothing more. In particular there is no
@@ -371,7 +478,8 @@ function stripLegend(map) {
 }
 
 const ATARGeom = { SETTINGS, load, orientationOf, layerOf, stripOf,
-                   layerColumns, stripLegend, heatLegend, diffLegend,
+                   layerColumns, heatGrid, whereText,
+                   stripLegend, heatLegend, diffLegend,
                    colourFor, stripColour, heatColour, diffColour,
                    PALETTE, VIRIDIS, RAMP_TOP,
                    DIVERGE_LO, DIVERGE_MID, DIVERGE_HI };

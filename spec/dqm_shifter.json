@@ -60,6 +60,47 @@
       "page": "ATAR",
       "elements": [
         {
+          "id": "atar_occupancy",
+          "kind": "panel",
+          "label": "ATAR occupancy by strip and layer",
+          "question": "Is the beam hitting the target where we put it?",
+          "why": "against the global channel a beam spot arrives as four disconnected clumps of bars, because that axis is the readout order and not a position, so the one question this panel exists for has to be reassembled in the reader's head from a cable map; on the strip and layer grid it is simply a spot",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "m",
+          "sketch": "hist2d",
+          "targets": {},
+          "_note": "Moved to Channels rather than Physics by commit 9: whether every channel is seeing hits is the same question as whether it is quiet, and it is indexed by channel like the rest of that page.",
+          "proposed_figure": "dqm-atar-occupancy",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
+          ]
+        },
+        {
+          "id": "hits_per_event",
+          "kind": "panel",
+          "label": "Hits per event",
+          "question": "Is the trigger selecting what we think it is?",
+          "why": "the cheapest single number that says the trigger changed",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "alarm": {
+            "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
+            "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
+          },
+          "proposed_figure": "dqm-hits-per-event",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
+          ]
+        },
+        {
           "id": "baseline_by_channel",
           "kind": "panel",
           "label": "Baseline vs. time, a line per channel and a panel per layer",
@@ -110,47 +151,6 @@
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ],
           "_note": "Decision 6, taken 2026-09-14: no Landau fit, and no reference peak in its place either. A MIP Landau MPV is a per-channel calibration number rather than a monitoring one, and a fit over a partial run is wrong early in a way a shifter cannot see. The reference peak that had been proposed instead needs an owner and has none, and an unowned reference is not a harmless placeholder: a stale one makes a correct spectrum look wrong and a shifter re-tunes a channel that was fine. The comparison this tile actually supports is across its own channel axis -- every channel saw the same beam, so one whose peak has moved is a row out of line with its neighbours. It comes back when the energy calibration has an owner, who is the same person."
-        },
-        {
-          "id": "atar_occupancy",
-          "kind": "panel",
-          "label": "ATAR occupancy",
-          "question": "Is the beam hitting the target where we put it?",
-          "why": "it is the fastest check that the geometry matches the ODB",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "_note": "Moved to Channels rather than Physics by commit 9: whether every channel is seeing hits is the same question as whether it is quiet, and it is indexed by channel like the rest of that page.",
-          "proposed_figure": "dqm-atar-occupancy",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
-        },
-        {
-          "id": "hits_per_event",
-          "kind": "panel",
-          "label": "Hits per event",
-          "question": "Is the trigger selecting what we think it is?",
-          "why": "the cheapest single number that says the trigger changed",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "alarm": {
-            "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
-            "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
-          },
-          "proposed_figure": "dqm-hits-per-event",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
         }
       ]
     },

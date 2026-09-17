@@ -85,8 +85,25 @@ async function settle(page) {
   for (let j = 0; j < 50; j++) await Promise.resolve();
 }
 
+/**
+ * A dqm::histogram reply for a 1-D per-channel histogram.
+ *
+ * One bin per channel, which is the analyzer's `chan()` axis, plus the under-
+ * and overflow cells the wire format always carries. Neither can hold anything
+ * for a channel axis, so they are zero here and the tile is entitled to ignore
+ * them.
+ */
+function occupancy(nch, countAt) {
+  const data = [0];
+  for (let ch = 0; ch < nch; ch++) data.push(countAt ? countAt(ch) : 100);
+  data.push(0);
+  const entries = data.reduce((a, b) => a + b, 0);
+  return { dimensions: 1, nBins: [nch], lowEdge: [0], highEdge: [nch],
+           entries: entries, data: data };
+}
+
 /** Boot the ATAR page on its Channels tab with one canned series reply. */
-async function boot(reply, odbExtra) {
+async function boot(reply, odbExtra, histReply) {
   const cfg = Object.assign({}, globalThis.DQM.DEFAULTS.ATAR);
   const page = runPage(path.join(JS, "dqm-page.js"), {
     db_get_values: (p) => ({
@@ -105,11 +122,14 @@ async function boot(reply, odbExtra) {
   // dqm-brpc.js's own wire format is pinned by scopeframe.test.js.
   globalThis.BRPC.list = async () => ["sampic/occupancy"];
   globalThis.BRPC.json = async () => reply;
-  // The histogram tiles share this tab and are not what these tests are about.
-  // Left pending rather than rejected: a rejection would have AutoUpdater
-  // console.error once per tile per boot, and a screenful of that in a passing
-  // run is how a real error stops being noticed.
-  globalThis.BRPC.histogram = () => new Promise(() => {});
+  // The histogram tiles share this tab and are mostly not what these tests are
+  // about. Left pending rather than rejected: a rejection would have
+  // AutoUpdater console.error once per tile per boot, and a screenful of that
+  // in a passing run is how a real error stops being noticed. A test that IS
+  // about one of them passes a reply.
+  globalThis.BRPC.histogram = histReply
+    ? async () => histReply
+    : () => new Promise(() => {});
 
   await page.load();          // Channels is the first tab, so it is built here
   await settle(page);
@@ -466,6 +486,135 @@ test("with no geometry it is one panel and says why, rather than eight invented 
   const text = [...tile.walk()].map((e) => e._text || "").join(" ");
   assert.match(text, /Equipment\/SAMPIC\/Settings/,
     "the tile does not say which key it wanted");
+});
+
+// --- occupancy as the target ------------------------------------------------
+//
+// The tile answers "is the beam hitting the target where we put it", which the
+// global-channel axis it used to have could not: that axis is the readout
+// order, so a spot in one corner arrives as four disconnected clumps of bars.
+
+const NCH = N_LAYERS * PER_LAYER;
+
+function occCells(page) {
+  return page.doc.getElementById("occupancy-grid").byClass("dqm-heat-cell")
+    .filter((c) => c.dataset.ch !== undefined);
+}
+
+function occCell(page, ch) {
+  return occCells(page).find((c) => c.dataset.ch === String(ch));
+}
+
+test("occupancy is a cell per channel, placed by strip and layer", async () => {
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => 100 + ch));
+
+  assert.strictEqual(occCells(page).length, NCH);
+  // The same placement the noise maps use, which is the point of sharing the
+  // grid: a column is the same strip on both tiles.
+  const c137 = occCell(page, 137);
+  assert.strictEqual(c137.dataset.layer, "4");
+  assert.strictEqual(c137.dataset.strip, "9");
+  assert.deepStrictEqual(occCells(page).map((c) => c.dataset.ch),
+    page.doc.getElementById("noise-map-avg").byClass("dqm-heat-cell")
+      .filter((c) => c.dataset.ch !== undefined).map((c) => c.dataset.ch),
+    "the two tiles place the channels differently, so a column is not one strip");
+});
+
+test("the occupancy scale starts at zero, not at the quietest channel", async () => {
+  // Counts are a ratio quantity: half the hits means half the hits. A scale
+  // fitted to the minimum would put the quietest channel at the bottom of the
+  // ramp whether it took nine hundred hits or none, which is the distinction
+  // this tile exists to make.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, () => 900));
+
+  const scale = page.doc.getElementById("occupancy-grid").dqmScale;
+  assert.strictEqual(scale.lo, 0,
+    "the scale was fitted to the data and 900 hits would read as 'none'");
+  // Every channel equally busy must therefore NOT come out at the bottom.
+  assert.notStrictEqual(occCell(page, 0).style.background, ATARGeom.heatColour(0),
+    "a uniformly busy target was drawn as a uniformly dead one");
+});
+
+test("a channel with no hits is blank, not the darkest end of the ramp", async () => {
+  // "Never hit" and "hardly hit" are a dead channel and a live one, and the
+  // bottom of a ramp cannot say which. Distinct again from the noise maps'
+  // no-data hatch: occupancy is never told nothing, it is told zero.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => (ch === 77 ? 0 : 500)));
+
+  const dead = occCell(page, 77);
+  assert.ok(dead.classList.contains("dqm-heat-zero"));
+  assert.ok(!dead.classList.contains("dqm-heat-nodata"),
+    "a measured zero was drawn as an absence of information");
+  assert.notStrictEqual(dead.style.background, ATARGeom.heatColour(0));
+  assert.match(dead.title, /no hits this run/);
+  // Never "dead": a channel outside the beam spot takes nothing either, and
+  // where the cell sits is what tells those apart.
+  assert.doesNotMatch(dead.title, /dead/i);
+
+  const alive = occCell(page, 78);
+  assert.ok(!alive.classList.contains("dqm-heat-zero"));
+  assert.ok(alive.style.background);
+});
+
+test("the quietest channels are named, and the count of silent ones is said", async () => {
+  // The busy end of this map is legible already -- a spot is bright. The quiet
+  // end is a field of dark cells in which the one that took nothing looks like
+  // its neighbours that took three, and that is the end with a fault in it.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => (ch === 12 ? 0 : (ch === 13 ? 1 : 500))));
+
+  const box = page.doc.getElementById("occupancy-outliers");
+  const text = textOf(box);
+  assert.match(text, /ch 12/, "the silent channel is not named");
+  assert.match(text, /ch 13/, "the next quietest is not named");
+  assert.match(text, /1 took nothing at all/);
+  assert.match(text, /ranking, not a verdict/);
+  box.byTag("tr").forEach(function (row) {
+    assert.doesNotMatch(row.className, /warn|alarm|red|yellow/,
+      "the ranking grew a verdict");
+  });
+});
+
+test("hovering an occupancy cell names the channel and does not touch the other readouts", async () => {
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => 100 + ch));
+
+  occCell(page, 137).dispatch("mouseenter");
+  const said = page.doc.getElementById("occupancy-readout").textContent;
+  assert.match(said, /ch 137/);
+  assert.match(said, /layer 4/);
+  assert.match(said, /strip 9/);
+  assert.match(said, /hits/);
+  assert.doesNotMatch(said, /undefined/);
+
+  assert.match(page.doc.getElementById("noise-readout").textContent,
+    /Hover a cell/, "the occupancy tile wrote into the noise readout");
+  assert.match(page.doc.getElementById("baseline-readout").textContent,
+    /Hover a point/, "the occupancy tile wrote into the baseline readout");
+});
+
+test("occupancy and hits per event come first, and are sized to share a row", async () => {
+  // The layout itself is flex-wrap and the stub has no layout, so what is
+  // pinned here is the contract the CSS keys off: the two tiles that answer
+  // "is the beam there at all" are the first two, and both carry the size
+  // class that lets a row hold two of them. A size of l would silently take a
+  // full row each and put a screen height between them.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => 100 + ch));
+
+  const tab = page.doc.getElementById("tabpanel-atar_channels");
+  const panels = tab.byClass("dqm-panel").map((e) => e.id);
+  assert.deepStrictEqual(panels.slice(0, 2), ["atar_occupancy", "hits_per_event"],
+    `the Channels tab opens with ${panels.slice(0, 2).join(", ")}`);
+  ["atar_occupancy", "hits_per_event"].forEach(function (id) {
+    assert.ok(page.doc.getElementById(id).classList.contains("dqm-tile-m"),
+      `${id} is not sized to share a row`);
+  });
+  // And the tiles that need the full width still say so.
+  assert.ok(page.doc.getElementById("noise_by_channel").classList.contains("dqm-tile-l"));
 });
 
 // --- the tile beside it: noise as a map of the target ------------------------

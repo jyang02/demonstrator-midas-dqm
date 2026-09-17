@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       8782ef18e1a8078464aaa3280e982e52d777dca3bdbba78a4adeb7a658a87a04
+// sha256:       836e1dbad69b588fed1a8a8d3464cf8945c303879a2d94e6cb1b90c753b8791d
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "8782ef18e1a8078464aaa3280e982e52d777dca3bdbba78a4adeb7a658a87a04";
+const SPEC_SHA256 = "836e1dbad69b588fed1a8a8d3464cf8945c303879a2d94e6cb1b90c753b8791d";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -33,6 +33,30 @@ const PAGES = [
         "name": "Channels",
         "question": "Is every channel behaving?",
         "elements": [
+          {
+            "id": "atar_occupancy",
+            "kind": "panel",
+            "label": "ATAR occupancy by strip and layer",
+            "question": "Is the beam hitting the target where we put it?",
+            "why": "against the global channel a beam spot arrives as four disconnected clumps of bars, because that axis is the readout order and not a position, so the one question this panel exists for has to be reassembled in the reader's head from a cable map; on the strip and layer grid it is simply a spot",
+            "status": "ready",
+            "size": "m",
+            "sketch": "hist2d"
+          },
+          {
+            "id": "hits_per_event",
+            "kind": "panel",
+            "label": "Hits per event",
+            "question": "Is the trigger selecting what we think it is?",
+            "why": "the cheapest single number that says the trigger changed",
+            "status": "ready",
+            "size": "m",
+            "sketch": "hist1d",
+            "alarm": {
+              "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
+              "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
+            }
+          },
           {
             "id": "baseline_by_channel",
             "kind": "panel",
@@ -62,30 +86,6 @@ const PAGES = [
             "status": "ready",
             "size": "l",
             "sketch": "hist2d"
-          },
-          {
-            "id": "atar_occupancy",
-            "kind": "panel",
-            "label": "ATAR occupancy",
-            "question": "Is the beam hitting the target where we put it?",
-            "why": "it is the fastest check that the geometry matches the ODB",
-            "status": "ready",
-            "size": "l",
-            "sketch": "hist2d"
-          },
-          {
-            "id": "hits_per_event",
-            "kind": "panel",
-            "label": "Hits per event",
-            "question": "Is the trigger selecting what we think it is?",
-            "why": "the cheapest single number that says the trigger changed",
-            "status": "ready",
-            "size": "m",
-            "sketch": "hist1d",
-            "alarm": {
-              "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
-              "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
-            }
           }
         ]
       },

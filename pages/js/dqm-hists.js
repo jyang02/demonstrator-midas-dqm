@@ -403,18 +403,249 @@ function histPanel(name, twoD) {
 }
 
 // ---------------------------------------------------------------------------
+// atar_occupancy -- hits per channel, as the target
+// ---------------------------------------------------------------------------
+
+/**
+ * Occupancy as a map: one cell per channel, placed by strip and layer.
+ *
+ * The question on this tile is "is the beam hitting the target where we put
+ * it", and a bar chart against the global channel cannot answer it at all.
+ * That axis is the readout order -- fe_board * 64 + channel -- so a beam spot
+ * sitting in one corner of the target arrives as four disconnected clumps of
+ * bars, and "where" has to be reconstructed in the reader's head from a cable
+ * map. On the grid it is a spot, and whether it is the spot anybody intended
+ * is one look.
+ *
+ * Read against the noise maps above it, which is why it is the same grid: a
+ * strip that is dark here and loud there is a different fault from one that is
+ * dark in both.
+ *
+ * **The scale starts at zero, not at the quietest channel.** Counts are a
+ * ratio quantity -- half the hits means half the hits -- and a scale fitted to
+ * the minimum would put the quietest channel at the bottom of the ramp whether
+ * it had taken nine hundred hits or none, which is the one distinction this
+ * tile exists to make. Zero itself gets its own mark rather than the ramp's
+ * darkest colour, because "never hit" and "hardly hit" are a dead channel and
+ * a live one.
+ */
+function occupancyMap(name) {
+  return function (ctx) {
+    const client = String(ctx.cfg["Analyzer Client"] || "").trim();
+    if (!client) {
+      blocked(ctx.body,
+        `No analyzer client is named in ${DQM.CONFIG_ROOT}/Analyzer Client, so `
+        + `this panel does not know whom to ask for ${name}.`,
+        ctx.panel, `${DQM.CONFIG_ROOT}/Analyzer Client`);
+      return;
+    }
+
+    const entries = el("span", {}, "—");
+    const live = el("span", {}, "—");
+    const cadence = el("span", { class: "dqm-chip" }, "");
+    ctx.body.appendChild(el("div", { class: "dqm-strip" },
+      chip("histogram", el("code", {}, name)),
+      chip("entries", entries), chip("channels hit", live), cadence));
+
+    const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
+    const geoNote = el("div", { class: "dqm-note" }, "Reading the channel map…");
+    ctx.body.appendChild(note);
+    ctx.body.appendChild(geoNote);
+
+    const readout = el("div", { class: "dqm-readout", id: "occupancy-readout" },
+      "Hover a cell to identify its channel.");
+    ctx.body.appendChild(readout);
+
+    const keyHost = el("div", {});
+    const mapHost = el("div", { class: "dqm-heat-maps", id: "occupancy-map" });
+    ctx.body.appendChild(keyHost);
+    ctx.body.appendChild(mapHost);
+
+    const rankBox = el("div", { class: "dqm-outliers", id: "occupancy-outliers" });
+    ctx.body.appendChild(rankBox);
+
+    let map = null;
+    let built = null;
+    let drawn = false;
+    let sized = false;
+
+    async function tick() {
+      const hist = await BRPC.histogram(client, name);
+      // One bin per channel exactly -- the analyzer's `chan()` axis is lo=0,
+      // hi=nch -- so bin i is channel i. data carries under- and overflow at
+      // the ends, hence the offset; neither can hold anything here, because a
+      // channel index outside the axis is a channel that does not exist.
+      const nch = (hist.nBins && hist.nBins[0]) || 0;
+      const counts = [];
+      for (let i = 0; i < nch; i++) counts.push(Number(hist.data[i + 1]) || 0);
+
+      if (!built) {
+        built = ATARGeom.heatGrid(map, {
+          id: "occupancy-grid", channels: nch, axis: true,
+          onHover: function (ch, cell) {
+            readout.textContent = cell.title || `ch ${ch}`;
+          },
+        });
+        mapHost.appendChild(built.grid);
+        geoNote.textContent = map
+          ? `One cell per channel, placed by strip and layer from ${map.source}. `
+            + `The same grid the noise maps above use, so a column is the same `
+            + `strip on both.`
+          : "";
+        if (!map) {
+          // Yellow, not red: the analyzer is answering and every channel is on
+          // the ribbon. What is missing is the geometry to place them by, which
+          // is a caveat on the view rather than a fault.
+          geoNote.className = "dqm-diagnosis yellow";
+          geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}, so `
+            + `this is one row of every channel rather than a map of the `
+            + `target -- which means it cannot answer where the beam is `
+            + `landing, only how much each channel took. The layer and strip `
+            + `of a channel cannot be guessed: the pixel id decodes only under `
+            + `the base and the stride it was made with.`;
+        }
+      }
+
+      if (!sized) {
+        sized = true;
+        const said = cadenceText(refreshFor(counts.length), counts.length);
+        cadence.textContent = said.text;
+        cadence.title = said.title;
+      }
+
+      // Zero at the bottom, always. See the docstring: counts are a ratio
+      // quantity and a scale fitted to the minimum would hide the difference
+      // between a channel that took none and one that took nine hundred.
+      const withHits = counts.filter((c) => c > 0);
+      const top = span(counts);
+      const fence = fenceTop(counts);
+      const hi = (fence !== null && fence > 0 && fence < top.hi) ? fence : top.hi;
+      const scale = { lo: 0, hi: hi > 0 ? hi : 1, clipped: hi < top.hi };
+      built.grid.dqmScale = scale;
+
+      const total = Number(hist.entries) || 0;
+      const rows = [];
+      built.byCh.forEach(function (cell, ch) {
+        const v = counts[ch] || 0;
+        const where = ATARGeom.whereText(map, cell);
+        rows.push({
+          ch: ch, v: v,
+          layer: cell.dataset.layer === undefined ? null : Number(cell.dataset.layer),
+          strip: cell.dataset.strip === undefined ? null : Number(cell.dataset.strip),
+        });
+        const share = total ? ` (${(100 * v / total).toFixed(2)}% of all hits)` : "";
+        if (v === 0) {
+          cell.className = "dqm-heat-cell dqm-heat-zero";
+          cell.style.background = "";
+          // "No hits", never "dead". A channel outside the beam spot takes
+          // none either, and this tile shows which of those two it is by where
+          // the cell sits -- not by anything it could say in a sentence.
+          cell.title = `ch ${ch} — ${where} — no hits this run.`;
+          return;
+        }
+        const over = v > scale.hi;
+        cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "");
+        cell.style.background = ATARGeom.heatColour(v / scale.hi);
+        cell.title = `ch ${ch} — ${where} — ${v} hit${v === 1 ? "" : "s"}${share}`;
+      });
+
+      keyHost.textContent = "";
+      keyHost.appendChild(ATARGeom.heatLegend(0, scale.hi, {
+        label: "hits",
+        note: `Zero at the bottom of the scale, so a pale cell really is a busy `
+          + `channel and not merely the busiest of a quiet set. Cells with no `
+          + `hits at all are left blank rather than drawn at the bottom of the `
+          + `ramp.`
+          + (scale.clipped
+            ? ` The scale stops at ${NOISE_FENCE} x IQR above the upper `
+              + `quartile so that one hot channel does not flatten the rest; `
+              + `the highest is ${top.hi}. Cells past the end are outlined.`
+            : ""),
+        decimals: 0,
+      }));
+
+      fillQuietest(rows, withHits.length, counts.length);
+
+      drawn = true;
+      entries.textContent = String(total);
+      live.textContent = `${withHits.length} of ${counts.length}`;
+      note.className = "dqm-note";
+      note.textContent = total
+        ? ""
+        : "The analyzer is answering and has recorded no hits yet: either no "
+          + "events have arrived, or nothing is filling it.";
+    }
+
+    /**
+     * The quietest channels, named.
+     *
+     * Quietest rather than busiest, and that asymmetry is the point. The busy
+     * end of this map is legible already -- a beam spot is bright and its
+     * middle is obvious -- while the quiet end is a field of dark cells in
+     * which the one that took nothing looks like its neighbours that took
+     * three. That is the end with a fault in it.
+     *
+     * It ranks and does not judge, for the reason the noise ranking does: a
+     * channel outside the beam spot is quiet because the beam is not there,
+     * which is a fact about the run rather than about the channel, and no
+     * threshold here could tell the two apart. Where the cell sits on the map
+     * is what settles it, and that is the reader's to read.
+     */
+    function fillQuietest(rows, hit, all) {
+      rankBox.textContent = "";
+      if (!rows.length) return;
+      const quiet = rows.slice().sort((a, b) => a.v - b.v).slice(0, MAP_RANK);
+      rankBox.appendChild(el("div", { class: "dqm-subhead" }, "Quietest channels"));
+      const t = el("table", { class: "dqm-table" });
+      t.appendChild(el("tr", {},
+        el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
+        el("th", {}, "hits")));
+      quiet.forEach(function (r) {
+        t.appendChild(el("tr", {},
+          el("td", { class: "label" }, `ch ${r.ch}`),
+          el("td", {}, r.layer === null ? "—" : String(r.layer)),
+          el("td", {}, r.strip === null ? "—" : String(r.strip)),
+          el("td", {}, String(r.v))));
+      });
+      rankBox.appendChild(t);
+      rankBox.appendChild(el("div", { class: "dqm-footnote" },
+        `${quiet.length} of ${all} channels, and ${all - hit} took nothing at `
+        + `all. A ranking, not a verdict: a channel outside the beam spot is `
+        + `quiet because the beam is not there, and where its cell sits on the `
+        + `map above is what tells that from a channel that has gone.`));
+    }
+
+    const updater = new BRPC.AutoUpdater(tick, REFRESH_MS);
+    updater.onError = function (e) {
+      note.className = "dqm-diagnosis red";
+      note.textContent = drawn
+        ? `"${client}" stopped answering for ${name} (${e.message}). The map `
+          + "above is the last one it sent, and is no longer being updated."
+        : `Nothing answered as "${client}" for ${name} (${e.message}). That is `
+          + "the analyzer this panel is waiting for.";
+    };
+
+    // The map first, then the loop, for the reason the noise tile does it:
+    // heatGrid needs to know whether it is drawing the target or a ribbon
+    // before the first reply arrives.
+    ATARGeom.load().then(function (m) {
+      map = m;
+      updater.start();
+    });
+  };
+}
+
+// ---------------------------------------------------------------------------
 // noise_by_channel -- the target as a map, three times over
 // ---------------------------------------------------------------------------
 
-//: How many channels each ranking names. Five for the reason BASELINE_OUTLIERS
-//: is five: it fits under the maps without scrolling, and it is enough to show
-//: a whole layer going together rather than one channel on its own.
-const NOISE_RANK = 5;
-
-//: Label every Nth strip along the bottom axis. A 2-digit number does not fit
-//: in a cell, so most columns go unlabelled and the reader counts from the
-//: nearest tick -- which is what an axis is.
-const NOISE_LABEL_EVERY = 4;
+//: How many channels a map's ranking names. Five for the reason
+//: BASELINE_OUTLIERS is five: it fits under a map without scrolling, and it is
+//: enough to show a whole layer going together rather than one channel on its
+//: own. Shared by the noise maps and the occupancy map, which ask the same
+//: thing of it -- a cell carries no label, so the map stops one step short of
+//: naming what a shifter has to act on.
+const MAP_RANK = 5;
 
 /**
  * The middle of a sorted copy at the given fraction. Null on an empty list.
@@ -610,95 +841,19 @@ function noiseMaps(name) {
      * under the base and stride it was made with, and assuming 48 where the
      * file used 46 moves a fifth of the channels while looking plausible.
      */
+    /** One map: its heading, its grid, and the grid's place in the block. */
     function buildGrid(spec, nChannels, withAxis) {
       const box = el("div", {});
       box.appendChild(el("div", { class: "dqm-subhead" }, spec.head));
-      const grid = el("div", { class: "dqm-heat", id: spec.id });
-      const byCh = new Map();
-
-      if (map) {
-        const lo = map.stripLo, hi = map.stripHi;
-        const cols = hi - lo + 1;
-        grid.style.gridTemplateColumns =
-          `max-content repeat(${cols}, minmax(0, 1fr))`;
-        // Reverse the map once: the grid is walked by position and needs to ask
-        // "which channel is here", where ATARGeom answers "where is this
-        // channel".
-        const atPos = new Map();
-        map.byChannel.forEach(function (layer, ch) {
-          atPos.set(`${layer}:${ATARGeom.stripOf(map, ch)}`, ch);
-        });
-        map.layers.forEach(function (layer) {
-          const orient = ATARGeom.orientationOf(map, layer);
-          grid.appendChild(el("div", { class: "dqm-heat-rowlab" },
-            orient ? `L${layer} ${orient.slice(0, 4)}` : `L${layer}`));
-          for (let strip = lo; strip <= hi; strip++) {
-            const ch = atPos.get(`${layer}:${strip}`);
-            if (ch === undefined) {
-              // No channel at this position: the layer is not instrumented
-              // here. Not the same as a channel with no data, and not painted
-              // like one.
-              const gap = el("div", { class: "dqm-heat-cell dqm-heat-empty" });
-              gap.title = `No channel at layer ${layer}, strip ${strip}.`;
-              grid.appendChild(gap);
-              continue;
-            }
-            grid.appendChild(cellFor(ch, layer, strip, byCh));
-          }
-        });
-        if (withAxis) appendAxis(grid, lo, hi);
-      } else {
-        // No geometry is not no map. Every channel in one ribbon still answers
-        // "is anything louder than the rest"; what it cannot answer is "where",
-        // and it says so rather than inventing a layer.
-        grid.classList.add("dqm-heat-ribbon");
-        grid.style.gridTemplateColumns =
-          `max-content repeat(${nChannels}, minmax(0, 1fr))`;
-        grid.appendChild(el("div", { class: "dqm-heat-rowlab" }, "all"));
-        for (let ch = 0; ch < nChannels; ch++) {
-          grid.appendChild(cellFor(ch, null, null, byCh));
-        }
-      }
-
-      box.appendChild(grid);
-      maps.appendChild(box);
-      return { grid: grid, byCh: byCh };
-    }
-
-    /** One channel's cell, with its identity on it and its hover wired. */
-    function cellFor(ch, layer, strip, byCh) {
-      const cell = el("div", { class: "dqm-heat-cell dqm-heat-nodata" });
-      // Assigned rather than set as a data- attribute: the node test's element
-      // stub populates dataset only on direct assignment, and a channel read
-      // back out of a display string would make the wording load-bearing.
-      cell.dataset.ch = String(ch);
-      if (layer !== null) cell.dataset.layer = String(layer);
-      if (strip !== null) cell.dataset.strip = String(strip);
-      // No event argument: the stub calls handlers with none, and a handler
-      // reaching for ev.target would work in the browser and throw under test,
-      // which is the worst asymmetry available.
-      cell.addEventListener("mouseenter", function () {
-        readout.textContent = cell.title || `ch ${ch}`;
+      const built = ATARGeom.heatGrid(map, {
+        id: spec.id, channels: nChannels, axis: withAxis,
+        onHover: function (ch, cell) {
+          readout.textContent = cell.title || `ch ${ch}`;
+        },
       });
-      byCh.set(ch, cell);
-      return cell;
-    }
-
-    /** The strip axis, labelled every NOISE_LABEL_EVERY columns. */
-    function appendAxis(grid, lo, hi) {
-      grid.appendChild(el("div", { class: "dqm-heat-rowlab" }, "strip"));
-      for (let strip = lo; strip <= hi; strip++) {
-        grid.appendChild(el("div", { class: "dqm-heat-collab" },
-          strip % NOISE_LABEL_EVERY === 0 ? String(strip) : ""));
-      }
-    }
-
-    /** Where a channel is, in words, for a title and a readout. */
-    function whereText(cell, ch) {
-      if (!map) return "unmapped";
-      const layer = cell.dataset.layer;
-      if (layer === undefined) return "unmapped";
-      return `layer ${layer}, strip ${cell.dataset.strip}`;
+      box.appendChild(built.grid);
+      maps.appendChild(box);
+      return built;
     }
 
     /**
@@ -710,7 +865,7 @@ function noiseMaps(name) {
      */
     function paint(cell, r, kind, seq, div, windowS) {
       const ch = cell.dataset.ch;
-      const where = whereText(cell, ch);
+      const where = ATARGeom.whereText(map, cell);
       if (!r) {
         cell.className = "dqm-heat-cell dqm-heat-nodata";
         cell.style.background = "";
@@ -789,7 +944,7 @@ function noiseMaps(name) {
           el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
           el("th", {}, "average"), el("th", {}, "now"),
           el("th", {}, "Δ")));
-        sorted.slice(0, NOISE_RANK).forEach(function (r) {
+        sorted.slice(0, MAP_RANK).forEach(function (r) {
           t.appendChild(el("tr", {},
             el("td", { class: "label" }, `ch ${r.ch}`),
             el("td", {}, r.layer === null ? "—" : String(r.layer)),
@@ -813,7 +968,7 @@ function noiseMaps(name) {
       if (moved.length) table("Moved most from their own average", moved);
 
       rankBox.appendChild(el("div", { class: "dqm-footnote" },
-        `${NOISE_RANK} of ${rows.length} channels, ranked. A ranking, not a `
+        `${MAP_RANK} of ${rows.length} channels, ranked. A ranking, not a `
         + `verdict: there is no threshold here, and on a healthy run these are `
         + `simply the least average channels. Several rows sharing a layer is `
         + `the shape a whole layer going together makes.`));
@@ -1586,8 +1741,16 @@ function baselineTrend(name) {
   };
 }
 
+//: Panel ids in PANELS that are drawn by something other than histPanel. They
+//: stay in PANELS because that map is what /DQM/ATAR/Histograms is checked
+//: against -- occupancy is still a histogram fetched over dqm::histogram, it is
+//: simply not drawn as one.
+const OWN_RENDERER = { atar_occupancy: occupancyMap };
+
 Object.keys(PANELS).forEach(function (id) {
-  DQMPage.register(id, histPanel(PANELS[id], TWO_D.has(id)));
+  DQMPage.register(id, (OWN_RENDERER[id] || function (n) {
+    return histPanel(n, TWO_D.has(id));
+  })(PANELS[id]));
 });
 
 DQMPage.register("noise_by_channel", noiseMaps(NOISE));

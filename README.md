@@ -35,7 +35,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy, hits per event, noise as three strip-by-layer maps, baseline as eight per-layer trends against time, and amplitude by channel behind a per-tile toggle |
+| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise as three more strip-by-layer maps, baseline as eight per-layer trends against time, and amplitude by channel behind a per-tile toggle |
 | **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event; the layer hit rate waits on a counting equipment |
 | **Trends** | Is the detector's response holding still? | analyzer | persistence draws behind its toggle; the average waveform is proposed, and energy-against-amplitude and the two-track rate want a calibration and track finding |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
@@ -232,9 +232,22 @@ docstring lists the rest of what the data will not support.
 
 `pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
 hits per event, baseline, noise and amplitude by channel on the Channels tab,
-and persistence on Trends -- each fetching one histogram and handing it to mplot
-through `BRPC.display()`. Baseline is the exception to the one-tile-one-plot
-shape: it reads its series and draws it as *eight* plots, baseline against time
+and persistence on Trends. Three of those hand a histogram straight to mplot
+through `BRPC.display()`; the other three are the exceptions to the
+one-tile-one-plot shape, and two of them are not mplot at all.
+
+**Occupancy and noise are drawn as the target**, on a grid of one `div` per
+channel placed by strip and layer -- `ATARGeom.heatGrid()`, shared between them
+so that a column is the same strip on both tiles. Occupancy is still a
+histogram over `dqm::histogram`; what changed is only how it is drawn, and the
+argument is that its question is "where". Against the global channel a beam
+spot arrives as four disconnected clumps of bars, because that axis is
+`fe_board * 64 + channel` and not a position. Divs rather than an mplot
+colormap because a cell has states a colour scale cannot carry -- a measured
+zero is not the bottom of a ramp -- and because 256 of them is nothing beside
+the 26316 rectangles the colormaps here are toggled off to avoid.
+
+Baseline is the third exception: it reads its series and draws it as *eight* plots, baseline against time
 over a fixed 60 s window with a line per channel, one panel per ATAR layer
 flowing four to a row, under a key to the strip colour. Hovering a point names
 the channel, and a short ranking under the block names the channels furthest
@@ -366,7 +379,8 @@ drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
 So Channels is its amplitude colormap and nothing else, and the count is for a
 freshly opened tab, before anything is toggled on -- each `Show plot` takes one
 off. What moves with the analyzer is whether the four tiles that draw on open --
-occupancy, hits per event, the noise maps and the baseline trends -- show a
+the occupancy map, hits per event, the noise maps and the baseline trends --
+show a
 plot or a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`
 is the one thing that would move these: with no name to try, a drawing tile
 falls back to an empty-why and `$W` goes up.)
