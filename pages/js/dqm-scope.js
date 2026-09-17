@@ -63,99 +63,22 @@ const STORE = "dqm-scope-settings";
 //: the page says so rather than silently dropping any.
 const BUSY_OVERLAY = 8;
 
-//: Channel -> layer, read from /Equipment/SAMPIC/Settings once at load.
+//: The ATAR channel map, or null while it is being read and if it is not there.
 //:
-//: null until loadChannelMap() has answered, and it stays null when the
-//: settings are not there -- which is the honest state for a file whose
-//: frontend never wrote them. The page then draws one panel, as it always did.
+//: Read once per page load by dqm-atar-geom.js and shared with the Channels
+//: tab, which builds the same eight-panel block for baselines. It stays null
+//: when the settings are not there -- which is the honest state for a file
+//: whose frontend never wrote them. The page then draws one panel, as it
+//: always did.
 let layerMap = null;
 
-/**
- * Which layer each readout channel is in, or null if the ODB does not say.
- *
- * Two things are needed and BOTH have to come from the ODB: the channel ids
- * themselves, and the geometry that encoded them. A pim1 pixel id becomes
- * (layer, strip) only under the base and the stride it was made with, so
- * guessing the stride gives the wrong layer and the wrong strip while looking
- * entirely plausible -- 56 of 256 channels move if 48 is assumed where the
- * file used 46. There is no default here for that reason: no geometry in the
- * ODB means no layer view, and the panel says so.
- */
-async function loadChannelMap() {
-  const base = "/Equipment/SAMPIC/Settings";
-  let v;
-  try {
-    v = await DQM.getODB([
-      `${base}/Channel map channel id`,
-      `${base}/Channel map detector`,
-      `${base}/Atar pixel id base`,
-      `${base}/Atar strips per layer`,
-      `${base}/Atar n layers`,
-      `${base}/Atar first layer orientation`,
-    ]);
-  } catch (e) {
-    return null;
-  }
-  const [ids, detectors, pixelBase, stride, nLayers, firstOrientation] = v || [];
-  if (!Array.isArray(ids) || !ids.length) return null;
-  if (!Number.isFinite(Number(pixelBase)) || !(Number(stride) > 0)) return null;
+//: This page's two questions of the map. They take the hit rather than a bare
+//: channel number, which is what every call site here has.
+function layerOf(hit) { return ATARGeom.layerOf(layerMap, hit.global_channel); }
+function stripOf(hit) { return ATARGeom.stripOf(layerMap, hit.global_channel); }
 
-  const byChannel = new Map();
-  const stripOfChannel = new Map();
-  const layers = new Set();
-  ids.forEach(function (id, i) {
-    // Only channels the map calls ATAR have a layer; anything else is on the
-    // same digitiser but is not a strip.
-    const det = Array.isArray(detectors) ? detectors[i] : "atar";
-    if (det && String(det).toLowerCase() !== "atar") return;
-    const index = Number(id) - Number(pixelBase);
-    if (!(index >= 0)) return;
-    const layer = Math.floor(index / Number(stride));
-    if (Number(nLayers) > 0 && layer >= Number(nLayers)) return;
-    byChannel.set(i, layer);
-    // The strip's position across the layer. Same decode as the layer, the
-    // other half of the divmod.
-    stripOfChannel.set(i, index % Number(stride));
-    layers.add(layer);
-  });
-  if (!byChannel.size) return null;
-  const allStrips = Array.from(stripOfChannel.values());
-  return { byChannel: byChannel, stripOf: stripOfChannel,
-           stripLo: Math.min.apply(null, allStrips),
-           stripHi: Math.max.apply(null, allStrips),
-           layers: Array.from(layers).sort((a, b) => a - b),
-           firstOrientation: typeof firstOrientation === "string" ? firstOrientation : null,
-           source: `${base} (${byChannel.size} channels, ${layers.size} layers)` };
-}
-
-/**
- * The strip orientation of a layer, or null if the ODB does not say.
- *
- * Layers alternate, so the orientation follows the parity of the layer number
- * once the first one is known -- which is why splitting the panels by parity
- * is the same thing as grouping them by orientation. Read rather than assumed:
- * a target built the other way round would put every label on the wrong column.
- */
-function orientationOf(map, layer) {
-  if (!map || !map.firstOrientation) return null;
-  const first = String(map.firstOrientation).toLowerCase();
-  const other = first === "vertical" ? "horizontal" : "vertical";
-  return layer % 2 === 0 ? first : other;
-}
-
-//: The layer a hit belongs to, or null when the map does not cover it.
-function layerOf(hit) {
-  if (!layerMap) return null;
-  const l = layerMap.byChannel.get(hit.global_channel);
-  return l === undefined ? null : l;
-}
-
-//: The hit's strip position across its layer, or null if the map cannot say.
-function stripOf(hit) {
-  if (!layerMap || !layerMap.stripOf) return null;
-  const sIdx = layerMap.stripOf.get(hit.global_channel);
-  return sIdx === undefined ? null : sIdx;
-}
+const orientationOf = ATARGeom.orientationOf;
+const loadChannelMap = ATARGeom.load;
 
 // ---------------------------------------------------------------------------
 // atar_raw_waveforms -- the traces
@@ -279,33 +202,13 @@ function buildLayerPanels(body, firstPlot, map) {
   }
 
   state.graphs = [];
-  const host = el("div", { id: "scope-layer-panels" });
+  // The two-column-by-parity host, which with eight layers is four rows. Built
+  // in dqm-atar-geom.js because the baseline tiles on the Channels tab are
+  // read in the same block, and two files laying out the target by hand is two
+  // files to disagree about which column is which coordinate.
+  const host = el("div", { class: "dqm-layer-grid", id: "scope-layer-panels" });
   body.insertBefore(host, firstPlot);
-
-  // Two columns, even layers left and odd layers right. Layers alternate
-  // orientation, so that is the same thing as putting each strip direction in
-  // its own column -- a track crossing the target is read down one column for
-  // one coordinate and down the other for the other, instead of zig-zagging
-  // between orientations the way a single stack does.
-  //
-  // Even first, which puts the vertical strips -- the x coordinate -- on the
-  // left, because the event display below reads charge against x on the left
-  // and charge against y on the right. Two sections on one page disagreeing
-  // about which coordinate is which side is a way to misread a track that
-  // costs nothing to avoid.
-  const columns = new Map();
-  [["even", 0], ["odd", 1]].forEach(function (pair) {
-    const parity = pair[1];
-    const col = el("div", { class: "dqm-layer-col", id: `scope-col-${pair[0]}` });
-    // The layers actually present with this parity, so the heading describes
-    // the column rather than asserting a geometry nothing confirmed.
-    const mine = map.layers.filter((L) => L % 2 === parity);
-    const orient = mine.length ? orientationOf(map, mine[0]) : null;
-    col.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
-      orient ? `${orient} strips — ${pair[0]} layers` : `${pair[0]} layers`));
-    host.appendChild(col);
-    columns.set(parity, col);
-  });
+  const columns = ATARGeom.layerColumns(host, map, "scope");
 
   map.layers.forEach(function (layer) {
     const col = columns.get(layer % 2);
@@ -579,51 +482,12 @@ function draw() {
   drawChargeDisplay();
 }
 
-//: matplotlib's tab10. Used for a channel the map cannot place: with no strip
-//: there is no position to encode, so a categorical palette that separates
-//: neighbours is the right answer there.
-const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-                 "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
-function colourFor(ch) { return PALETTE[ch % PALETTE.length]; }
-
-//: viridis, at tenths. Perceptually uniform and colourblind-safe, so equal
-//: steps along the strip axis look like equal steps of colour and the order is
-//: readable without a key.
-const VIRIDIS = ["#440154", "#482878", "#3e4a89", "#31688e", "#26828e",
-                 "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#d8e219",
-                 "#fde725"];
-
-//: Stop short of the pale end. viridis finishes at #fde725, which is a 1px
-//: yellow line on a white plot with grey gridlines -- ordered, and invisible.
-//: 0.85 ends around a yellow-green that still reads.
-const RAMP_TOP = 0.85;
-
-function lerpHex(a, b, t) {
-  const p = (h, i) => parseInt(h.substr(1 + 2 * i, 2), 16);
-  const c = (i) => Math.round(p(a, i) + (p(b, i) - p(a, i)) * t)
-    .toString(16).padStart(2, "0");
-  return `#${c(0)}${c(1)}${c(2)}`;
-}
-
-/**
- * Where this strip sits across its layer, as a colour.
- *
- * A ramp rather than a categorical palette because position is what this is
- * for: strip 3 and strip 28 should look far apart at a glance, and two
- * neighbouring strips should look like neighbours. The cost is the other way
- * round from tab10 -- a track crossing two adjacent strips draws two similar
- * lines -- so the legend still names the strip, which is what tells them apart.
- *
- * `lo`/`hi` are the instrumented window taken from the channel map itself, so
- * the ramp spans the strips that exist rather than a guessed 0..45.
- */
-function stripColour(strip, lo, hi) {
-  const span = (hi > lo) ? (hi - lo) : 1;
-  const t = Math.min(1, Math.max(0, (strip - lo) / span)) * RAMP_TOP;
-  const x = t * (VIRIDIS.length - 1);
-  const i = Math.min(VIRIDIS.length - 2, Math.floor(x));
-  return lerpHex(VIRIDIS[i], VIRIDIS[i + 1], x - i);
-}
+//: The strip-position ramp and the fallback palette both live in
+//: dqm-atar-geom.js, because the Channels tab's baseline tiles colour their
+//: lines by the same strip position and the two views have to agree: a strip
+//: that is teal in the waveform above is teal in the baseline beside it.
+const stripColour = ATARGeom.stripColour;
+const colourFor = ATARGeom.colourFor;
 
 // ---------------------------------------------------------------------------
 // Status
@@ -1197,8 +1061,15 @@ function save() {
 // rather than only across the strips one fixture event happens to light -- the
 // first attempt at testing it did exactly that, and passed with the ramp taken
 // out, because every hit in that event was on strip 0.
+//
+// Re-exported rather than defined here since the ramp moved to
+// dqm-atar-geom.js: what the test is pinning is that *this page's* traces are
+// coloured by strip position, and it should keep failing if this file stops
+// reaching for it.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { stripColour, colourFor, VIRIDIS, RAMP_TOP, PALETTE };
+  module.exports = { stripColour, colourFor,
+                     VIRIDIS: ATARGeom.VIRIDIS, RAMP_TOP: ATARGeom.RAMP_TOP,
+                     PALETTE: ATARGeom.PALETTE };
 }
 
 })();

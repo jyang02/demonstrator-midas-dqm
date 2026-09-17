@@ -8,10 +8,12 @@
 // adds is the one page-shaped fact: which plot belongs in which tile.
 //
 // Four of the six draw when their tab opens: occupancy and hits per event, both
-// 1D and a few hundred bins, and the baseline and noise scatters. The other two
-// are colormaps and start off, each with a Show plot toggle in its own tile --
-// see TWO_D below, which carries the reasoning. Off is a real off: no fetch, no
-// draw, no timer.
+// 1D and a few hundred bins, the noise scatter, and the baseline block -- which
+// is not one plot but eight, one per ATAR layer, two columns by strip
+// orientation and so four rows, laid out the way the waveforms on the Scope tab
+// are. The other two are colormaps and start off, each with a Show plot toggle
+// in its own tile -- see TWO_D below, which carries the reasoning. Off is a
+// real off: no fetch, no draw, no timer.
 //
 // Nothing here knows which tab it is on, and it must not: a renderer claims a
 // panel id, and where that panel sits is the spec's business. The Channels tab
@@ -50,26 +52,34 @@ const PANELS = {
 
 //: Panel id -> the recent-value series the analyzer publishes for it.
 //:
-//: These two are not histograms and are fetched over dqm::series, not
+//: These are not histograms and are fetched over dqm::series, not
 //: dqm::histogram. They were colormaps of everything since the run started;
-//: they are now the last N values on each channel, drawn as a scatter. The
-//: argument for the change is in RecentByChannel in sampic_plugin.py and it is
-//: about the question rather than the cost: "is this channel sitting where it
-//: should" is about now, and a sum over the run both fails to answer it and
-//: hides a channel that has walked inside a column carrying every value it
-//: ever had.
+//: they are now the last N values on each channel. The argument for the change
+//: is in RecentByChannel in sampic_plugin.py and it is about the question
+//: rather than the cost: "is this channel sitting where it should" is about
+//: now, and a sum over the run both fails to answer it and hides a channel
+//: that has walked inside a column carrying every value it ever had.
 //:
 //: The cost is the happy part. A few thousand markers instead of 26316
-//: rectangles is what lets these two draw on open while the remaining
-//: colormaps stay behind their toggle.
+//: rectangles is what lets these draw on open while the remaining colormaps
+//: stay behind their toggle.
 //:
 //: Not in /DQM/ATAR/Histograms, deliberately: they are not histograms, the
 //: analyzer does not list them in dqm::list, and probeAnalyzer would report
-//: them as missing. seriesPanel says whether its own series arrived.
+//: them as missing. Each renderer says whether its own series arrived.
+//:
+//: Baseline is not in here any more. It reads the same series and draws it
+//: against time rather than against channel -- see BASELINE below -- because
+//: "has this channel walked" is a question about the last minute and not about
+//: the spread of a column. Noise keeps the scatter: what is asked of it is
+//: which channel is louder than its neighbours, which is a comparison across
+//: the channel axis and reads best with that axis on the plot.
 const SERIES = {
-  baseline_by_channel: "sampic/baseline_by_channel",
   noise_by_channel:    "sampic/noise_by_channel",
 };
+
+//: The baseline series, drawn by baselineTrend() rather than seriesPanel().
+const BASELINE = "sampic/baseline_by_channel";
 
 //: The panels whose plot is a colormap. These are off when the page opens, and
 //: each carries its own toggle.
@@ -527,6 +537,318 @@ function seriesPanel(name) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// baseline_by_channel -- baseline against time, a line per channel, a panel
+// per ATAR layer
+// ---------------------------------------------------------------------------
+
+//: The x span to draw before anything has arrived, in seconds.
+//:
+//: A plot whose only points are at t=0 has a zero-width x axis, and mplot
+//: draws that as a blank frame. Sixty seconds is not a claim about the data --
+//: it is the empty axis a shifter reads as "nothing yet" rather than as
+//: "broken".
+const BASELINE_EMPTY_SPAN_S = 60;
+
+/**
+ * Baseline against time: one line per channel, one panel per ATAR layer.
+ *
+ * Two changes from the scatter this used to be, and they are the same change.
+ *
+ * The **axis** is time, not channel. A baseline that has walked is a walk --
+ * it has a direction and a moment it started -- and channel-against-value can
+ * only ever show it as a column that has become taller, which is also what a
+ * channel that got noisier looks like. Against time the two separate on sight:
+ * a walk slopes and noise fattens. The series already carries the age of every
+ * point, so this needs nothing from the analyzer that was not already on the
+ * wire.
+ *
+ * The **panels** are the target. 256 lines on one plot is a mat, and the
+ * question underneath "which channel has walked" is nearly always "is it one
+ * channel or is it a layer" -- a bias that has sagged takes a whole layer with
+ * it. So the layers are eight panels in the two-column block the waveforms on
+ * the Scope tab use, which puts one strip orientation down each column and
+ * makes the whole target four rows tall. A shifter comparing a baseline with
+ * the waveform that produced it moves their eye between two grids of the same
+ * shape.
+ *
+ * What it does not have is a legend: 32 lines per panel would be a key taller
+ * than the plot. The colour carries the strip position instead, on the same
+ * viridis ramp the waveforms use, so a line's place across its layer is
+ * readable without one and a channel is the same colour in both views.
+ *
+ * The window is short and the tile says so. This is the analyzer's ring --
+ * the last `depth` values on each channel, ten by default -- so the axis
+ * reaches back as far as those go and no further, which on a quiet channel is
+ * minutes and on a busy one is seconds. Trending a baseline across a whole run
+ * is a different tile and wants MIDAS history, not this ring.
+ */
+function baselineTrend(name) {
+  return function (ctx) {
+    const client = String(ctx.cfg["Analyzer Client"] || "").trim();
+    if (!client) {
+      blocked(ctx.body,
+        `No analyzer client is named in ${DQM.CONFIG_ROOT}/Analyzer Client, so `
+        + `this panel does not know whom to ask for ${name}.`,
+        ctx.panel, `${DQM.CONFIG_ROOT}/Analyzer Client`);
+      return;
+    }
+
+    const points = el("span", {}, "—");
+    const depth = el("span", {}, "—");
+    const oldest = el("span", { class: "dqm-chip" }, "");
+    ctx.body.appendChild(el("div", { class: "dqm-strip" },
+      chip("series", el("code", {}, name)),
+      chip("points", points), chip("per channel", depth), oldest));
+
+    const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
+    const geoNote = el("div", { class: "dqm-note" }, "Reading the channel map…");
+    ctx.body.appendChild(note);
+    ctx.body.appendChild(geoNote);
+
+    // The eight-panel block, and below it the panel for anything the map does
+    // not place. That one is a real panel and not a silent drop: a channel on
+    // this digitiser that is not an ATAR strip still has a baseline worth
+    // watching. It is hidden until such a channel turns up -- and it is also
+    // the only panel when there is no geometry at all.
+    const host = el("div", { class: "dqm-layer-grid", id: "baseline-layer-panels" });
+    const soloHead = el("div", { class: "dqm-subhead", id: "baseline-unmapped-head" },
+      "Channels the map does not place");
+    const solo = el("div", { class: "dqm-plot", id: "baseline-plot-all" });
+    ctx.body.appendChild(host);
+    ctx.body.appendChild(soloHead);
+    ctx.body.appendChild(solo);
+    // Both hidden until there is something to say: before the first reply the
+    // page does not yet know whether there is any geometry, and an empty
+    // "channels the map does not place" heading under a tile that has not
+    // drawn is a fault report about nothing.
+    soloHead.hidden = true;
+    solo.hidden = true;
+
+    let map = null;
+    let panels = null;          // [{ layer, graph, div, used }]
+    let byLayer = null;         // layer (or null) -> that entry
+    let unit = "";
+    let drawn = false;
+
+    //: One graph, built the way every plot on these pages is: no wheel zoom,
+    //: no stats box, and the axis titles set here because the data assignment
+    //: below never goes through setData().
+    function graphIn(div, title) {
+      const g = new MPlotGraph(div, {
+        title: { text: title },
+        stats: { show: false },
+        // See the docstring: 32 lines is a key taller than the plot, and the
+        // colour ramp is what names the line instead.
+        legend: { show: false },
+        // Off for the reason every plot on these pages has it off: mplot
+        // cancels the wheel inside the axis window and the page cannot then be
+        // scrolled past the tile.
+        mouseWheelZoom: false,
+        xAxis: { title: { text: "seconds ago (0 = now)" } },
+        yAxis: { title: { text: unit } },
+        plot: [],
+      });
+      div.mpg = g;
+      g.resize();
+      return g;
+    }
+
+    function build() {
+      panels = [];
+      if (map) {
+        const columns = ATARGeom.layerColumns(host, map, "baseline");
+        map.layers.forEach(function (layer) {
+          const orient = ATARGeom.orientationOf(map, layer);
+          const div = el("div", { class: "dqm-plot", id: `baseline-plot-L${layer}` });
+          const col = columns.get(layer % 2);
+          col.appendChild(el("div", { class: "dqm-subhead" },
+            orient ? `Layer ${layer} (${orient})` : `Layer ${layer}`));
+          col.appendChild(div);
+          panels.push({ layer: layer, graph: graphIn(div, ""), div: div, used: false });
+        });
+        geoNote.textContent = `One panel per ATAR layer, in two columns by strip `
+          + `orientation, from ${map.source}. Lines are coloured by strip `
+          + `position, on the ramp the waveforms on the Scope tab use, so a `
+          + `channel is the same colour in both views.`;
+      } else {
+        // No geometry is not no plot. Every channel on one panel still answers
+        // "has anything walked", and it says why it cannot answer "which
+        // layer" rather than inventing one.
+        // Yellow, not red: nothing is broken. The analyzer is answering and
+        // the baselines are on the plot -- what is missing is the geometry to
+        // sort them by, which is a caveat on the view and not a fault.
+        geoNote.className = "dqm-diagnosis yellow";
+        geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}, so this `
+          + `is one panel with every channel on it rather than eight by layer. `
+          + `The layer of a channel cannot be guessed: the pixel id decodes only `
+          + `under the base and the stride it was made with.`;
+      }
+      // Last, and hidden while the map places everything -- but shown from the
+      // start when it is the only panel there is, so the tile is not blank
+      // while the first reply is in flight.
+      if (!map) solo.hidden = false;
+      panels.push({ layer: null, graph: graphIn(solo, ""), div: solo, used: false });
+      byLayer = new Map(panels.map((p) => [p.layer, p]));
+    }
+
+    /**
+     * The series as one polyline per channel, oldest point first.
+     *
+     * x is the *negative* age, so now is 0 at the right and the past runs off
+     * to the left, which is the direction a trend is read in. points() already
+     * emits each channel oldest-first, but this sorts anyway: relying on the
+     * emission order of another process to keep a polyline from zigzagging is
+     * a coupling that would break silently and look like noise.
+     */
+    function polylines(s) {
+      const byChannel = new Map();
+      for (let i = 0; i < s.channel.length; i++) {
+        const ch = s.channel[i];
+        let pts = byChannel.get(ch);
+        if (!pts) { pts = []; byChannel.set(ch, pts); }
+        pts.push([-(s.age[i] || 0), s.value[i]]);
+      }
+      byChannel.forEach(function (pts) { pts.sort((a, b) => a[0] - b[0]); });
+      return byChannel;
+    }
+
+    async function tick() {
+      const s = await BRPC.json(client, "dqm::series", name);
+      if (!s || !s.channel) throw new Error(`empty reply for ${name}`);
+      if (!panels) { unit = s.unit || ""; build(); }
+
+      const lines = polylines(s);
+
+      // Rebuilt rather than updated in place, for the reason the Scope page
+      // gives: mplot's deletePlot splices findPlot()'s return with no check, so
+      // removing a label that is not there deletes the wrong trace.
+      panels.forEach(function (p) { p.graph.param.plot = []; p.used = false; });
+      const fallback = byLayer.get(null);
+
+      let xLo = 0, yLo = 0, yHi = 0, any = false;
+      lines.forEach(function (pts, ch) {
+        // Its layer's panel, or the unmapped one. Never dropped.
+        const panel = byLayer.get(ATARGeom.layerOf(map, ch)) || fallback;
+        const strip = ATARGeom.stripOf(map, ch);
+        const colour = strip === null ? ATARGeom.colourFor(ch)
+          : ATARGeom.stripColour(strip, map.stripLo, map.stripHi);
+        const xs = pts.map((q) => q[0]);
+        const ys = pts.map((q) => q[1]);
+        panel.graph.param.plot.push({
+          label: strip === null ? `ch ${ch}` : `ch ${ch} (strip ${strip})`,
+          type: "scatter",
+          line: { draw: true, width: 1, color: colour },
+          // Markers as well as the line, which the waveform traces do not do.
+          // A channel that was hit once in the window is a single point, and
+          // with a line alone it would be drawn as nothing at all -- a channel
+          // silently missing from a plot that exists to show channels.
+          //
+          // lineColor/fillColor, not color: mplot's drawMarker() reads exactly
+          // those two and silently ignores anything else, so a `color` here
+          // draws every marker in the default dark and the strip encoding goes
+          // missing with no error. And size is a diameter -- it draws
+          // arc(x, y, size / 2) -- so 4 is the 2px dot this wants, small
+          // enough not to swallow a ten-point line and large enough that a
+          // channel hit once is still on the plot.
+          marker: { draw: true, size: 4, style: "circle",
+                    lineColor: colour, fillColor: colour },
+          xData: xs, yData: ys,
+        });
+        panel.used = true;
+        for (let i = 0; i < ys.length; i++) {
+          if (!any) { yLo = yHi = ys[i]; any = true; }
+          if (ys[i] < yLo) yLo = ys[i];
+          if (ys[i] > yHi) yHi = ys[i];
+          if (xs[i] < xLo) xLo = xs[i];
+        }
+      });
+
+      // Padded so lines do not sit on the frame, and never zero-height: a set
+      // of channels sitting at exactly one voltage is a real and good outcome,
+      // and it must not collapse the axis onto itself.
+      const pad = (yHi - yLo) * 0.05 || Math.abs(yHi) * 0.01 || 0.01;
+      yLo -= pad;
+      yHi += pad;
+      if (!(xLo < 0)) xLo = -BASELINE_EMPTY_SPAN_S;
+
+      // One x range and one y range across all eight, deliberately. Per-panel
+      // autoscaling would give a layer sitting flat at 0.74 V the same picture
+      // as one that has walked 40 mV, each filling its own frame, and the
+      // comparison down the column -- which is the whole reason these are
+      // eight panels of one plot rather than eight plots -- would be a
+      // comparison of two different rulers.
+      panels.forEach(function (p) {
+        if (!p.used) {
+          // A layer with nothing this cycle keeps its panel and its axes. An
+          // empty panel in a block of eight says "nothing here"; a vanishing
+          // one makes the layers renumber themselves between refreshes.
+          p.graph.param.plot.push({
+            label: p.layer === null ? "no unmapped channels"
+                                    : `layer ${p.layer}: nothing yet`,
+            type: "scatter",
+            line: { draw: true, width: 1 }, marker: { draw: false },
+            xData: [], yData: [],
+          });
+        }
+        // Every plot, including the empty placeholder. mplot fills xMin/xMax/
+        // yMin/yMax in setData() and its ODB path and nowhere else, and draw()
+        // paints the background and returns the moment plot[0].xMin is
+        // undefined -- a white panel, no axes, no exception and graph.error
+        // still null. calcMinMax() then lifts these into the graph-level
+        // bounds drawYAxis() reads.
+        p.graph.param.plot.forEach(function (pl) {
+          pl.xMin = xLo; pl.xMax = 0;
+          pl.yMin = yLo; pl.yMax = yHi;
+        });
+        p.graph.calcMinMax();
+        p.graph.redraw();
+      });
+
+      // The unmapped panel appears only when something needs it, and is the
+      // only panel when there is no geometry at all.
+      const showSolo = !map || fallback.used;
+      solo.hidden = !showSolo;
+      soloHead.hidden = !(showSolo && map);
+
+      drawn = true;
+      points.textContent = String(s.channel.length);
+      depth.textContent = String(s.depth);
+      // The honest part. Channels are hit at very different rates, so the
+      // oldest point on the plot can be far older than the newest, and a tile
+      // that did not say so would be quietly claiming these are one window.
+      const maxAge = s.age && s.age.length ? Math.max.apply(null, s.age) : 0;
+      oldest.textContent = `reaches back ${Math.round(maxAge)} s`;
+      oldest.title = `Every channel's last ${s.depth} values, so a channel that `
+        + `is rarely hit reaches further back than a busy one. This is the age `
+        + `of the oldest point drawn, and the left-hand end of the axis.`;
+      note.className = "dqm-note";
+      note.textContent = s.channel.length
+        ? ""
+        : "The analyzer is answering and has recorded nothing on any channel "
+          + "yet: either no events have arrived, or nothing is filling it.";
+    }
+
+    const updater = new BRPC.AutoUpdater(tick, REFRESH_MS);
+    updater.onError = function (e) {
+      note.className = "dqm-diagnosis red";
+      note.textContent = drawn
+        ? `"${client}" stopped answering for ${name} (${e.message}). The panels `
+          + "above are the last ones it sent, and are no longer being updated."
+        : `Nothing answered as "${client}" for ${name} (${e.message}). That is `
+          + "the analyzer this panel is waiting for.";
+    };
+
+    // The map first, then the loop: build() needs to know whether there are
+    // eight panels or one before the first reply arrives. A map that is not
+    // there resolves to null and the loop starts just the same.
+    ATARGeom.load().then(function (m) {
+      map = m;
+      updater.start();
+    });
+  };
+}
+
 Object.keys(PANELS).forEach(function (id) {
   DQMPage.register(id, histPanel(PANELS[id], TWO_D.has(id)));
 });
@@ -535,10 +857,13 @@ Object.keys(SERIES).forEach(function (id) {
   DQMPage.register(id, seriesPanel(SERIES[id]));
 });
 
+DQMPage.register("baseline_by_channel", baselineTrend(BASELINE));
+
 // Reachable for the tests, which assert this agrees with config_defaults.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PANELS, SERIES, TWO_D, refreshFor, cadenceText,
-                    REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS };
+  module.exports = { PANELS, SERIES, BASELINE, TWO_D, refreshFor, cadenceText,
+                    REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS,
+                    BASELINE_EMPTY_SPAN_S };
 }
 
 })();

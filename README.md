@@ -35,7 +35,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy, hits per event, baseline and noise as recent-value scatters, and amplitude by channel behind a per-tile toggle |
+| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy, hits per event, noise as a recent-value scatter, baseline as eight per-layer trends against time, and amplitude by channel behind a per-tile toggle |
 | **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event; the layer hit rate waits on a counting equipment |
 | **Trends** | Is the detector's response holding still? | analyzer | persistence draws behind its toggle; the average waveform is proposed, and energy-against-amplitude and the two-track rate want a calibration and track finding |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
@@ -233,7 +233,17 @@ docstring lists the rest of what the data will not support.
 `pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
 hits per event, baseline, noise and amplitude by channel on the Channels tab,
 and persistence on Trends -- each fetching one histogram and handing it to mplot
-through `BRPC.display()`. The mapping from panel to histogram is the one
+through `BRPC.display()`. Baseline is the exception to the one-tile-one-plot
+shape: it reads its series and draws it as *eight* plots, baseline against time
+with a line per channel, one panel per ATAR layer in the two-column block the
+waveforms on Scope use. Against time a channel that has walked is a slope,
+where against channel it is only a wider column and indistinguishable from one
+that got noisier -- and eight panels answer the question underneath, which is
+nearly always "is it one channel or is it a layer". The map it lays them out by
+comes from `pages/js/dqm-atar-geom.js`, read once from
+`/Equipment/SAMPIC/Settings` and shared with the Scope tab; with no geometry
+there it is one panel with every channel on it and a line saying which key it
+wanted. The mapping from panel to histogram is the one
 page-shaped fact in that file; nothing there knows which tab it is on, and it
 must not: a renderer claims a panel id, and where that panel sits is the spec's
 business.
@@ -322,8 +332,8 @@ drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
 So Channels is its amplitude colormap and nothing else, and the count is for a
 freshly opened tab, before anything is toggled on -- each `Show plot` takes one
 off. What moves with the analyzer is whether the four tiles that draw on open --
-occupancy, hits per event, and the baseline and noise scatters -- show a plot or
-a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`
+occupancy, hits per event, the noise scatter and the baseline trends -- show a
+plot or a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`
 is the one thing that would move these: with no name to try, a drawing tile
 falls back to an empty-why and `$W` goes up.)
 

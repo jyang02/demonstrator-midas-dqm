@@ -186,7 +186,7 @@ With the replay and the analyzer both up:
 
 | tab | on DEMODQM |
 |---|---|
-| `#tab=atar_channels` | **live**: hits per event, occupancy, and baseline and noise by channel as recent-value scatters (the last 10 per channel, over `dqm::series`); amplitude by channel is a colormap and opens off -- `Show plot` on the tile draws it |
+| `#tab=atar_channels` | **live**: hits per event, occupancy, noise by channel as a recent-value scatter, and baseline as eight per-layer panels of baseline against time, a line per channel (both series are the last 10 per channel, over `dqm::series`, so the baseline axis reaches back only as far as that ring); amplitude by channel is a colormap and opens off -- `Show plot` on the tile draws it |
 | `#tab=atar_scope` | **live** from the replay: waveforms by layer, the two hit-position maps, the charge-depth profile with the event total, and the raw dump. The layer hit rate stays blocked |
 | `#tab=atar_trends` | persistence is **live** behind its `Show plot`; the other three stay blocked -- they want a calibration and track finding nobody has written |
 | `#tab=atar_proposed` | eight panels, each naming what it waits for. This tab is the backlog and is expected to be empty of plots |

@@ -62,13 +62,13 @@
         {
           "id": "baseline_by_channel",
           "kind": "panel",
-          "label": "Baseline vs. channel (last N events)",
-          "question": "Is every channel sitting where it should?",
-          "why": "a channel whose baseline has walked is the cheapest fault to find",
+          "label": "Baseline vs. time, a line per channel and a panel per layer",
+          "question": "Is every channel sitting where it should, and is it staying there?",
+          "why": "against time a baseline that has walked is a slope, where against channel it is only a wider column and indistinguishable from one that got noisier",
           "status": "ready",
           "evidence": "replay",
           "size": "l",
-          "sketch": "hist2d",
+          "sketch": "trend",
           "targets": {},
           "proposed_figure": "dqm-baseline-by-channel",
           "cites": [

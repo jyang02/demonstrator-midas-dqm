@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       75055287d46ea69611ed14be2370085068f6048969b002eeb86c6e818b2c70be
+// sha256:       acf9896664be852ab5f76d444672164ca62eb19bc533c0bf679973d9b666bb56
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "75055287d46ea69611ed14be2370085068f6048969b002eeb86c6e818b2c70be";
+const SPEC_SHA256 = "acf9896664be852ab5f76d444672164ca62eb19bc533c0bf679973d9b666bb56";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -36,12 +36,12 @@ const PAGES = [
           {
             "id": "baseline_by_channel",
             "kind": "panel",
-            "label": "Baseline vs. channel (last N events)",
-            "question": "Is every channel sitting where it should?",
-            "why": "a channel whose baseline has walked is the cheapest fault to find",
+            "label": "Baseline vs. time, a line per channel and a panel per layer",
+            "question": "Is every channel sitting where it should, and is it staying there?",
+            "why": "against time a baseline that has walked is a slope, where against channel it is only a wider column and indistinguishable from one that got noisier",
             "status": "ready",
             "size": "l",
-            "sketch": "hist2d"
+            "sketch": "trend"
           },
           {
             "id": "noise_by_channel",

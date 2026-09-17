@@ -53,19 +53,30 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 /* One panel per ATAR layer: eight of these stack, and at the full 480px the
    layer holding the hits is four screens below the one you are looking at.
    The point of a per-layer view is seeing the whole target at once, so they
-   are short enough that all eight fit. */
-/* Two columns: even layers left, odd right. Layers alternate orientation, so
+   are short enough that all eight fit.
+
+   Two columns: even layers left, odd right. Layers alternate orientation, so
    each column holds one strip direction -- even first puts the vertical strips,
    the x coordinate, on the left, which is the order the energy display below
    uses. Collapses to one column when there is not room for two side by side
-   rather than squeezing both. */
-#scope-layer-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-@media (max-width: 1500px) { #scope-layer-panels { grid-template-columns: 1fr; } }
-#scope-layer-panels .dqm-scope-plot { height: 170px; margin-top: 2px; min-width: 0; }
-#scope-layer-panels .dqm-col-head {
+   rather than squeezing both.
+
+   A class rather than the one id it started as: the waveforms on the Scope tab
+   and the baselines on the Channels tab are both read as this block, and a
+   shifter comparing the two should be moving their eye between two grids of
+   the same shape rather than translating between two layouts. Both hosts keep
+   their own id for the tests and for anything that wants one of them. */
+.dqm-layer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+@media (max-width: 1500px) { .dqm-layer-grid { grid-template-columns: 1fr; } }
+/* Both plot classes: the Scope tab's traces come in as .dqm-scope-plot and the
+   Channels tab's baselines as the ordinary .dqm-plot, and inside this block
+   what either of them is is a cell of the target. */
+.dqm-layer-grid .dqm-scope-plot,
+.dqm-layer-grid .dqm-plot { height: 170px; width: auto; margin-top: 2px; min-width: 0; }
+.dqm-layer-grid .dqm-col-head {
   font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px;
 }
-#scope-layer-panels .dqm-subhead    { margin-top: 8px; font-weight: 600; }
+.dqm-layer-grid .dqm-subhead    { margin-top: 8px; font-weight: 600; }
 .dqm-subhead { font-size: 0.9em; color: #333; }
 .dqm-strip label.dqm-chip { cursor: pointer; }
 .dqm-strip label.dqm-chip input { margin-right: 5px; }

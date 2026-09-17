@@ -117,6 +117,8 @@ ENTRIES: tuple[Entry, ...] = (
           "the panel renderer, the tab bar, the page boot and the renderer registry"),
     Entry("dqm-adbanks.js", "js/dqm-adbanks.js", False,
           "SAMPIC AD00/AT00 bank decoding in the browser"),
+    Entry("dqm-atar-geom.js", "js/dqm-atar-geom.js", False,
+          "the ATAR channel map, shared by the Channels and Scope tabs"),
     Entry("dqm-scope.js", "js/dqm-scope.js", False, "the live panels on the Scope tab"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
     Entry("dqm-hists.js", "js/dqm-hists.js", False,

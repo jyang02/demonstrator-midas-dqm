@@ -1,0 +1,225 @@
+//
+// dqm-atar-geom.js -- the ATAR channel map, read once from the ODB, and the
+// colours that encode it.
+//
+// This exists because two files now need the same geometry and neither of the
+// files that could have held it is allowed to: dqm-common.js is generic by
+// contract -- nothing in it knows about any equipment, bank or channel -- and
+// dqm-adbanks.js decodes bytes and states that it never touches the network or
+// the DOM. Reading /Equipment/SAMPIC/Settings is both detector-specific and a
+// network call, so it belongs in neither, and putting it in one page file and
+// importing it from the other gets the dependency backwards: dqm-hists.js is
+// the analyzer half and dqm-scope.js the raw-event half, and neither is
+// beneath the other.
+//
+// What it holds is exactly what both halves need to draw the target rather
+// than a list of channels: which layer and which strip a readout channel is,
+// which way that layer's strips run, the two-column-by-parity panel host that
+// turns eight layers into four rows, and the colour ramp that puts a strip's
+// position into the line without a legend.
+//
+// The load is cached in a promise, so the Channels tab and the Scope tab share
+// one read of the ODB however they are opened. The cache is the answer, not
+// the success: a map that came back null because the frontend never wrote the
+// geometry is cached too, and that is correct -- it will not have appeared by
+// the time the second tab asks.
+//
+
+(function (root) {
+"use strict";
+
+const SETTINGS = "/Equipment/SAMPIC/Settings";
+
+//: The in-flight or completed load. One per page load; see the header.
+let pending = null;
+
+/**
+ * Which layer each readout channel is in, or null if the ODB does not say.
+ *
+ * Two things are needed and BOTH have to come from the ODB: the channel ids
+ * themselves, and the geometry that encoded them. A pim1 pixel id becomes
+ * (layer, strip) only under the base and the stride it was made with, so
+ * guessing the stride gives the wrong layer and the wrong strip while looking
+ * entirely plausible -- 56 of 256 channels move if 48 is assumed where the
+ * file used 46. There is no default here for that reason: no geometry in the
+ * ODB means no layer view, and the panels that wanted one say so.
+ */
+async function read() {
+  let v;
+  try {
+    v = await DQM.getODB([
+      `${SETTINGS}/Channel map channel id`,
+      `${SETTINGS}/Channel map detector`,
+      `${SETTINGS}/Atar pixel id base`,
+      `${SETTINGS}/Atar strips per layer`,
+      `${SETTINGS}/Atar n layers`,
+      `${SETTINGS}/Atar first layer orientation`,
+    ]);
+  } catch (e) {
+    return null;
+  }
+  const [ids, detectors, pixelBase, stride, nLayers, firstOrientation] = v || [];
+  if (!Array.isArray(ids) || !ids.length) return null;
+  if (!Number.isFinite(Number(pixelBase)) || !(Number(stride) > 0)) return null;
+
+  const byChannel = new Map();
+  const stripOfChannel = new Map();
+  const layers = new Set();
+  ids.forEach(function (id, i) {
+    // Only channels the map calls ATAR have a layer; anything else is on the
+    // same digitiser but is not a strip.
+    const det = Array.isArray(detectors) ? detectors[i] : "atar";
+    if (det && String(det).toLowerCase() !== "atar") return;
+    const index = Number(id) - Number(pixelBase);
+    if (!(index >= 0)) return;
+    const layer = Math.floor(index / Number(stride));
+    if (Number(nLayers) > 0 && layer >= Number(nLayers)) return;
+    byChannel.set(i, layer);
+    // The strip's position across the layer. Same decode as the layer, the
+    // other half of the divmod.
+    stripOfChannel.set(i, index % Number(stride));
+    layers.add(layer);
+  });
+  if (!byChannel.size) return null;
+  const allStrips = Array.from(stripOfChannel.values());
+  return { byChannel: byChannel, stripOf: stripOfChannel,
+           stripLo: Math.min.apply(null, allStrips),
+           stripHi: Math.max.apply(null, allStrips),
+           layers: Array.from(layers).sort((a, b) => a - b),
+           firstOrientation: typeof firstOrientation === "string" ? firstOrientation : null,
+           source: `${SETTINGS} (${byChannel.size} channels, ${layers.size} layers)` };
+}
+
+/** The channel map, read at most once per page load. Never throws. */
+function load() {
+  if (!pending) pending = read();
+  return pending;
+}
+
+/**
+ * The strip orientation of a layer, or null if the ODB does not say.
+ *
+ * Layers alternate, so the orientation follows the parity of the layer number
+ * once the first one is known -- which is why splitting the panels by parity
+ * is the same thing as grouping them by orientation. Read rather than assumed:
+ * a target built the other way round would put every label on the wrong column.
+ */
+function orientationOf(map, layer) {
+  if (!map || !map.firstOrientation) return null;
+  const first = String(map.firstOrientation).toLowerCase();
+  const other = first === "vertical" ? "horizontal" : "vertical";
+  return layer % 2 === 0 ? first : other;
+}
+
+/** The layer a channel is in, or null when the map does not cover it. */
+function layerOf(map, channel) {
+  if (!map) return null;
+  const l = map.byChannel.get(channel);
+  return l === undefined ? null : l;
+}
+
+/** The channel's strip position across its layer, or null if unmapped. */
+function stripOf(map, channel) {
+  if (!map || !map.stripOf) return null;
+  const s = map.stripOf.get(channel);
+  return s === undefined ? null : s;
+}
+
+/**
+ * The two-column panel host, even layers left and odd right.
+ *
+ * Layers alternate orientation, so that is the same thing as putting each
+ * strip direction in its own column -- a track crossing the target is read
+ * down one column for one coordinate and down the other for the other,
+ * instead of zig-zagging between orientations the way a single stack does.
+ * With the demonstrator's eight layers it is also what makes the block four
+ * rows deep, which is the shape both the waveforms and the baselines are read
+ * in.
+ *
+ * Even first, which puts the vertical strips -- the x coordinate -- on the
+ * left, because the energy display on the Scope tab reads charge against x on
+ * the left and charge against y on the right. Two sections of one page
+ * disagreeing about which coordinate is which side is a way to misread a track
+ * that costs nothing to avoid.
+ *
+ * Returns a Map of parity (0 even, 1 odd) to the column element, so the caller
+ * appends a layer's tile with `columns.get(layer % 2)`.
+ */
+function layerColumns(host, map, idPrefix) {
+  const columns = new Map();
+  [["even", 0], ["odd", 1]].forEach(function (pair) {
+    const parity = pair[1];
+    const col = DQMPage.el("div",
+      { class: "dqm-layer-col", id: `${idPrefix}-col-${pair[0]}` });
+    // The layers actually present with this parity, so the heading describes
+    // the column rather than asserting a geometry nothing confirmed.
+    const mine = map.layers.filter((L) => L % 2 === parity);
+    const orient = mine.length ? orientationOf(map, mine[0]) : null;
+    col.appendChild(DQMPage.el("div", { class: "dqm-subhead dqm-col-head" },
+      orient ? `${orient} strips — ${pair[0]} layers` : `${pair[0]} layers`));
+    host.appendChild(col);
+    columns.set(parity, col);
+  });
+  return columns;
+}
+
+//: matplotlib's tab10. Used for a channel the map cannot place: with no strip
+//: there is no position to encode, so a categorical palette that separates
+//: neighbours is the right answer there.
+const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                 "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
+function colourFor(ch) { return PALETTE[ch % PALETTE.length]; }
+
+//: viridis, at tenths. Perceptually uniform and colourblind-safe, so equal
+//: steps along the strip axis look like equal steps of colour and the order is
+//: readable without a key.
+const VIRIDIS = ["#440154", "#482878", "#3e4a89", "#31688e", "#26828e",
+                 "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#d8e219",
+                 "#fde725"];
+
+//: Stop short of the pale end. viridis finishes at #fde725, which is a 1px
+//: yellow line on a white plot with grey gridlines -- ordered, and invisible.
+//: 0.85 ends around a yellow-green that still reads.
+const RAMP_TOP = 0.85;
+
+function lerpHex(a, b, t) {
+  const p = (h, i) => parseInt(h.substr(1 + 2 * i, 2), 16);
+  const c = (i) => Math.round(p(a, i) + (p(b, i) - p(a, i)) * t)
+    .toString(16).padStart(2, "0");
+  return `#${c(0)}${c(1)}${c(2)}`;
+}
+
+/**
+ * Where this strip sits across its layer, as a colour.
+ *
+ * A ramp rather than a categorical palette because position is what this is
+ * for: strip 3 and strip 28 should look far apart at a glance, and two
+ * neighbouring strips should look like neighbours. The cost is the other way
+ * round from tab10 -- a track crossing two adjacent strips draws two similar
+ * lines -- so where there is room the legend still names the strip, which is
+ * what tells them apart.
+ *
+ * `lo`/`hi` are the instrumented window taken from the channel map itself, so
+ * the ramp spans the strips that exist rather than a guessed 0..45.
+ */
+function stripColour(strip, lo, hi) {
+  const span = (hi > lo) ? (hi - lo) : 1;
+  const t = Math.min(1, Math.max(0, (strip - lo) / span)) * RAMP_TOP;
+  const x = t * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(x));
+  return lerpHex(VIRIDIS[i], VIRIDIS[i + 1], x - i);
+}
+
+// Exports are what somebody reads, and nothing more. In particular there is no
+// reset(): the cache lives in this script's evaluation, so a browser clears it
+// by loading the page and the node tests clear it by loading this file through
+// runPage's `also` rather than require(), which is how they get a fresh map
+// per boot. A cache that needed clearing by hand would be one more thing to
+// forget in the test that mattered.
+const ATARGeom = { SETTINGS, load, orientationOf, layerOf, stripOf,
+                   layerColumns, colourFor, stripColour,
+                   PALETTE, VIRIDIS, RAMP_TOP };
+root.ATARGeom = ATARGeom;
+if (typeof module !== "undefined" && module.exports) module.exports = ATARGeom;
+
+})(typeof globalThis !== "undefined" ? globalThis : this);

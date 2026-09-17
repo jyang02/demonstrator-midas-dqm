@@ -17,6 +17,11 @@ const JS = path.join(__dirname, "..", "..", "pages", "js");
 globalThis.DQM = require(path.join(JS, "dqm-common.js"));
 globalThis.DQMPanels = require(path.join(JS, "dqm-panels.js"));
 globalThis.ADBanks = require(path.join(JS, "dqm-adbanks.js"));
+// dqm-scope.js reaches for ATARGeom at load, so the direct require() further
+// down needs it here. Page boots get their own copy through `also` below --
+// which matters, because the map is cached per script evaluation and a boot
+// with geometry must not hand its map to the next boot without.
+globalThis.ATARGeom = require(path.join(JS, "dqm-atar-geom.js"));
 
 const REAL = JSON.parse(fs.readFileSync(path.join(__dirname, "ad-event-fixture.json"), "utf8"));
 const DEMO = JSON.parse(
@@ -95,7 +100,9 @@ async function boot(events, cfgOverrides, odbExtra) {
     bm_receive_event: () => (queue.length
       ? Promise.resolve({ __event: asEvent(queue.shift()) })
       : Promise.resolve({ result: { status: 209 } })),
-  }, { boot: "ATAR", also: [path.join(JS, "dqm-adbanks.js"), path.join(JS, "dqm-scope.js")] });
+  }, { boot: "ATAR", also: [path.join(JS, "dqm-atar-geom.js"),
+                           path.join(JS, "dqm-adbanks.js"),
+                           path.join(JS, "dqm-scope.js")] });
 
   await page.load();
   // These panels are on the Scope tab, and a tab is built the first time it is
