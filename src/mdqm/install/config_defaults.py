@@ -97,7 +97,8 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Histograms": ["sampic/occupancy",
                        "sampic/hits_per_event",
                        "sampic/persistence",
-                       "sampic/amplitude_by_channel"],
+                       "sampic/amplitude_by_channel",
+                       "sampic/charge_vs_amplitude"],
     },
 
     # A page that declares nothing here gets no subtree at all. A /DQM key

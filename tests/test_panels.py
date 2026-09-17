@@ -42,13 +42,13 @@ needs_spec = pytest.mark.skipif(
 #: a guess: if a panel is added or dropped in the spec the drift test says so, and
 #: this number is what makes the change visible in a suite run without the
 #: spec file. It counts what the catalogue ships, not what the spec holds: the
-#: spec's 50 include the 26-element retired group, which has no page here.
+#: spec's 50 include the 27-element retired group, which has no page here.
 #:
 #: 44 until the six pages became one ATAR page with four tabs. Rates and
 #: SlowControls were retired whole, the panels that were not about ATAR went
 #: with them, and three were added: atar_hit_positions (split back out of
 #: event_display_energy), average_waveform and amplitude_recent_by_channel.
-EXPECTED_ELEMENTS = 24
+EXPECTED_ELEMENTS = 23
 
 #: The tabs the ATAR page ships, in order. Kept here rather than derived from
 #: the catalogue, so that a tab vanishing from the spec is a failure here rather

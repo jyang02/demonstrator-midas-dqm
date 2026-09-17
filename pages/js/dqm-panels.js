@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       7e88ec51a91a8369660ef40c7d60d5b10e7d7b4826a1f3a2d929e0caf9d84932
+// sha256:       796826860d7c49f0002fbddb997129777b170943ab52632bb2aafceb50c41526
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "7e88ec51a91a8369660ef40c7d60d5b10e7d7b4826a1f3a2d929e0caf9d84932";
+const SPEC_SHA256 = "796826860d7c49f0002fbddb997129777b170943ab52632bb2aafceb50c41526";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -151,16 +151,6 @@ const PAGES = [
         "question": "Is the detector's response holding still?",
         "elements": [
           {
-            "id": "average_waveform",
-            "kind": "panel",
-            "label": "Average waveform",
-            "question": "Has the pulse shape moved since the run started?",
-            "why": "a mean that walks is a gain drift or a timing shift, and it is the cheapest trend the accumulated waveform data can carry",
-            "status": "proposed",
-            "size": "l",
-            "sketch": "hist1d"
-          },
-          {
             "id": "pulse_persistence",
             "kind": "panel",
             "label": "Persistence waveform",
@@ -173,13 +163,12 @@ const PAGES = [
           {
             "id": "energy_vs_amplitude",
             "kind": "panel",
-            "label": "Energy against amplitude",
-            "question": "Does the energy scale hold across the range?",
-            "why": "it is the tile that says whether the calibration is linear where it matters",
-            "status": "blocked",
+            "label": "Charge against amplitude",
+            "question": "Does the pulse response hold its shape across the range?",
+            "why": "two measures of the same pulse that stop agreeing somewhere is where a saturating channel or a changed shaping shows up, and neither the amplitude spectrum nor the persistence plot can show it alone",
+            "status": "ready",
             "size": "l",
-            "sketch": "hist2d",
-            "blocked_by": "Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f."
+            "sketch": "hist2d"
           },
           {
             "id": "n_tracks_in_window",

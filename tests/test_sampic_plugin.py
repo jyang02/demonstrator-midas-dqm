@@ -86,6 +86,7 @@ def test_rejects_an_event_without_one(plugin):
 def test_publishes_exactly_its_documented_set(plugin):
     assert plugin.store.names() == sorted([
         f"{PREFIX}/amplitude", f"{PREFIX}/amplitude_by_channel",
+        f"{PREFIX}/charge_vs_amplitude",
         f"{PREFIX}/hits_per_event", f"{PREFIX}/occupancy",
         f"{PREFIX}/persistence"])
 
@@ -300,6 +301,80 @@ def test_channel_axis_is_board_local_index_when_there_is_one_board():
     assert _global_channel({"fe_board_index": 3, "channel": 5}) == 197.0
 
 
+# -- charge against amplitude ------------------------------------------------
+
+def _only_cell(h):
+    """(x value, y value) at the centre of the one filled cell.
+
+    counts is (ny + 2, nx + 2) with the under- and overflow cells at the ends,
+    so a bin index i on an axis is column/row i, and its centre sits half a bin
+    above the low edge of that bin.
+    """
+    filled = np.argwhere(h.counts)
+    assert len(filled) == 1, f"expected one filled cell, got {len(filled)}"
+    iy, ix = (int(v) for v in filled[0])
+
+    def centre(axis, i):
+        return axis.lo + (i - 0.5) * (axis.hi - axis.lo) / axis.n
+    return centre(h.x, ix), centre(h.y, iy)
+
+
+def test_charge_is_the_integral_the_scope_tab_takes(plugin):
+    """The same number, by the same rule, as pages/js/dqm-scope.js chargeOf().
+
+    Two tiles showing "charge" from one definition held in two languages is a
+    thing that drifts silently, and the failure is a Trends plot that disagrees
+    with the event in front of you. So the arithmetic is pinned here rather
+    than left to agree by inspection: baseline minus sample, summed over the
+    whole record, no window and no sample period applied.
+    """
+    baseline, amplitude = 0.75, -0.30
+    hit = _hit(amplitude=amplitude, baseline=baseline)
+    plugin.process(_event([hit]))
+
+    h = plugin.store.get(f"{PREFIX}/charge_vs_amplitude")
+    assert h.entries == 1
+    # Six samples of the dip, each `amplitude` below the baseline; the rest sit
+    # exactly on it and contribute nothing.
+    expected = sum(baseline - v for v in hit["waveform"])
+    assert expected == pytest.approx(-6 * amplitude)
+
+    x, y = _only_cell(h)
+    xw = (h.x.hi - h.x.lo) / h.x.n
+    yw = (h.y.hi - h.y.lo) / h.y.n
+    # Amplitude on x and charge on y, which is also the assertion that catches
+    # the axes being handed to fill() the wrong way round -- they are far
+    # enough apart here that a swap cannot land inside a bin.
+    assert x == pytest.approx(amplitude, abs=xw)
+    assert y == pytest.approx(expected, abs=yw)
+
+
+def test_charge_is_signed_because_polarity_is_not_ours_to_choose(plugin):
+    """A positive-going pulse integrates negative, and must still be counted.
+
+    Not hypothetical: run 108 integrates negative on 99.5% of its hits and a
+    demonstrator recording positive on nearly all of its, which is why the axis
+    is symmetric rather than fitted to whichever file was open at the time.
+    """
+    # +0.15 and not +0.30: the amplitude axis stops at +0.2, and a hit off the
+    # end of it would prove the overflow works rather than anything about sign.
+    hit = _hit(amplitude=+0.15, baseline=0.40)
+    plugin.process(_event([hit]))
+
+    h = plugin.store.get(f"{PREFIX}/charge_vs_amplitude")
+    assert h.entries == 1
+    assert plugin.status()["edge_fraction"][f"{PREFIX}/charge_vs_amplitude"] == 0.0, \
+        "a positive-going pulse fell off the axis"
+    _, y = _only_cell(h)
+    assert y < 0, "a pulse the other way round was not counted below zero"
+
+
+def test_a_hit_with_no_waveform_has_no_charge(plugin):
+    """Nothing to integrate is not a charge of zero, which is a real value."""
+    plugin.process(_event([_hit(waveform=[])]))
+    assert plugin.store.get(f"{PREFIX}/charge_vs_amplitude").entries == 0
+
+
 # -- rebinning ---------------------------------------------------------------
 
 def test_reconfigure_rebuilds_and_therefore_resets(plugin):
@@ -310,7 +385,7 @@ def test_reconfigure_rebuilds_and_therefore_resets(plugin):
     occ = plugin.store.get(f"{PREFIX}/occupancy")
     assert occ.x.n == 64
     assert occ.entries == 0, "a histogram with different bins is a different histogram"
-    assert len(plugin.store) == 5, "rebuilt in place, not added alongside"
+    assert len(plugin.store) == 6, "rebuilt in place, not added alongside"
     assert plugin.recent[f"{PREFIX}/baseline_by_channel"].nch == 64
     assert plugin.recent[f"{PREFIX}/baseline_by_channel"].entries == 0, \
         "a ring of a different width is a different ring"

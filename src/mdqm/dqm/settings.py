@@ -63,6 +63,15 @@ BINNING: dict[str, object] = {
     "baseline max": 1.0,
     "noise bins": 200,
     "noise max V": 0.05,
+    #: The waveform's integral, baseline-subtracted, per hit. Signed and
+    #: symmetric: the sign is the pulse polarity, and it is not the same in
+    #: every file -- a demonstrator recording integrates almost entirely
+    #: positive and run 108 almost entirely negative, so an axis fitted to
+    #: either puts the other in the underflow. -6..+6 leaves 0.00% of
+    #: demonstrator hits and 0.13% of run 108's outside, measured.
+    "charge bins": 120,
+    "charge min": -6.0,
+    "charge max": 6.0,
     #: 0..31 in run 108; two SAMPIC chips at 16 channels each.
     "channels": 32,
     "max hits per event": 16,

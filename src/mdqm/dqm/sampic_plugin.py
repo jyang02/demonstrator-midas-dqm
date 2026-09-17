@@ -278,6 +278,23 @@ class SampicPlugin:
         "baseline max": 1.0,
         "noise bins": 100,
         "noise max V": 0.05,
+        # Charge is the waveform's integral, baseline-subtracted: see the fill
+        # in process(). Signed, and symmetric on purpose -- the sign is the
+        # pulse polarity and it is not the same in every file we have. A
+        # demonstrator recording integrates almost entirely positive (median
+        # +1.08 V*samples over 40002 hits of demo20010) and run 108 almost
+        # entirely negative (median -0.82 over 30004), so an axis fitted to
+        # either one puts the other in the underflow.
+        #
+        # -6..+6 leaves 0.00% of demonstrator hits and 0.13% of run 108's
+        # outside, measured rather than guessed. The remaining 0.13% is run
+        # 108's long negative tail, which reaches -14.8; widening to -16 would
+        # catch it and spend two thirds of the axis on a thousandth of the
+        # data. edge_fraction() reports what falls off either end, which is the
+        # number to look at before changing these.
+        "charge bins": 120,
+        "charge min": -6.0,
+        "charge max": 6.0,
         # 4 FE boards x 64 board-local channels. The axis is the GLOBAL index
         # fe_board_index * CHANNELS_PER_BOARD + channel (see _global_channels),
         # so it must span every board, not one board's worth.
@@ -345,7 +362,7 @@ class SampicPlugin:
     def _names(self) -> list[str]:
         return [f"{PREFIX}/{n}" for n in
                 ("occupancy", "hits_per_event", "amplitude", "amplitude_by_channel",
-                 "persistence")]
+                 "charge_vs_amplitude", "persistence")]
 
     def _build(self) -> None:
         b = self.binning
@@ -377,6 +394,27 @@ class SampicPlugin:
                  float(b["amplitude max"]), "amplitude (V)"),
             "Amplitude by channel",
             cap=int(self.window["amplitude by channel events"])))
+        # Charge against amplitude, both per hit. The question is whether the
+        # response holds its shape across the range: a straight band says the
+        # two measures of the same pulse agree, and a band that bends or forks
+        # says they stop agreeing somewhere, which is where to look.
+        #
+        # Charge and not energy, which is the honest name. This is the integral
+        # of a voltage over time -- a charge up to the input impedance, and a
+        # deposited energy only after a per-channel calibration that does not
+        # exist and has no owner. The panel that asked for energy keeps its id
+        # and gets this instead; an axis labelled MeV that nothing calibrated
+        # is the kind of plot that is believed for a month.
+        #
+        # Amplitude on x, sharing the axis the two amplitude tiles already use,
+        # so the three are read against one scale.
+        self.store.add(Hist2D(
+            f"{PREFIX}/charge_vs_amplitude",
+            Axis(int(b["amplitude bins"]), float(b["amplitude min"]),
+                 float(b["amplitude max"]), "amplitude (V)"),
+            Axis(int(b["charge bins"]), float(b["charge min"]),
+                 float(b["charge max"]), "charge (V*samples)"),
+            "Charge against amplitude"))
         self.store.add(RollingHist2D(
             f"{PREFIX}/persistence",
             Axis(int(b["persistence x bins"]), 0.0, float(sampic.AD_MAX_SAMPLES), "sample"),
@@ -485,6 +523,7 @@ class SampicPlugin:
         self.recent[f"{PREFIX}/baseline_by_channel"].add(channels, baselines, now)
 
         noise_ch, noise = [], []
+        charge_a, charge_q = [], []
         persist_x, persist_y = [], []
         for hit in hits:
             # decode_hit truncates to data_size, so this is the real record and
@@ -495,6 +534,15 @@ class SampicPlugin:
                 continue
             persist_x.append(np.arange(wave.size, dtype=np.float64))
             persist_y.append(wave)
+            # The same integral the Scope tab's charge display takes, and
+            # deliberately the same one: baseline-subtracted so the baseline's
+            # own area does not dominate, over the whole record because there
+            # is no integration window defined anywhere and picking one here
+            # would be inventing a calibration constant inside a histogram.
+            # decode_hit has already truncated to data_size, so this is the
+            # real record and never the zero padding.
+            charge_a.append(float(hit["amplitude"]))
+            charge_q.append(float(np.sum(float(hit["baseline"]) - wave)))
             if wave.size >= PRESAMPLES:
                 noise_ch.append(_global_channel(hit))
                 noise.append(float(np.std(wave[:PRESAMPLES])))
@@ -502,6 +550,8 @@ class SampicPlugin:
         if persist_x:
             self.store.get(f"{PREFIX}/persistence").fill(
                 np.concatenate(persist_x), np.concatenate(persist_y))
+        if charge_q:
+            self.store.get(f"{PREFIX}/charge_vs_amplitude").fill(charge_a, charge_q)
         if noise:
             self.recent[f"{PREFIX}/noise_by_channel"].add(noise_ch, noise, now)
         self._advance_window()

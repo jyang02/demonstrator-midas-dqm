@@ -257,24 +257,6 @@
       "page": "ATAR",
       "elements": [
         {
-          "id": "average_waveform",
-          "kind": "panel",
-          "label": "Average waveform",
-          "question": "Has the pulse shape moved since the run started?",
-          "why": "a mean that walks is a gain drift or a timing shift, and it is the cheapest trend the accumulated waveform data can carry",
-          "status": "proposed",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-average-waveform",
-          "_note": "Proposed in the tab conversion, and in tension with a decision already recorded here: pulse_persistence exists *because* a mean waveform hides the two-population case -- a track that stops early averaged with one that punches through draws a curve neither of them has. So this panel is only readable beside the persistence plot, which is why the two sit together on this tab. If it is ever built it wants the persistence plot's column means, not a separate accumulation.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
           "id": "pulse_persistence",
           "kind": "panel",
           "label": "Persistence waveform",
@@ -295,12 +277,11 @@
         {
           "id": "energy_vs_amplitude",
           "kind": "panel",
-          "label": "Energy against amplitude",
-          "question": "Does the energy scale hold across the range?",
-          "why": "it is the tile that says whether the calibration is linear where it matters",
-          "status": "blocked",
-          "blocked_by": "Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f.",
-          "evidence": "none",
+          "label": "Charge against amplitude",
+          "question": "Does the pulse response hold its shape across the range?",
+          "why": "two measures of the same pulse that stop agreeing somewhere is where a saturating channel or a changed shaping shows up, and neither the amplitude spectrum nor the persistence plot can show it alone",
+          "status": "ready",
+          "evidence": "replay",
           "size": "l",
           "sketch": "hist2d",
           "targets": {},
@@ -308,7 +289,8 @@
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
+          ],
+          "_note": "Built 2026-09-17 as CHARGE against amplitude, not energy. The blocker recorded against it was an energy calibration with an owner -- 'nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it' -- and that is still true and still nobody's. What unblocks the tile is dropping the claim rather than waiting for the constant: the waveform's integral is a charge up to the input impedance and needs no calibration at all, and the axis says V*samples so nothing here is believed to be MeV. The id keeps the word energy because the wishlist (3f) and docs/frontend_requirements.md cite it under that name. Its original blocked_by, for the day somebody owns the calibration: Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f."
         },
         {
           "id": "n_tracks_in_window",
@@ -1079,6 +1061,24 @@
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md",
             "docs/dqm_inventory.md"
+          ]
+        },
+        {
+          "id": "average_waveform",
+          "kind": "panel",
+          "label": "Average waveform",
+          "question": "Has the pulse shape moved since the run started?",
+          "why": "a mean that walks is a gain drift or a timing shift, and it is the cheapest trend the accumulated waveform data can carry",
+          "status": "dropped",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-average-waveform",
+          "_note": "Dropped 2026-09-17 at the owner's request. It was never built, and the tension its own note recorded is the reason it should not be: pulse_persistence exists *because* a mean waveform hides the two-population case -- a track that stops early averaged with one that punches through draws a curve neither of them has -- so this panel would have sat on the same tab quietly contradicting the tile beside it. If the question ever comes back it wants the persistence plot's column means rather than an accumulation of its own, which is a feature of that tile and not a panel.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
           ]
         }
       ]

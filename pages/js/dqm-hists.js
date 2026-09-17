@@ -49,6 +49,10 @@ const PANELS = {
   hits_per_event:       "sampic/hits_per_event",
   pulse_persistence:    "sampic/persistence",
   amplitude_by_channel: "sampic/amplitude_by_channel",
+  // Charge, not energy. The panel keeps the id the spec and the wishlist cite;
+  // the quantity is the honest one, because the volts-to-MeV calibration that
+  // would make it an energy does not exist and has no owner.
+  energy_vs_amplitude:  "sampic/charge_vs_amplitude",
 };
 
 //: The recent-value series the noise tile draws, and the two numbers it reads
@@ -138,6 +142,7 @@ const WINDOW_KEY = {
 const TWO_D = new Set([
   "amplitude_by_channel",
   "pulse_persistence",
+  "energy_vs_amplitude",
 ]);
 
 //: How often to re-fetch a small histogram. These are accumulating histograms,

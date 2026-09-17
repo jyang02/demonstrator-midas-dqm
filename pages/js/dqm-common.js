@@ -52,7 +52,8 @@ const DEFAULTS = {
       "sampic/occupancy",
       "sampic/hits_per_event",
       "sampic/persistence",
-      "sampic/amplitude_by_channel"
+      "sampic/amplitude_by_channel",
+      "sampic/charge_vs_amplitude"
     ]
   }
 };
