@@ -559,6 +559,21 @@ test("a channel with no hits is blank, not the darkest end of the ramp", async (
   assert.ok(alive.style.background);
 });
 
+test("the occupancy tile points at the noise maps in the direction they are", async () => {
+  // It said "above" and then moved to the top of the tab. A cross-reference
+  // that survived the tile it points from being reordered is the kind of stale
+  // sentence a reader trusts and should not.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => 100 + ch));
+
+  const tab = page.doc.getElementById("tabpanel-atar_channels");
+  const order = tab.byClass("dqm-panel").map((e) => e.id);
+  const said = textOf(page.doc.getElementById("atar_occupancy"));
+  const below = order.indexOf("noise_by_channel") > order.indexOf("atar_occupancy");
+  assert.match(said, below ? /noise maps below/ : /noise maps above/,
+    `occupancy sits ${below ? "above" : "below"} the noise maps and says the opposite`);
+});
+
 test("the quietest channels are named, and the count of silent ones is said", async () => {
   // The busy end of this map is legible already -- a spot is bright. The quiet
   // end is a field of dark cells in which the one that took nothing looks like

@@ -417,7 +417,7 @@ function histPanel(name, twoD) {
  * map. On the grid it is a spot, and whether it is the spot anybody intended
  * is one look.
  *
- * Read against the noise maps above it, which is why it is the same grid: a
+ * Read against the noise maps below it, which is why it is the same grid: a
  * strip that is dark here and loud there is a different fault from one that is
  * dark in both.
  *
@@ -489,7 +489,7 @@ function occupancyMap(name) {
         mapHost.appendChild(built.grid);
         geoNote.textContent = map
           ? `One cell per channel, placed by strip and layer from ${map.source}. `
-            + `The same grid the noise maps above use, so a column is the same `
+            + `The same grid the noise maps below use, so a column is the same `
             + `strip on both.`
           : "";
         if (!map) {
