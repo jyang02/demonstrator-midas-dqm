@@ -677,6 +677,41 @@ test("one loud channel does not flatten the other 255, and the key says it was c
     "the key does not say what was cut off");
 });
 
+test("the shared scale is fenced on the wider of the two maps, not on the pool", async () => {
+  // Found on the live analyzer, not here: the freshest map came back with 46 of
+  // 256 cells off the top of the scale and 19 distinct colours left, against
+  // 151 on the average beside it.
+  //
+  // The mechanism is arithmetic, not data. A mean over n values is narrower
+  // than a single value by construction, so pooling the two puts the quartiles
+  // inside the average's tight bulk and the fence lands where the freshest
+  // values step straight over it. A shared scale has to cover both
+  // distributions, which means fencing each and taking the wider.
+  // The freshest values run 0.001 to 0.026; the averages sit in a narrow band
+  // in the MIDDLE of that range, which is where averaging actually puts them.
+  // Both pooled quartiles then land inside the narrow band, the pooled IQR
+  // collapses, and the fence drawn from it cuts the freshest map in half.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
+    return k === DEPTH - 1 ? 0.001 + (ch % 64) * 0.0004 : 0.0136;
+  }), sampicSettings());
+
+  const now = page.doc.getElementById("noise-map-now");
+  const over = now.byClass("dqm-heat-over").length;
+  assert.ok(over <= 5,
+    `${over} of 256 freshest cells are off the top of a scale fenced on the `
+    + `averages beside them`);
+
+  // And the point of the shared scale still holds: it is one scale.
+  assert.deepStrictEqual(page.doc.getElementById("noise-map-avg").dqmScale,
+                         now.dqmScale);
+  // The spread survives: a scale that covers the wider map must still separate
+  // its cells, or covering it bought nothing.
+  const colours = new Set(now.byClass("dqm-heat-cell")
+    .filter((c) => c.style.background).map((c) => c.style.background));
+  assert.ok(colours.size > 30,
+    `the freshest map came out in ${colours.size} colours`);
+});
+
 test("a reply out of order still finds the freshest value on a channel", async () => {
   // The analyzer emits oldest-first and says so, but this page decided once
   // already not to rely on another process's emission order. The freshest is

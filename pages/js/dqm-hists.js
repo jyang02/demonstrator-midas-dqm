@@ -856,11 +856,27 @@ function noiseMaps(name) {
       // The sequential scale spans BOTH maps, because they are read against
       // each other: the same colour has to mean the same RMS in the average and
       // in the freshest, or the comparison the stack exists for is not
-      // available. So the quantile is over the union and not over either.
+      // available.
+      //
+      // But the fence is taken from each population separately and the WIDER
+      // one wins, which is not the same as fencing the pool. A mean over n
+      // values is narrower than a single value by construction -- that is what
+      // averaging is -- so the pooled quartiles sit inside the average's tight
+      // bulk, and a fence drawn there is one the freshest values step straight
+      // over. Measured on the live analyzer: 46 of 256 cells off the top of the
+      // scale and 19 distinct colours left on the freshest map, against 151 on
+      // the average. Covering both distributions is what a shared scale has to
+      // mean. The average then occupies the lower part of the ramp and looks
+      // more uniform than the freshest -- which is a true statement about the
+      // data and not an artefact of the drawing.
+      const avgVals = [];
+      const nowVals = [];
       const seqVals = [];
       const diffVals = [];
       const rows = [];
       by.forEach(function (r) {
+        avgVals.push(r.avg);
+        nowVals.push(r.newest);
         seqVals.push(r.avg, r.newest);
         if (r.diff !== null) diffVals.push(Math.abs(r.diff));
         const cell = built.avg.byCh.get(r.ch);
@@ -877,7 +893,9 @@ function noiseMaps(name) {
       // not a clip, and pretending it was would mark cells that are simply the
       // top of a healthy spread.
       const full = span(seqVals);
-      const fence = fenceTop(seqVals);
+      const fa = fenceTop(avgVals);
+      const fn = fenceTop(nowVals);
+      const fence = (fa === null) ? fn : (fn === null ? fa : Math.max(fa, fn));
       const seq = full
         ? { lo: full.lo,
             // >= lo, not > lo: a population sitting at one value has a zero
