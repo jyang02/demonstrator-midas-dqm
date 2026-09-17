@@ -253,6 +253,21 @@ test("channels with nothing inside the window are counted, not quietly dropped",
   assert.ok(g.yMax > g.yMin);
 });
 
+test("one stale channel is one channel, not 1 channels", async () => {
+  // Read off the real page on DEMODQM, where exactly one channel had gone
+  // quiet and the chip said "1 channels older than the window". A shift screen
+  // that cannot count to one is not one anybody trusts at 3am.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH);
+  for (let i = 0; i < s.channel.length; i++) {
+    if (s.channel[i] === 5) s.age[i] += WINDOW_S * 2;
+  }
+  const page = await boot(s, sampicSettings());
+  const tile = page.doc.getElementById("baseline_by_channel");
+  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
+  assert.match(text, /1 channel older than the window/);
+  assert.doesNotMatch(text, /1 channels/);
+});
+
 test("with every channel inside the window the tile says so plainly", async () => {
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
   const tile = page.doc.getElementById("baseline_by_channel");

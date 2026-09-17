@@ -851,16 +851,17 @@ function baselineTrend(name) {
       // the window and it is then drawn nowhere at all. A tile that let those
       // channels simply go missing would be the opposite of what it is for.
       oldest.textContent = outside
-        ? `${outside} channels older than the window`
+        ? `${outside} channel${outside === 1 ? "" : "s"} older than the window`
         : `every channel within ${BASELINE_WINDOW_S} s`;
       // Yellow, not red: a quiet channel is a fact about the beam as often as
       // it is a fault, and this tile cannot tell which.
       oldest.className = outside ? "dqm-chip yellow" : "dqm-chip";
       oldest.title = outside
-        ? `The axis is the last ${BASELINE_WINDOW_S} seconds. These channels `
-          + `have not been hit inside it -- their last ${s.depth} values are all `
-          + `older -- so they have no line on any panel. That is the plot being `
-          + `honest about a quiet channel, not a channel that has gone.`
+        ? `The axis is the last ${BASELINE_WINDOW_S} seconds. ${outside === 1
+            ? "This channel has" : "These channels have"} not been hit inside `
+          + `it -- their last ${s.depth} values are all older -- so they have no `
+          + `line on any panel. That is the plot being honest about a quiet `
+          + `channel, not a channel that has gone.`
         : `The axis is the last ${BASELINE_WINDOW_S} seconds, and every channel `
           + `the analyzer knows about has been hit inside it.`;
       note.className = "dqm-note";
