@@ -1,14 +1,14 @@
 //
-// Every page, rendered against an experiment with nothing in it.
+// The ATAR page, rendered against an experiment with nothing in it.
 //
 // That is not a degenerate case to be covered for completeness -- it is the
-// state these pages will be in for most of their life, and the state they were
-// designed for. Forty-one of forty-four panels are blocked on DAQ work nobody
-// has done, so "the ODB is empty and no analyzer is running" is the normal
-// case, and a page that renders a blank div in it has failed at its whole job.
+// state this page will be in for most of its life, and the state it was
+// designed for. Most of its panels are blocked on DAQ work nobody has done, so
+// "the ODB is empty and no analyzer is running" is the normal case, and a tab
+// that renders a blank div in it has failed at its whole job.
 //
-// One suite parametrised over the pages rather than one file each: they differ
-// only in their catalogue entry, and seven near-identical files would be seven
+// One suite parametrised over the tabs rather than one file each: they differ
+// only in their catalogue entry, and four near-identical files would be four
 // places to forget an assertion.
 //
 // Skipped automatically where node is unavailable; see tests/test_js.py.
@@ -25,14 +25,13 @@ globalThis.DQM = require(path.join(JS, "dqm-common.js"));
 globalThis.DQMPanels = require(path.join(JS, "dqm-panels.js"));
 globalThis.BRPC = require(path.join(JS, "dqm-brpc.js"));
 
-//: Every page the manifest registers. Kept here rather than derived from the
-//: catalogue so that a page silently vanishing from one of them is a failure.
-const PAGES = ["Rates", "Scope", "Channels", "Pulses", "Physics", "SlowControls"];
+//: The page the manifest registers. Kept here rather than derived from the
+//: catalogue so that it silently vanishing from one of them is a failure.
+const PAGE = "ATAR";
 
-//: Which pages load dqm-brpc.js, and therefore probe for an analyzer. The three
-//: mechanism-C pages and no others: a page whose panels wait on a frontend
-//: rather than on an analyzer must not blame the analyzer.
-const PROBES = new Set(["Channels", "Pulses", "Physics"]);
+//: Its tabs, in order, by spec group id. Same reasoning: a tab that disappears
+//: from the spec must fail here rather than quietly render three.
+const TABS = ["atar_channels", "atar_scope", "atar_trends", "atar_proposed"];
 
 //
 // A bare experiment: no /DQM subtree, no equipment, no history, no analyzer.
@@ -57,19 +56,84 @@ function bootPage(name, responses) {
 
 function tiles(page) { return page.root.byClass("dqm-tile"); }
 
+//: Open one tab by clicking its button, the way a shifter does. The first tab
+//: is already open after load(); clicking it again is harmless and keeps every
+//: test below written the same way.
+function openTab(page, group) {
+  const button = page.doc.getElementById(`tab-${group}`);
+  assert.ok(button, `no tab button for ${group}`);
+  button.dispatch("click");
+  return page.doc.getElementById(`tabpanel-${group}`);
+}
+
+function tabEntry(group) {
+  return globalThis.DQMPanels.byPage(PAGE).tabs.find((t) => t.group === group);
+}
+
 function textOf(node) {
   return node.walk ? [...node.walk()].map((e) => e._text || "").join(" ") : String(node);
 }
 
-for (const name of PAGES) {
-  const catalogue = globalThis.DQMPanels.byPage(name);
+// --- the tab bar ------------------------------------------------------------
+
+test("the page has a tab per spec group, in spec order", async () => {
+  const page = bootPage(PAGE);
+  await page.load();
+  const bar = page.root.byClass("dqm-tabbar");
+  assert.strictEqual(bar.length, 1, "expected exactly one tab bar");
+  const labels = page.root.byClass("dqm-tab").map((b) => b.getAttribute("id"));
+  assert.deepStrictEqual(labels, TABS.map((g) => `tab-${g}`));
+});
+
+test("only the open tab is built, and opening another builds it", async () => {
+  const page = bootPage(PAGE);
+  await page.load();
+
+  // Lazily on purpose: mplot sizes a graph from its host div, and a host inside
+  // a display:none tab measures zero, so a plot built while hidden comes back
+  // blank with no error anywhere.
+  const first = tabEntry(TABS[0]).elements.filter((e) => e.kind === "panel");
+  assert.strictEqual(tiles(page).length, first.length,
+    "a tab nobody has opened should not have been built");
+
+  openTab(page, TABS[1]);
+  const second = tabEntry(TABS[1]).elements.filter((e) => e.kind === "panel");
+  assert.strictEqual(tiles(page).length, first.length + second.length,
+    "opening a tab should build it and leave the built one alone");
+});
+
+test("opening a tab twice does not build it twice", async () => {
+  const page = bootPage(PAGE);
+  await page.load();
+  openTab(page, TABS[1]);
+  const after = tiles(page).length;
+  openTab(page, TABS[0]);
+  openTab(page, TABS[1]);
+  assert.strictEqual(tiles(page).length, after,
+    "a rebuilt tab would duplicate every tile and every timer in it");
+});
+
+test("exactly one tab is shown at a time", async () => {
+  const page = bootPage(PAGE);
+  await page.load();
+  openTab(page, TABS[2]);
+  const shown = TABS.filter((g) => page.doc.getElementById(`tabpanel-${g}`).style.display !== "none");
+  assert.deepStrictEqual(shown, [TABS[2]]);
+  const active = page.root.byClass("dqm-tab").filter((b) => b.classList.contains("active"));
+  assert.strictEqual(active.length, 1, "exactly one tab button should be active");
+});
+
+for (const group of TABS) {
+  const catalogue = tabEntry(group);
+  const name = catalogue.name;
 
   test(`${name}: renders every panel with nothing in the ODB`, async () => {
-    const page = bootPage(name);
+    const page = bootPage(PAGE);
     await page.load();
+    const host = openTab(page, group);
 
     const panels = catalogue.elements.filter((e) => e.kind === "panel");
-    assert.strictEqual(tiles(page).length, panels.length,
+    assert.strictEqual(host.byClass("dqm-tile").length, panels.length,
       `expected one tile per panel in the catalogue`);
     for (const p of panels) {
       assert.ok(page.doc.getElementById(p.id), `no tile for ${p.id}`);
@@ -77,18 +141,20 @@ for (const name of PAGES) {
   });
 
   test(`${name}: every panel names the question it answers`, async () => {
-    const page = bootPage(name);
+    const page = bootPage(PAGE);
     await page.load();
-    // One .dqm-tile-q for the page heading, then one per panel that has a
-    // question -- which, per tests/test_panels.py, is all of them.
-    const questions = page.root.byClass("dqm-tile-q");
+    const host = openTab(page, group);
+    // One .dqm-tile-q for the tab's own question, then one per panel that has
+    // a question -- which, per tests/test_panels.py, is all of them.
+    const questions = host.byClass("dqm-tile-q");
     const panels = catalogue.elements.filter((e) => e.kind === "panel");
     assert.strictEqual(questions.length, panels.length + 1);
   });
 
   test(`${name}: every blocked panel carries its own reason`, async () => {
-    const page = bootPage(name);
+    const page = bootPage(PAGE);
     await page.load();
+    openTab(page, group);
 
     for (const p of catalogue.elements) {
       if (p.kind !== "panel" || p.status !== "blocked") continue;
@@ -103,57 +169,77 @@ for (const name of PAGES) {
   });
 
   test(`${name}: says what would have been drawn, without drawing it`, async () => {
-    const page = bootPage(name);
+    const page = bootPage(PAGE);
     await page.load();
+    const host = openTab(page, group);
     for (const p of catalogue.elements) {
       if (p.kind !== "panel" || !p.sketch || p.sketch === "none") continue;
       const tile = page.doc.getElementById(p.id);
       assert.ok(tile.byClass("dqm-empty-what").length === 1, `${p.id} has no shape sentence`);
     }
-    // No plot is constructed on a page where no panel can draw one.
-    assert.strictEqual(page.root.byClass("mjshistory").length, 0);
+    // No history plot is constructed on a tab where no panel can draw one.
+    assert.strictEqual(host.byClass("mjshistory").length, 0);
   });
 
   test(`${name}: raises no dialog at the operator`, async () => {
     globalThis.__alerts = [];
-    const page = bootPage(name);
+    const page = bootPage(PAGE);
     await page.load();
+    openTab(page, group);
     assert.deepStrictEqual(globalThis.__alerts, [],
       "an empty experiment must not produce a modal");
   });
 
   test(`${name}: is neither blank nor an error page`, async () => {
-    const page = bootPage(name);
+    const page = bootPage(PAGE);
     await page.load();
+    const host = openTab(page, group);
     assert.strictEqual(page.root.byClass("dqm-error").length, 0);
-    assert.ok(tiles(page).length > 0, "the page rendered nothing at all");
+    assert.ok(host.byClass("dqm-tile").length > 0, "the tab rendered nothing at all");
     assert.ok(page.root.byClass("dqm-footnote").length > 0);
   });
 
-  test(`${name}: boots under its own name and sets the refresh interval`, async () => {
-    const page = bootPage(name);
+  test(`${name}: the tab counts its own panels that are not drawing`, async () => {
+    const page = bootPage(PAGE);
     await page.load();
-    const init = page.calls.find((c) => c.method === "mhttpd_init");
-    assert.ok(init, "mhttpd_init was never called");
-    assert.strictEqual(init.params[0], name);
-    assert.ok(page.calls.some((c) => c.method === "refresh" && c.params === 1000));
-  });
-
-  test(`${name}: says it is using built-in defaults when /DQM is absent`, async () => {
-    const page = bootPage(name);
-    await page.load();
-    const feet = page.root.byClass("dqm-footnote").map((f) => f.textContent).join(" ");
-    assert.match(feet, /built-in defaults/);
+    const waiting = catalogue.elements.filter((e) => e.status !== "ready").length;
+    const button = page.doc.getElementById(`tab-${group}`);
+    const count = button.byClass("dqm-tabcount");
+    if (!waiting) {
+      assert.strictEqual(count.length, 0, "a tab that draws everything wears no number");
+    } else {
+      assert.strictEqual(count.length, 1);
+      assert.strictEqual(count[0].textContent.trim(), String(waiting));
+    }
   });
 }
+
+// --- the page itself --------------------------------------------------------
+
+test("boots under its own name and sets the refresh interval", async () => {
+  const page = bootPage(PAGE);
+  await page.load();
+  const init = page.calls.find((c) => c.method === "mhttpd_init");
+  assert.ok(init, "mhttpd_init was never called");
+  assert.strictEqual(init.params[0], PAGE);
+  assert.ok(page.calls.some((c) => c.method === "refresh" && c.params === 1000));
+});
+
+test("says it is using built-in defaults when /DQM is absent", async () => {
+  const page = bootPage(PAGE);
+  await page.load();
+  const feet = page.root.byClass("dqm-footnote").map((f) => f.textContent).join(" ");
+  assert.match(feet, /built-in defaults/);
+});
 
 // --- the failure paths, which are the same path -----------------------------
 
 test("a renderer that throws still leaves the reason in the panel", async () => {
-  const page = bootPage("Channels");
+  const page = bootPage(PAGE);
   const id = "channel_health";
   globalThis.DQMPage.register(id, () => { throw new Error("boom"); });
   await page.load();
+  openTab(page, "atar_proposed");
 
   const tile = page.doc.getElementById(id);
   const why = tile.byClass("dqm-empty-why");
@@ -163,7 +249,7 @@ test("a renderer that throws still leaves the reason in the panel", async () => 
 });
 
 test("a renderer whose promise rejects still leaves the reason in the panel", async () => {
-  const page = bootPage("Channels");
+  const page = bootPage(PAGE);
   const id = "hits_per_event";
   globalThis.DQMPage.register(id, async () => { throw new Error("late boom"); });
   await page.load();
@@ -184,26 +270,41 @@ test("a page with no catalogue entry says so rather than rendering nothing", asy
 
 // --- the analyzer probe -----------------------------------------------------
 
-test("only the analyzer-backed pages probe for an analyzer", async () => {
-  // The page opts in by loading dqm-brpc.js; nothing else gates it. Assert the
-  // HTML actually matches, because the gate is invisible from the JS side.
+test("the page loads every renderer its tabs need", async () => {
+  // The page opts into the analyzer probe by loading dqm-brpc.js; nothing else
+  // gates it. Assert the HTML actually matches, because the gate is invisible
+  // from the JS side. One page now, so it loads the lot -- a tab is not a
+  // document boundary, and which of them the shifter opens is not something the
+  // <head> can know.
   const fs = require("node:fs");
-  const HTML = path.join(__dirname, "..", "..", "pages");
-  const file = { Rates: "rates", Scope: "scope", Channels: "channels", Pulses: "pulses",
-                 Physics: "physics", SlowControls: "slowcontrols" };
-  for (const name of PAGES) {
-    const text = fs.readFileSync(path.join(HTML, `${file[name]}.html`), "utf8");
-    assert.strictEqual(text.includes("dqm-brpc.js"), PROBES.has(name),
-      `${name} loads dqm-brpc.js when it should${PROBES.has(name) ? "" : " not"}`);
+  const text = fs.readFileSync(
+    path.join(__dirname, "..", "..", "pages", "atar.html"), "utf8");
+  for (const asset of ["dqm-common.js", "dqm-panels.js", "dqm-page.js",
+                       "dqm-brpc.js", "dqm-hists.js", "dqm-adbanks.js",
+                       "dqm-scope.js"]) {
+    assert.ok(text.includes(asset), `atar.html does not load ${asset}`);
   }
 });
 
 test("with no analyzer answering, the panels say which name was tried", async () => {
-  const page = bootPage("Channels");
+  const page = bootPage(PAGE);
   await page.load();
   const probes = page.root.byClass("dqm-probe");
   assert.ok(probes.length > 0, "the probe appended nothing");
   assert.match(probes[0].textContent, /No client answered dqm::list as "mdqm_analyzer"/);
+});
+
+test("a tab opened after the probe answered still carries its footnote", async () => {
+  // The probe runs once, at boot, and most of the boxes it has something to say
+  // about are on tabs nobody has opened yet. Caching the answer is what makes
+  // the footnote the same wherever a shifter starts reading.
+  const page = bootPage(PAGE);
+  await page.load();
+  const before = page.root.byClass("dqm-probe").length;
+  openTab(page, "atar_proposed");
+  const after = page.root.byClass("dqm-probe").length;
+  assert.ok(after > before,
+    "a blocked panel built after the probe answered got no footnote");
 });
 
 test("with an analyzer answering, the panels say what it publishes instead", async () => {
@@ -211,7 +312,7 @@ test("with an analyzer answering, the panels say what it publishes instead", asy
   // dqm-brpc.js's list() decodes a binary reply; stub the decoded layer, which
   // is the data source, rather than the transport.
   globalThis.BRPC.list = async () => ["wd/persistence_ch00", "wd/amplitude_ch00"];
-  const page = bootPage("Channels", responses);
+  const page = bootPage(PAGE, responses);
   await page.load();
 
   const probes = page.root.byClass("dqm-probe");

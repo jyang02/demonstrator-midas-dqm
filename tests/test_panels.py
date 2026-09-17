@@ -42,12 +42,18 @@ needs_spec = pytest.mark.skipif(
 #: a guess: if a panel is added or dropped in the spec the drift test says so, and
 #: this number is what makes the change visible in a suite run without the
 #: spec file. It counts what the catalogue ships, not what the spec holds: the
-#: spec's 47 include the three-element generic group, which has no page here.
+#: spec's 50 include the 25-element retired group, which has no page here.
 #:
-#: 45 until event_display_position was dropped: position and energy were two
-#: views of one event display, and the energy one carries the position on its
-#: x axis, so the pair became event_display_energy alone.
-EXPECTED_ELEMENTS = 44
+#: 44 until the six pages became one ATAR page with four tabs. Rates and
+#: SlowControls were retired whole, the panels that were not about ATAR went
+#: with them, and three were added: atar_hit_positions (split back out of
+#: event_display_energy), average_waveform and amplitude_recent_by_channel.
+EXPECTED_ELEMENTS = 25
+
+#: The tabs the ATAR page ships, in order. Kept here rather than derived from
+#: the catalogue, so that a tab vanishing from the spec is a failure here rather
+#: than a page that quietly renders three tabs.
+EXPECTED_TABS = ["atar_channels", "atar_scope", "atar_trends", "atar_proposed"]
 
 #: Every ``sketch`` the renderer must have a sentence for. From the spec's own
 #: vocabulary; dqm-page.js's SHAPE map has to cover it.
@@ -74,8 +80,12 @@ def _catalogue() -> list[dict]:
     return json.loads(m.group(1))
 
 
+def _tabs():
+    return [tab for p in _catalogue() for tab in p["tabs"]]
+
+
 def _elements(kind: str | None = None):
-    return [e for p in _catalogue() for e in p["elements"]
+    return [e for tab in _tabs() for e in tab["elements"]
             if kind is None or e["kind"] == kind]
 
 
@@ -154,8 +164,27 @@ def test_the_element_count_is_what_the_spec_said():
     assert len(_elements()) == EXPECTED_ELEMENTS
 
 
+def test_the_tabs_are_what_the_spec_said():
+    """A tab is a spec group. One vanishing is a page a shifter cannot reach."""
+    assert [t["group"] for t in _tabs()] == EXPECTED_TABS
+
+
+def test_every_tab_names_itself_and_its_question():
+    """dqm-page.js renders both, and a tab with neither is a blank button."""
+    nameless = [t.get("group") for t in _tabs() if not t.get("name")]
+    assert not nameless, f"tabs with no name: {nameless}"
+    silent = [t["group"] for t in _tabs() if not t.get("question")]
+    assert not silent, f"tabs with no question: {silent}"
+
+
+def test_no_element_appears_on_two_tabs():
+    """A panel rendered twice would be two tiles fighting over one DOM id."""
+    seen = [e["id"] for e in _elements()]
+    assert len(seen) == len(set(seen)), "an element is on more than one tab"
+
+
 @pytest.mark.parametrize("field", sorted(
-    {k for p in _catalogue() for e in p["elements"] for k in e}))
+    {k for tab in _tabs() for e in tab["elements"] for k in e}))
 def test_no_carried_field_is_unread(field):
     """Every field in the shipped catalogue is read by the renderer or a page.
 
@@ -179,7 +208,7 @@ def test_the_sketch_vocabulary_is_known():
 
 
 # ---------------------------------------------------------------------------
-# The renderers on Channels and Pulses
+# The renderers on the Channels and Trends tabs
 # ---------------------------------------------------------------------------
 
 def _panel_histograms() -> dict[str, str]:
@@ -212,7 +241,5 @@ def test_the_pages_ask_for_exactly_the_histograms_they_render():
     """
     from mdqm.install.config_defaults import DEFAULTS
 
-    asked = set()
-    for page in ("Channels", "Pulses", "Physics"):
-        asked |= {h for h in DEFAULTS[page]["Histograms"] if h}
+    asked = {h for h in DEFAULTS["ATAR"]["Histograms"] if h}
     assert asked == set(_panel_histograms().values())

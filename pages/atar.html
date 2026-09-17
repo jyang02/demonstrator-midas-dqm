@@ -2,7 +2,7 @@
 <html class="mcss" lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Scope</title>
+  <title>ATAR</title>
 
   <!-- Stock MIDAS resources. These names are served by mhttpd itself and must
        not be registered in /Custom; see mdqm/install/manifest.py. -->
@@ -18,12 +18,20 @@
        version token an edit to these files is invisible for a day. Bump it when
        you change them. (The page itself is exempt: its /Custom key has no dot,
        so it routes through show_custom_page(), which sets no cache headers.) -->
-  <link rel="stylesheet" href="dqm.css?v=7">
-  <script src="dqm-common.js?v=6"></script>
-  <script src="dqm-panels.js?v=6"></script>
-  <script src="dqm-page.js?v=4"></script>
-  <script src="dqm-adbanks.js?v=3"></script>
-  <script src="dqm-scope.js?v=12"></script>
+  <link rel="stylesheet" href="dqm.css?v=8">
+  <script src="dqm-common.js?v=7"></script>
+  <script src="dqm-panels.js?v=7"></script>
+  <script src="dqm-page.js?v=5"></script>
+
+  <!-- One page now, so it loads every renderer the four tabs need rather than
+       the two or three a single-question page used to. The tabs themselves are
+       built lazily -- see showTab() in dqm-page.js -- so loading a renderer is
+       not the same as running it: nothing on the Scope tab polls, and no
+       histogram is fetched, until somebody opens the tab it is on. -->
+  <script src="dqm-brpc.js?v=6"></script>
+  <script src="dqm-hists.js?v=17"></script>
+  <script src="dqm-adbanks.js?v=4"></script>
+  <script src="dqm-scope.js?v=13"></script>
 </head>
 
 <body class="mcss">
@@ -33,14 +41,14 @@
 
   <div id="mmain">
     <div id="dqm-root">
-      <div class="dqm-note">Building the Scope page&hellip;</div>
+      <div class="dqm-note">Building the ATAR page&hellip;</div>
     </div>
   </div>
 
   <!-- The spec's name for this page, not its /Custom key: with --prefix the key
-       is PIScope and the URL says page=PIScope, but the catalogue and the
-       config subtree stay keyed on the canonical name. boot() passes the URL's
-       name to mhttpd_init() so the sidenav highlight still works. -->
-  <script>window.addEventListener("load", function () { DQMPage.boot("Scope"); });</script>
+       is PIATAR and the URL says page=PIATAR, but the catalogue and the config
+       subtree stay keyed on the canonical name. boot() passes the URL's name to
+       mhttpd_init() so the sidenav highlight still works. -->
+  <script>window.addEventListener("load", function () { DQMPage.boot("ATAR"); });</script>
 </body>
 </html>

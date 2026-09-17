@@ -23,43 +23,55 @@ pip install -e .
 mdqm-register-pages --experiment pim1        # writes the /Custom keys
 ```
 
-Then open the experiment's mhttpd and pick a page from the side menu.
+Then open the experiment's mhttpd and pick **ATAR** from the side menu.
 
-| page | asks | mechanism | waiting on |
+Upgrading a checkout that had the old six pages registered needs nothing extra:
+`register_pages.prune()` runs after every successful registration and removes
+any `/Custom` key pointing into this checkout that the manifest no longer lists,
+which is exactly the six pages and the two renderers that went with them.
+
+One page, **ATAR**, with four tabs. A tab is a spec group, and the tabs are the
+order the questions get asked at 3am rather than the order the data arrives in.
+
+| tab | asks | mechanism | state |
 |---|---|---|---|
-| **Rates** | Is anything arriving, and at what rate? | ODB + history | a counting equipment; `fetrigger`, `fecalo`, `femupix` |
-| **Scope** | What does this event look like? | event buffer | **decoder built** — waveforms by layer and a charge-against-position event display, both off one event; waits only on a frontend writing `AD00`/`AT00` into a live buffer |
-| **Channels** | Is every channel behaving? | analyzer | **live** — occupancy, hits per event, and baseline and noise as recent-value scatters; the other seven need layers, T0 or banks nothing writes |
-| **Pulses** | What does a pulse look like, and what is it worth? | analyzer | **live** — persistence and amplitude by channel are both there, off by default behind a per-tile toggle; "what it is worth" still wants an energy calibration with an owner |
-| **Physics** | Does this look like stopped muons? | analyzer | the above, plus track finding; nothing the SAMPIC plugin can publish serves these |
-| **SlowControls** | Is the hardware where it should be? | ODB + history | `fecaen_hv` and `featar_sc`; and for humidity, a name in the run-conditions vocabulary |
+| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy, hits per event, baseline and noise as recent-value scatters, and amplitude by channel behind a per-tile toggle |
+| **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event; the layer hit rate waits on a counting equipment |
+| **Trends** | Is the detector's response holding still? | analyzer | persistence draws behind its toggle; the average waveform is proposed, and energy-against-amplitude and the two-track rate want a calibration and track finding |
+| **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
 
-The spec marks thirty of the forty panels blocked, and **every panel that is
-still empty says why**, naming what it is waiting for. That is the point of
-registering them: a shifter who opens Channels at 3am and finds eleven titled
-panels -- some drawing, the rest each explaining its own absence -- has been
+It was six pages — Rates, Scope, Channels, Pulses, Physics and SlowControls —
+organised by mechanism: what the panel read from. **Rates and SlowControls are
+gone.** Every panel on Rates waited on a counting equipment nobody has
+specified, and every panel on SlowControls waited on `fecaen_hv` or `featar_sc`
+— and once MIDAS histories those variables, `mhttpd` trends them for free, so it
+was never obvious those tiles should exist here at all. The panels that were not
+about ATAR went with them. Nothing was deleted: the spec's `retired` group holds
+all twenty-five with the reason each one left, so the decision is not re-argued
+in November.
+
+**Every panel that is still empty says why**, naming what it is waiting for.
+That is the point of registering them: a shifter who opens the Proposed tab at
+3am and finds eight titled panels, each explaining its own absence, has been
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Nine are `ready` and draw real data against a replay today: three on Scope
-(waveforms, the charge event display, the raw dump), four on Channels
-(occupancy, hits per event, and the baseline and noise scatters) and both tiles
-on Pulses. The two on Pulses are colormaps and open off, a click from drawing --
-held for the paint cost of a colormap, not for want of data, which is a page's
-choice rather than a blocker and so not what the chip reports.
+Ten of the twenty-five panels are `ready` and draw real data against a replay
+today: four on Scope (waveforms, the hit-position maps, the charge-depth
+profile, the raw dump), five on Channels, and persistence on Trends. Two of
+those ten are colormaps and open off, a click from drawing — held for the paint
+cost of a colormap, not for want of data, which is a page's choice rather than a
+blocker and so not what the chip reports.
 
-Six more are blocked *and* have a renderer: five on SlowControls and the trigger
-settings on Rates. Those render the absence itself, key by key, rather than a
-sentence about it -- a renderer is not the same thing as data, and the chip
-follows the data.
-
-The three pages backed by an analyzer check for one at load rather than
-asserting its absence, so the reason they show is about this experiment now.
+The three tabs backed by an analyzer check for one at load rather than asserting
+its absence, so the reason they show is about this experiment now. The probe runs
+once, at boot, and its answer is cached: a tab opened ten minutes later carries
+the same footnote as the one that was open when the page loaded.
 
 Scope was the first exception, and the reason is below: its bank layout turned
 out to be documented, so the browser decoder is written and tested against real
-bytes. Point it at a replay of an existing run and it draws today -- and the
-same bank, decoded again in the analyzer, is what Channels and Pulses draw.
+bytes. Point it at a replay of an existing run and it draws today — and the
+same bank, decoded again in the analyzer, is what Channels and Trends draw.
 
 One blocker has since moved. `docs/sampic-bank-layout.md` is the written
 specification of `AD00`/`AT00`: the physics event id, both bank names and the
@@ -67,6 +79,30 @@ full byte layout, so Scope waits on a frontend rather than on a document. It
 also records what is **not** settled — a recorded run carries no ODB dump, so
 every `/Equipment` path here is still a proposal, which is why they are all
 editable keys.
+
+## Tabs, and where they come from
+
+There is no tab key in the spec. A **group** was always "one screen's worth of
+panels"; all that changed is that several groups now name the same `page`, and
+`gen-panels.py` collects them into one catalogue entry with a `tabs` array.
+Adding a tab is adding a group.
+
+Tabs are built **lazily**, the first time each is shown, and that is
+load-bearing rather than an optimisation: `mplot` sizes a graph from its host
+div, and a div inside a `display: none` tab measures zero, so a plot built while
+hidden comes back blank with no error anywhere. It has a second effect worth
+having — the Scope tab's event poll and the histogram timers do not start until
+somebody opens the tab they are on, so a page left sitting on Channels asks
+`mhttpd` for nothing that Scope would have asked for.
+
+The open tab is in the URL as `#tab=<group>`, so "look at the Trends tab" is a
+link that can be pasted into the eLog:
+
+```
+http://localhost:8088/?cmd=custom&page=ATAR#tab=atar_trends
+```
+
+An unknown or absent name opens the first tab rather than nothing.
 
 ## Regenerating the panel catalogue
 
@@ -77,7 +113,7 @@ spec, via a generated asset:
 scripts/gen-panels.py --spec path/to/dqm_shifter.json
 ```
 
-Then bump the `?v=` on `dqm-panels.js` in every page that loads it. `--check`
+Then bump the `?v=` on `dqm-panels.js` in `pages/atar.html`. `--check`
 diffs without writing and exits non-zero when the committed file is stale;
 `tests/test_panels.py` calls the same code path, and skips when that checkout is
 not present.
@@ -155,12 +191,12 @@ Both of those shipped as bugs during development and are now regression tests.
 
 `docs/replay-and-view.md` is the end-to-end recipe: which MIDAS to use, how to
 stand up an experiment that cannot disturb one already running, and how to
-replay a recorded run into it so the Scope page has events to draw.
+replay a recorded run into it so the Scope tab has events to draw.
 
 ### Working without a detector
 
 `scripts/replay-run.py` feeds a recorded run file into a live event buffer, so
-everything downstream of the buffer — the Scope page and the analyzer alike —
+everything downstream of the buffer — the Scope tab and the analyzer alike —
 can be developed and tested against real events on a machine with no hardware
 attached:
 
@@ -180,7 +216,7 @@ With the run stopped, mlogger is not reading the buffer and nothing reaches disk
 
 `mdqm-analyzer` samples the same buffer and serves accumulated histograms over
 binary RPC. The `sampic` plugin decodes AD00 with `mdqm.dqm.sampic` -- the same
-layout the Scope page decodes in the browser -- and publishes five histograms
+layout the Scope tab decodes in the browser -- and publishes five histograms
 and two recent-value series:
 
 ```bash
@@ -195,12 +231,14 @@ publishes no time-over-threshold and no time-between-hits: `tot_value` is the
 docstring lists the rest of what the data will not support.
 
 `pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
-hits per event, baseline and noise on Channels, persistence and amplitude by
-channel on Pulses -- each fetching one histogram and handing it to mplot
+hits per event, baseline, noise and amplitude by channel on the Channels tab,
+and persistence on Trends -- each fetching one histogram and handing it to mplot
 through `BRPC.display()`. The mapping from panel to histogram is the one
-page-shaped fact in that file; everything else is generic.
+page-shaped fact in that file; nothing there knows which tab it is on, and it
+must not: a renderer claims a panel id, and where that panel sits is the spec's
+business.
 
-Four of the six draw when the page opens. Occupancy and hits per event are 1D
+Four of the six draw when their tab opens. Occupancy and hits per event are 1D
 and a few hundred bins. Baseline and noise by channel are **recent-value
 series** rather than histograms -- the last N values on each channel, drawn as
 a scatter of channel against value -- fetched over `dqm::series` and listed in
@@ -216,8 +254,9 @@ channel`, default 10, and it is the whole cost of those tiles. Each point
 carries its age, and the tile reports the oldest one drawn, because channels are
 hit at very different rates and the points are not one moment.
 
-The remaining two are **colormaps and start off**, listed in `TWO_D` in that
-file, each with a `Show plot` button in its own tile.
+The remaining two -- amplitude by channel on Channels, persistence on Trends --
+are **colormaps and start off**, listed in `TWO_D` in that file, each with a
+`Show plot` button in its own tile.
 Off is a real off -- no fetch, no draw, no timer -- so a page of these costs
 what a page of text costs, and the toggle lasts until the page is reloaded.
 
@@ -231,13 +270,21 @@ usable, the person is right. The real fix is probably a canvas blit rather than
 a rectangle per bin, and wants measuring on the machine that has the problem;
 until then the page is usable and any one plot is a click away.
 
-The other nine keep the empty state and their own reason, which is the correct
+The rest keep the empty state and their own reason, which is the correct
 outcome: crosstalk and hit-time-between-layers need a channel-to-layer map that
-exists nowhere, the time-vs-T0 panels need T0 in the same event record, MuPix
-and calorimeter panels need banks nothing writes, and the two energy panels want
-a calibration with an owner. `channel_health` is left unclaimed deliberately --
-"dead, noisy or drifting" is a verdict rather than a histogram, and the three
-tiles beside it each answer one third of it.
+exists nowhere, the two energy panels want a calibration with an owner, and the
+stopping and two-track panels want track finding. `channel_health` is left
+unclaimed deliberately -- "dead, noisy or drifting" is a verdict rather than a
+histogram, and the three tiles on the Channels tab each answer one third of it.
+
+`amplitude_recent_by_channel` on the Proposed tab is the one worth reading
+twice. The Channels tab shows amplitude as the accumulated colormap, which
+answers *over the run*; the screenshot this page set was organised from asks for
+the last N events, which is *now*. That is the same argument that already moved
+baseline and noise onto recent-value series, and `RecentByChannel` in
+`sampic_plugin.py` is the class that would carry it, so it is a contained change
+-- but nobody has agreed to it, so it sits on Proposed and the tile that ships
+says which question it actually answers.
 
 With no analyzer running, a claimed panel says so itself rather than throwing:
 it names the client it tried. If the analyzer stops after a plot is drawn, the
@@ -247,58 +294,54 @@ Each plugin owns the binning its detector needs. `status()` reports an
 `edge_fraction` per histogram -- the share of entries in under/overflow -- so a
 range that does not fit the data says so instead of drawing an empty plot.
 
-### Checking every page without a detector
+### Checking every tab without a detector
 
 Each of these runs against a live mhttpd with **no demonstrator equipment at
 all**, which is the state under test. `shoot.py` exits non-zero when its
 condition never becomes true, so each one is a test and not only a camera.
 
+The `#tab=` fragment is the page's own deep link, and it is what makes this a
+census of tabs rather than of pages: tabs are built when first shown, so
+`#dqm-root .dqm-tile` counts the open tab and nothing else.
+
 ```bash
-B="http://localhost:8088/?cmd=custom&page"
+B="http://localhost:8088/?cmd=custom&page=ATAR"
 T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
-scripts/shoot.py "$B=Rates"        /tmp/rates.png        --console --wait-for "$T === 9 && $W === 7"
-scripts/shoot.py "$B=Scope"        /tmp/scope.png        --console --wait-for "$T === 4 && $W === 1"
-# These two hold whether or not mdqm-analyzer is running, which is worth knowing
-# before reading a failure as "the analyzer is down". $W counts .dqm-empty-why,
-# and a colormap tile emits one while it is off, whereas a drawing tile that
-# cannot reach the analyzer reports a .dqm-diagnosis instead -- so Channels is
-# its seven unclaimed panels and nothing else, and Pulses is the two energy
-# panels plus persistence and amplitude by channel. The Pulses count is for a
-# freshly opened page, before anything is toggled on; each Show plot takes one
-# off. What moves with the analyzer is whether the four tiles that draw on open
-# -- occupancy, hits per event, and the baseline and noise scatters -- show a
-# plot or a red line naming the client they tried. (Blanking
-# /DQM/Common/Analyzer Client is the one thing that would move these: with no
-# name to try, a drawing tile falls back to an empty-why and $W goes up.)
-scripts/shoot.py "$B=Channels"     /tmp/channels.png     --console --wait-for "$T === 11 && $W === 7"
-scripts/shoot.py "$B=Pulses"       /tmp/pulses.png       --console --wait-for "$T === 4 && $W === 4"
-scripts/shoot.py "$B=Physics"      /tmp/physics.png      --console --wait-for "$T === 6 && $W === 6"
-scripts/shoot.py "$B=SlowControls" /tmp/slowcontrols.png --console --wait-for "$T === 6 && $W === 1"
+scripts/shoot.py "$B#tab=atar_channels" /tmp/channels.png --console --wait-for "$T === 5 && $W === 1"
+scripts/shoot.py "$B#tab=atar_scope"    /tmp/scope.png    --console --wait-for "$T === 5 && $W === 1"
+scripts/shoot.py "$B#tab=atar_trends"   /tmp/trends.png   --console --wait-for "$T === 4 && $W === 4"
+scripts/shoot.py "$B#tab=atar_proposed" /tmp/proposed.png --console --wait-for "$T === 8 && $W === 8"
 ```
 
-The `$W` counts are the useful ones to watch, because they say how many panels
-are still explaining themselves *in a sentence*. Scope is down to 1 of 4: its
-waveform, raw-event and charge-display panels are all built, and only the
-calorimeter is left waiting on a frontend.
+The first two hold whether or not `mdqm-analyzer` is running, which is worth
+knowing before reading a failure as "the analyzer is down". `$W` counts
+`.dqm-empty-why`, and a colormap tile emits one while it is off, whereas a
+drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
+So Channels is its amplitude colormap and nothing else, and the count is for a
+freshly opened tab, before anything is toggled on -- each `Show plot` takes one
+off. What moves with the analyzer is whether the four tiles that draw on open --
+occupancy, hits per event, and the baseline and noise scatters -- show a plot or
+a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`
+is the one thing that would move these: with no name to try, a drawing tile
+falls back to an empty-why and `$W` goes up.)
 
-SlowControls is the one to read carefully, and it is 1 of 6 rather than the 6 of
-6 this said for a long time. Five of its six tiles have a renderer that draws
-the absence itself, key by key -- which path a key is missing, not a paragraph
-about `featar_sc` -- and a tile doing that emits no `.dqm-empty-why` at all. The
-one that does is humidity, which has no renderer because it is waiting on a name
-in the run-conditions vocabulary rather than on a frontend. So the number does
-not move when `fecaen_hv` and `featar_sc` arrive; what changes is that those
-five stop drawing absences and start drawing trends.
+The `$W` counts are the useful ones to watch, because they say how many panels
+are still explaining themselves *in a sentence*. Scope is 1 of 5: its waveform,
+hit-position, charge-depth and raw-event tiles are all built, and only the layer
+hit rate is left waiting on a counting equipment. Trends is 4 of 4 and Proposed
+is 8 of 8, which is the honest picture of a backlog -- those two tabs are the
+gap, and the tab buttons carry the same numbers so it is legible without opening
+either.
 
 Those invocations failing is the signal to update them.
 
 ### Seeing the page without a browser
 
 ```bash
-scripts/shoot.py "http://localhost:8088/?cmd=custom&page=Rates" out.png \
-    --wait-for "document.querySelectorAll('#dqm-root .dqm-tile').length === 9" --console
+scripts/shoot.py "http://localhost:8088/?cmd=custom&page=ATAR" out.png \
+    --wait-for "document.querySelectorAll('#dqm-root .dqm-tile').length === 5" --console
 ```
 
 `firefox --screenshot` is not usable here: it fires on the load event, which for

@@ -101,39 +101,49 @@ class Entry:
 # sidenav highlight does current_page.search(item) -- an *unescaped* regex.
 # Only what exists and works is listed. A page added to the menu before it
 # does anything is worse than no page: an operator who opens it and finds it
-# broken stops trusting the whole set. Later stages append here.
+# broken stops trusting the whole set.
+#
+# One menu page now. It was six, one per mechanism -- what the panel read from --
+# and it is one page with a tab per question instead. The asset list is
+# unchanged apart from the two renderers whose pages went: every tab of the one
+# page loads every renderer, because a tab is not a document boundary.
 ENTRIES: tuple[Entry, ...] = (
-    Entry("Rates", "rates.html", True,
-          "event rates, and the trigger settings they are divided by"),
-    Entry("Scope", "scope.html", True,
-          "one event, decoded in the browser (needs a frontend writing AD00)"),
-    Entry("Channels", "channels.html", True,
-          "is every channel behaving (occupancy, baseline and noise from the analyzer)"),
-    Entry("Pulses", "pulses.html", True,
-          "what a pulse looks like (persistence and amplitude); \"worth\" needs a calibration"),
-    Entry("Physics", "physics.html", True,
-          "does this look like stopped muons (needs an analyzer)"),
-    Entry("SlowControls", "slowcontrols.html", True,
-          "temperature, bias, leakage and position, straight from the ODB"),
+    Entry("ATAR", "atar.html", True,
+          "the shift screen: per-channel health, one event, trends, and what is proposed"),
     Entry("dqm-common.js", "js/dqm-common.js", False, "shared discovery and RPC helpers"),
     Entry("dqm-panels.js", "js/dqm-panels.js", False,
           "the panel catalogue, generated from the page spec"),
     Entry("dqm-page.js", "js/dqm-page.js", False,
-          "the shared panel renderer, the page boot and the renderer registry"),
-    Entry("dqm-rates.js", "js/dqm-rates.js", False, "the live panels on the Rates page"),
+          "the panel renderer, the tab bar, the page boot and the renderer registry"),
     Entry("dqm-adbanks.js", "js/dqm-adbanks.js", False,
           "SAMPIC AD00/AT00 bank decoding in the browser"),
-    Entry("dqm-scope.js", "js/dqm-scope.js", False, "the live panels on the Scope page"),
-    # Not "dqm-slowcontrols.js": that contains "controls.js" as a substring,
-    # which mhttpd's interprete() intercepts before /Custom is ever consulted,
-    # so the key would be unreachable and the page would silently receive stock
-    # controls.js instead. check_key() catches it; this is what the rule is for.
-    Entry("dqm-slow.js", "js/dqm-slow.js", False,
-          "the five ODB panels on the SlowControls page"),
+    Entry("dqm-scope.js", "js/dqm-scope.js", False, "the live panels on the Scope tab"),
     Entry("dqm-brpc.js", "js/dqm-brpc.js", False, "talking to an analyzer over binary RPC"),
     Entry("dqm-hists.js", "js/dqm-hists.js", False,
-          "the analyzer-backed panels on Channels and Pulses"),
+          "the analyzer-backed panels on the Channels and Trends tabs"),
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
+)
+
+# Two pages and their renderers left here in the conversion to one tabbed page,
+# and the reason is in the spec's retired group rather than only in this file:
+# "Rates" (rates.html, dqm-rates.js) waited on a counting equipment nobody has
+# specified, and every panel on "SlowControls" (slowcontrols.html, dqm-slow.js)
+# waited on fecaen_hv or featar_sc -- and once MIDAS histories those variables,
+# mhttpd trends them for free.
+#
+# An experiment that has the old set registered heals itself on the next
+# mdqm-register-pages: register_pages.prune() runs after every successful
+# registration and deletes any /Custom key that points into this checkout and is
+# no longer in ENTRIES, which is exactly these eight. Nothing here has to be
+# removed by hand, and another tenant's keys are never candidates.
+#
+# The list is kept because prune() only sees an experiment somebody re-registers.
+# "Scope", "Channels", "Pulses" and "Physics" are page keys that now name tabs;
+# a menu entry of one of those names on an experiment somewhere is this page set
+# before the conversion, not a page anybody should still open.
+RETIRED_KEYS: tuple[str, ...] = (
+    "Rates", "Scope", "Channels", "Pulses", "Physics", "SlowControls",
+    "dqm-rates.js", "dqm-slow.js",
 )
 
 #: Config root for the pages. One subtree per page beneath it; see

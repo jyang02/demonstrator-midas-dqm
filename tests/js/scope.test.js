@@ -1,5 +1,5 @@
 //
-// The Scope page, driven with real events out of run 108.
+// The Scope tab, driven with real events out of run 108.
 //
 // The transport is stubbed; the bytes are not. Every event this file feeds the
 // page is the exact payload recorded in the run file, so a change that breaks
@@ -41,7 +41,7 @@ function asEvent(ev) {
 }
 
 /**
- * Boot Scope with a queue of events to hand out, one per poll.
+ * Boot the ATAR page on its Scope tab, with a queue of events to hand out, one per poll.
  *
  * bm_receive_event answers binary for an event and JSON for "nothing there", so
  * the stub distinguishes them the way mhttpd does: a reply carrying `result` is
@@ -79,15 +79,15 @@ async function boot(events, cfgOverrides, odbExtra) {
     setItem(k, v) { this._d[k] = String(v); },
   };
 
-  const cfg = Object.assign({}, globalThis.DQM.DEFAULTS.Scope, cfgOverrides || {});
+  const cfg = Object.assign({}, globalThis.DQM.DEFAULTS.ATAR, cfgOverrides || {});
   const page = runPage(path.join(JS, "dqm-page.js"), {
     db_get_values: (p) => ({
-      // /DQM/Scope comes back seeded; /DQM itself does not, which is the usual
+      // /DQM/ATAR comes back seeded; /DQM itself does not, which is the usual
       // half-configured state and exercises the merge. Anything in `odbExtra`
       // answers as itself, which is how the SAMPIC settings get in.
-      data: p.paths.map((x) => (x.endsWith("/Scope") ? cfg
+      data: p.paths.map((x) => (x.endsWith("/ATAR") ? cfg
         : (odbExtra && x in odbExtra) ? odbExtra[x] : null)),
-      status: p.paths.map((x) => (x.endsWith("/Scope") ? 1
+      status: p.paths.map((x) => (x.endsWith("/ATAR") ? 1
         : (odbExtra && x in odbExtra) ? 1 : 312)),
     }),
     db_ls: (p) => ({ data: p.paths.map(() => null) }),
@@ -95,9 +95,14 @@ async function boot(events, cfgOverrides, odbExtra) {
     bm_receive_event: () => (queue.length
       ? Promise.resolve({ __event: asEvent(queue.shift()) })
       : Promise.resolve({ result: { status: 209 } })),
-  }, { boot: "Scope", also: [path.join(JS, "dqm-adbanks.js"), path.join(JS, "dqm-scope.js")] });
+  }, { boot: "ATAR", also: [path.join(JS, "dqm-adbanks.js"), path.join(JS, "dqm-scope.js")] });
 
   await page.load();
+  // These panels are on the Scope tab, and a tab is built the first time it is
+  // shown -- so nothing here exists, and no poll has started, until it is
+  // opened. That is the behaviour under test as much as a fixture step: a page
+  // sitting on Channels must not be pulling events out of a shared buffer.
+  page.doc.getElementById("tab-atar_scope").dispatch("click");
   page.queue = queue;          // push more events to feed later polls
   return page;
 }
@@ -280,19 +285,43 @@ test("the shared read pointer is stated on the page, not left to be discovered",
   assert.match(feet, /they see different/);
 });
 
-// --- the three that correctly have no renderer ------------------------------
+// --- the ones that correctly have no renderer -------------------------------
+//
+// This block used to name calo_waveforms, event_display_position and
+// event_display_energy. All three were wrong by the time anything could run it:
+// event_display_position had been dropped from the spec (so BY_ID[id] was
+// undefined and this threw), event_display_energy had gained a renderer, and
+// calo_waveforms has now left the page with the rest of the calorimeter. It is
+// derived from the catalogue instead, so it cannot name a panel that is not
+// there.
 
-for (const id of ["calo_waveforms", "event_display_position", "event_display_energy"]) {
-  test(`${id} keeps its reason and gets no code`, async () => {
-    const page = await boot([REAL.events[0]]);
-    await pump(page, 2);
-    const tile = page.doc.getElementById(id);
+test("a panel on the Scope tab with no renderer keeps its own reason", async () => {
+  const page = await boot([REAL.events[0]]);
+  await pump(page, 2);
+
+  const tab = globalThis.DQMPanels.byPage("ATAR").tabs
+    .find((t) => t.group === "atar_scope");
+  const unclaimed = tab.elements.filter(
+    (e) => e.kind === "panel" && e.status === "blocked");
+  assert.ok(unclaimed.length > 0, "the Scope tab has no blocked panel to check");
+
+  for (const p of unclaimed) {
+    const tile = page.doc.getElementById(p.id);
     const why = tile.byClass("dqm-empty-why");
-    assert.strictEqual(why.length, 1);
-    assert.strictEqual(why[0].textContent.trim(),
-      globalThis.DQMPanels.BY_ID[id].blocked_by.trim());
-  });
-}
+    assert.strictEqual(why.length, 1, `${p.id} has no empty-state reason`);
+    assert.strictEqual(why[0].textContent.trim(), p.blocked_by.trim());
+  }
+});
+
+test("the hit maps and the depth profile are two tiles off one event", async () => {
+  const page = await boot([REAL.events[0]]);
+  await pump(page, 2);
+  assert.ok(page.doc.getElementById("atar_hit_positions"), "no hit-position tile");
+  assert.ok(page.doc.getElementById("event_display_energy"), "no charge-depth tile");
+  // One poll feeds both: the split is in the tiles, not in the mechanism.
+  const polls = page.calls.filter((c) => c.method === "bm_receive_event").length;
+  assert.ok(polls > 0, "nothing polled the event buffer");
+});
 
 
 // --- a demonstrator event, four boards deep ---------------------------------

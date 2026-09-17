@@ -3,11 +3,11 @@
 
 Why this is generated rather than typed
 ---------------------------------------
-Forty-four panels each carry a label, a shift question, a reason they exist, a
-reason they are blocked and a two-part alarm sentence -- about 39 kB of prose.
-Those ``blocked_by`` strings *are* the product of this page set: they are what a
+Every panel carries a label, a shift question, a reason it exists, a reason it
+is blocked and a two-part alarm sentence -- tens of kilobytes of prose. Those
+``blocked_by`` strings *are* the product of this page set: they are what a
 shifter reads at 3am when a panel is empty, and they are the strings most likely
-to be edited in the spec as the DAQ gets built. Copying them into seven page files
+to be edited in the spec as the DAQ gets built. Copying them into the page files
 by hand guarantees drift, with nothing to detect it.
 
 So they are generated into one asset, and ``--check`` (which is what
@@ -47,7 +47,7 @@ DEFAULT_OUT = REPO_ROOT / "pages" / "js" / "dqm-panels.js"
 #: the catalogue rather than rehomed, because a panel with nowhere to appear
 #: should not ship in a file whose every field is meant to have a reader. The
 #: spec does not declare the group a page either: ``chrome.custom_pages`` names
-#: the six real ones and stops.
+#: the real one and stops.
 #:
 #: Passing ``--generic-page NAME`` puts it back under that name, which keeps
 #: this a flag rather than a fact, for the day the spec declares one itself.
@@ -86,19 +86,26 @@ def elements_of(group: dict, generic_page: str) -> list[dict]:
 def catalogue(spec: dict, generic_page: str | None = DEFAULT_GENERIC_PAGE) -> list[dict]:
     """Spec -> the PAGES array, in spec order with the generic page last.
 
+    One entry per ``/Custom`` page, each holding its groups as ``tabs``. A group
+    is still "one screen's worth of panels"; what changed is that several of
+    them can now name the same page, and the page draws a tab per group in spec
+    order. That is the whole of the tab mechanism -- there is no tab key in the
+    spec and no second layout concept, because a tab *is* a group.
+
     With no ``generic_page``, the group the spec gives no page of its own is
     left out entirely rather than rendered somewhere a shifter cannot reach.
     """
     declared = list(spec.get("chrome", {}).get("custom_pages", []))
-    pages, generic = [], []
+    pages: dict[str, dict] = {}
+    generic: dict[str, dict] = {}
     for group in spec["groups"]:
         name = group.get("page")
         is_generic = name in (None, "Custom")
         if is_generic and not generic_page:
             continue
+        key = generic_page if is_generic else name
         target = generic if is_generic else pages
-        target.append({
-            "page": generic_page if is_generic else name,
+        target.setdefault(key, {"page": key, "tabs": []})["tabs"].append({
             "group": group["id"],
             "name": group["name"],
             "question": group["question"],
@@ -107,8 +114,8 @@ def catalogue(spec: dict, generic_page: str | None = DEFAULT_GENERIC_PAGE) -> li
     # Menu order: the spec's declaration order, then anything it did not
     # declare, then the generic page -- which is the order a shifter reads them.
     rank = {name: i for i, name in enumerate(declared)}
-    pages.sort(key=lambda p: rank.get(p["page"], len(rank)))
-    return pages + generic
+    out = sorted(pages.values(), key=lambda p: rank.get(p["page"], len(rank)))
+    return out + list(generic.values())
 
 
 def render(spec_text: str, generic_page: str = DEFAULT_GENERIC_PAGE) -> str:
@@ -155,7 +162,10 @@ const PAGES = {pages};
 
 const BY_ID = {{}};
 PAGES.forEach(function (p) {{
-  p.elements.forEach(function (e) {{ e.page = p.page; BY_ID[e.id] = e; }});
+  p.tabs.forEach(function (t) {{
+    t.page = p.page;
+    t.elements.forEach(function (e) {{ e.page = p.page; e.tab = t.group; BY_ID[e.id] = e; }});
+  }});
 }});
 
 /** The catalogue entry for one page, or null. */
@@ -192,9 +202,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.check:
         args.out.write_text(want, encoding="utf-8")
-        n = sum(len(p["elements"]) for p in catalogue(json.loads(args.spec.read_text()),
-                                                     args.generic_page))
-        print(f"wrote {args.out} ({n} elements, {len(want)} bytes)")
+        cat = catalogue(json.loads(args.spec.read_text()), args.generic_page)
+        n = sum(len(t["elements"]) for p in cat for t in p["tabs"])
+        tabs = sum(len(p["tabs"]) for p in cat)
+        print(f"wrote {args.out} ({n} elements in {tabs} tabs on {len(cat)} "
+              f"pages, {len(want)} bytes)")
         return 0
 
     got = args.out.read_text(encoding="utf-8") if args.out.exists() else ""

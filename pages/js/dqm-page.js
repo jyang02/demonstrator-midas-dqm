@@ -1,18 +1,19 @@
 //
-// dqm-page.js -- the shared page renderer, and the only file all seven pages load.
+// dqm-page.js -- the page renderer, and the file every page loads.
 //
-// Every page in this set is the same page with a different catalogue entry: a
-// heading, a strip of status counts, and one tile per element in spec order.
-// What differs is which tiles have a renderer registered against them. Five of
-// the seven pages register none at all, and are complete as they stand.
+// There is one page now, ATAR, and it is a heading, a row of tabs, and inside
+// the open tab a strip of status counts and one tile per element in spec order.
+// A tab is a spec group; see buildTab below for why that is the whole of the
+// mechanism. What differs between tiles is which of them have a renderer
+// registered against them, and most do not.
 //
-// That is not a placeholder arrangement. Forty-one of the forty-four panels in
-// the spec are blocked on DAQ work that does not exist -- no counting
-// equipment, no documented ATAR bank, no analyzer client, no slow-control
-// frontends. The deliverable is a page that *says so, in the panel*. A shifter
-// who opens Channels at 3am and finds a blank page learns nothing and stops
-// trusting the menu; one who finds eleven titled panels each naming what it is
-// waiting for has just been told the state of the experiment.
+// That is not a placeholder arrangement. Most of the panels in the spec are
+// blocked on DAQ work that does not exist -- no documented calorimeter bank, no
+// track finding, no energy calibration with an owner. The deliverable is a page
+// that *says so, in the panel*. A shifter who opens the Channels tab at 3am and
+// finds a blank page learns nothing and stops trusting the menu; one who finds
+// titled panels each naming what it is waiting for has just been told the state
+// of the experiment.
 //
 // So the empty state is the primary state here, and the failure path and the
 // normal path are the same path: a panel with no renderer, a renderer that
@@ -26,23 +27,36 @@
 const renderers = {};
 let cfg = null;
 
-//: The empty-state boxes of the blocked panels on this page, collected as they
+//: The empty-state boxes of the blocked panels built so far, collected as they
 //: are built so the analyzer probe can append to them without re-walking the
 //: DOM. Cleared by render().
 let blockedBoxes = [];
+
+//: What the analyzer probe found, once it has answered: {note, editPath}, or
+//: null while it is still in flight.
+//:
+//: Cached rather than applied and forgotten, because tabs are built lazily: the
+//: probe runs once at boot and most of the boxes it has something to say about
+//: do not exist yet. A box built later reads the cached answer on the spot, so
+//: a tab opened ten minutes in carries the same footnote as the one that was
+//: open when the page loaded.
+let probe = null;
+
+//: One record per tab: {entry, button, host, built}. Order is the spec's.
+let tabs = [];
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
 /**
- * Build one page. `canonical` is the spec's name for it, e.g. "SlowControls".
+ * Build one page. `canonical` is the spec's name for it, e.g. "ATAR".
  *
- * Deliberately not the /Custom key: with --prefix the key is "PISlowControls"
- * and the URL says page=PISlowControls, but a prefix is a menu-collision fix
- * rather than an experiment fork, so the catalogue lookup and the config
- * subtree both stay keyed on the spec's name. mhttpd_init() gets the URL's
- * name, because that is what the sidenav highlight matches against.
+ * Deliberately not the /Custom key: with --prefix the key is "PIATAR" and the
+ * URL says page=PIATAR, but a prefix is a menu-collision fix rather than an
+ * experiment fork, so the catalogue lookup and the config subtree both stay
+ * keyed on the spec's name. mhttpd_init() gets the URL's name, because that is
+ * what the sidenav highlight matches against.
  */
 async function boot(canonical) {
   const urlName = mhttpd_getParameterByName("page") || canonical;
@@ -54,8 +68,8 @@ async function boot(canonical) {
   // are picked up on the next cycle with no re-init.
   mhttpd_init(urlName, 1000);
 
-  const group = DQMPanels.byPage(canonical);
-  if (!group) {
+  const entry = DQMPanels.byPage(canonical);
+  if (!entry) {
     return fail(`No catalogue entry for the page "${canonical}". `
               + "pages/js/dqm-panels.js is generated from the spec; either this "
               + "page booted under the wrong name or the spec dropped it.");
@@ -70,12 +84,17 @@ async function boot(canonical) {
   }
   mhttpd_set_refresh_interval(Number(cfg["Refresh ms"]) || 1000);
 
-  render(group, canonical);
+  render(entry, canonical);
 
   // After the first paint, never before it. The page is complete without this;
   // what the probe adds is the difference between a sentence that was true when
   // it was written and one that is true now.
-  if (group.elements.some((e) => e.status === "blocked") && typeof BRPC !== "undefined") {
+  //
+  // Asked across every tab, not only the open one: the answer is cached and a
+  // tab built later reads it, so probing once at boot is what makes the
+  // footnote the same wherever a shifter starts.
+  const anyBlocked = entry.tabs.some((tb) => tb.elements.some((e) => e.status === "blocked"));
+  if (anyBlocked && typeof BRPC !== "undefined") {
     probeAnalyzer(canonical).catch(function () { /* the probe is a bonus */ });
   }
 }
@@ -87,12 +106,12 @@ async function boot(canonical) {
 /**
  * Ask the configured analyzer for its histogram list, once, and say what came back.
  *
- * Every panel on Channels, Pulses and Physics is blocked on "the analyzer
- * client nobody has started". That sentence is in the catalogue because it was
- * true when the spec was written. Checking it costs one serialised RPC per page
- * load and buys two things: the reason a shifter reads is about this experiment
- * right now, and the day somebody does start an analyzer these pages say so
- * before any renderer has been written for them.
+ * Many panels here are blocked on "the analyzer client nobody has started".
+ * That sentence is in the catalogue because it was true when the spec was
+ * written. Checking it costs one serialised RPC per page load and buys two
+ * things: the reason a shifter reads is about this experiment right now, and
+ * the day somebody does start an analyzer these panels say so before any
+ * renderer has been written for them.
  *
  * Deliberately not a poll. There is nothing to update -- a panel that gains a
  * renderer will do its own polling, and until then re-asking every second would
@@ -132,11 +151,30 @@ async function probeAnalyzer(page) {
     ? `${DQM.CONFIG_ROOT}/${page}/Histograms`
     : `${DQM.CONFIG_ROOT}/Analyzer Client`;
 
-  blockedBoxes.forEach(function (box) {
-    const foot = el("div", { class: "dqm-footnote dqm-probe" }, note + " ");
-    foot.appendChild(editButton(editPath, "Edit"));
-    box.appendChild(foot);
-  });
+  probe = { note: note, editPath: editPath };
+  blockedBoxes.forEach(applyProbe);
+}
+
+/** Footnote one empty state with what the probe found. */
+function applyProbe(box) {
+  const foot = el("div", { class: "dqm-footnote dqm-probe" }, probe.note + " ");
+  foot.appendChild(editButton(probe.editPath, "Edit"));
+  box.appendChild(foot);
+}
+
+/**
+ * Collect an empty state for the analyzer probe, and footnote it now if the
+ * probe has already answered.
+ *
+ * Both halves are needed once tabs are built lazily. A box built before the
+ * probe returns is footnoted when it does; a box built after -- every box on
+ * every tab a shifter opens later -- is footnoted on the spot from the cache.
+ */
+function noteBlocked(box) {
+  if (!box) return box;
+  blockedBoxes.push(box);
+  if (probe) applyProbe(box);
+  return box;
 }
 
 /**
@@ -149,11 +187,11 @@ async function probeAnalyzer(page) {
  * needs it more: its placeholder claims the histogram is still being
  * accumulated, and this is the line that checks rather than asserts it.
  *
- * Called from a renderer during render(), which is before probeAnalyzer() runs.
+ * Called from a renderer while its tab is being built, which may be before or
+ * long after probeAnalyzer() ran; noteBlocked handles both.
  */
 function probeThisBox(box) {
-  if (box) blockedBoxes.push(box);
-  return box;
+  return noteBlocked(box);
 }
 
 function fail(message) {
@@ -203,30 +241,123 @@ const SHAPE = {
 // first panel to go ready would have worn an uncoloured chip.
 const CHIP = { ready: "green", blocked: "yellow", proposed: "blue", dropped: "" };
 
-function render(group, page) {
+function render(entry, page) {
   const rootEl = document.getElementById("dqm-root");
   rootEl.innerHTML = "";
   blockedBoxes = [];
+  probe = null;
+  tabs = [];
 
-  const head = el("div", { class: "dqm-pagehead" },
-    el("h2", {}, group.name),
-    el("div", { class: "dqm-tile-q" }, group.question));
-  rootEl.appendChild(head);
-  rootEl.appendChild(summaryStrip(group));
+  rootEl.appendChild(el("div", { class: "dqm-pagehead" }, el("h2", {}, entry.page)));
 
-  group.elements.forEach(function (element) {
-    rootEl.appendChild(element.kind === "note" ? noteNode(element) : panelNode(element, page));
+  const bar = el("div", { class: "dqm-tabbar", role: "tablist" });
+  rootEl.appendChild(bar);
+
+  entry.tabs.forEach(function (tab, i) {
+    const button = el("button", { class: "dqm-tab", type: "button", role: "tab",
+                                  id: `tab-${tab.group}` }, tab.name);
+    const waiting = tab.elements.filter((e) => e.status !== "ready").length;
+    // The count is on the tab and not only inside it, so the size of the gap is
+    // legible without opening anything. A tab that draws everything it has
+    // wears no number rather than a zero.
+    if (waiting) button.appendChild(el("span", { class: "dqm-tabcount" }, String(waiting)));
+    button.addEventListener("click", function () { showTab(i, page); });
+    bar.appendChild(button);
+
+    const host = el("div", { class: "dqm-tabpanel", role: "tabpanel",
+                             id: `tabpanel-${tab.group}` });
+    host.style.display = "none";
+    rootEl.appendChild(host);
+    tabs.push({ entry: tab, button: button, host: host, built: false });
   });
 
   rootEl.appendChild(footer(page));
+  showTab(openingTab(entry), page);
 }
 
 /**
- * The counts, so the state of the page is legible before any panel is read.
+ * Show one tab, building it the first time it is shown.
+ *
+ * Lazy on purpose, and it is load-bearing rather than an optimisation. mplot
+ * sizes a graph from its host div, and a div inside a `display: none` tab
+ * measures zero, so a plot built while hidden comes back blank with no error
+ * anywhere -- the same silent failure as an mplot panel with no explicit
+ * bounds. Building a tab when it is first shown means every renderer runs
+ * against a host that has a size.
+ *
+ * It has a second effect worth having: the Scope tab's event poll and the
+ * histogram tiles' timers do not start until somebody opens the tab they are
+ * on. A page left open on Channels asks mhttpd for nothing that Scope would
+ * have asked for.
  */
-function summaryStrip(group) {
+function showTab(i, page) {
+  tabs.forEach(function (rec, j) {
+    const on = i === j;
+    rec.host.style.display = on ? "" : "none";
+    rec.button.classList.toggle("active", on);
+    rec.button.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  const rec = tabs[i];
+  if (!rec) return;
+  if (!rec.built) {
+    rec.built = true;
+    buildTab(rec.entry, page, rec.host);
+  }
+  rememberTab(rec.entry.group);
+}
+
+/**
+ * Fill one tab: its question, its counts, and a tile per element in spec order.
+ *
+ * A tab is a spec group, and that is the whole of the mechanism -- there is no
+ * tab key in the spec and no second layout concept. A group was always "one
+ * screen's worth of panels"; all that changed is that several groups now name
+ * the same page.
+ */
+function buildTab(tab, page, host) {
+  host.appendChild(el("div", { class: "dqm-tile-q" }, tab.question));
+  host.appendChild(summaryStrip(tab));
+  tab.elements.forEach(function (element) {
+    host.appendChild(element.kind === "note" ? noteNode(element) : panelNode(element, page));
+  });
+}
+
+/**
+ * Which tab to open with: the one named in `#tab=<group>`, else the first.
+ *
+ * A hash rather than a stored preference, so that "look at the Trends tab" is a
+ * link somebody can paste into the eLog. An unknown or absent name opens the
+ * first tab rather than nothing, because a page that renders no tab because a
+ * bookmark went stale is the blank page this design exists to avoid.
+ */
+function openingTab(entry) {
+  let want = "";
+  try {
+    want = String((typeof location !== "undefined" && location.hash) || "")
+             .replace(/^#tab=/, "");
+  } catch (e) { want = ""; }
+  for (let i = 0; i < entry.tabs.length; i++) {
+    if (entry.tabs[i].group === want) return i;
+  }
+  return 0;
+}
+
+/** Put the open tab in the URL, without adding a history entry per click. */
+function rememberTab(group) {
+  try {
+    if (typeof history !== "undefined" && history.replaceState) {
+      history.replaceState(null, "", `#tab=${group}`);
+    }
+  } catch (e) { /* a page served where history is unavailable is still a page */ }
+}
+
+/**
+ * The counts, so the state of a tab is legible before any panel is read.
+ */
+function summaryStrip(tab) {
   const counts = {};
-  group.elements.forEach(function (e) { counts[e.status] = (counts[e.status] || 0) + 1; });
+  tab.elements.forEach(function (e) { counts[e.status] = (counts[e.status] || 0) + 1; });
   const strip = el("div", { class: "dqm-strip" });
   ["blocked", "proposed", "dropped"].forEach(function (status) {
     if (!counts[status]) return;
@@ -275,7 +406,7 @@ function panelNode(p, page) {
   const fn = renderers[p.id];
   if (!fn) {
     const box = blocked(body, reasonFor(p), p);
-    if (p.status === "blocked") blockedBoxes.push(box);
+    if (p.status === "blocked") noteBlocked(box);
     return sec;
   }
 
@@ -457,7 +588,7 @@ function chip(label, valueNode, unit, cls) {
 // Publish. `DQMPage` in a browser, module.exports under node --test.
 // ---------------------------------------------------------------------------
 const DQMPage = { boot, register, render, blocked, editButton, setAlarm, SHAPE,
-                  probeAnalyzer, probeThisBox,
+                  probeAnalyzer, probeThisBox, showTab,
                   el, modb, watch, chip, statusChip, reasonFor };
 root.DQMPage = DQMPage;
 if (typeof module !== "undefined" && module.exports) module.exports = DQMPage;

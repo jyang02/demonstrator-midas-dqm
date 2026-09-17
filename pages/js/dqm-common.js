@@ -26,7 +26,8 @@
 // of an experiment nobody has set up yet -- so every page works on first open
 // and says it is using built-ins.
 //
-// One subtree per page, plus "Common" for what every page reads. It is
+// One subtree per page, plus "Common" for what every page reads -- and there is
+// one page, so tabs share its subtree. It is
 // deliberately plain, strict JSON with no comments inside and no trailing
 // commas: tests/test_manifest.py slices the literal out with a regex anchored
 // on the closing `};` *at column 0* and json.loads() it, then asserts it agrees
@@ -39,50 +40,20 @@ const DEFAULTS = {
     "Analyzer Client": "mdqm_analyzer",
     "Refresh ms": 5000
   },
-  "Rates": {
-    "Rate Equipment": [""],
-    "Trigger Settings Path": "/Equipment/Trigger/Settings",
-    "Trigger Settings Keys": ["Mode", "Prescale", "Coincidence window"],
-    "Threshold Path": "/Equipment/SAMPIC/Settings/Threshold",
-    "Expected Prescale": 1,
-    "History Timescale": "10m"
-  },
-  "Scope": {
+  "ATAR": {
     "Event Rate Hz": 1.0,
     "Event ID": 1,
     "Waveform Bank": "AD00",
     "Hit Time Bank": "AT00",
     "Collector Bank": "AC00",
     "Sample Period ns": 0.625,
-    "Buffer": "SYSTEM"
-  },
-  "Channels": {
+    "Buffer": "SYSTEM",
     "Histograms": [
       "sampic/occupancy",
-      "sampic/hits_per_event"
-    ]
-  },
-  "Pulses": {
-    "Histograms": [
+      "sampic/hits_per_event",
       "sampic/persistence",
       "sampic/amplitude_by_channel"
     ]
-  },
-  "Physics": {
-    "Histograms": [""]
-  },
-  "SlowControls": {
-    "Temperature Path": "/Equipment/ATAR_SC/Variables/Temperature",
-    "Light Path": "/Equipment/ATAR_SC/Variables/Light level",
-    "Leakage Path": "/Equipment/ATAR_HV/Variables/Current",
-    "Measured Path": "/Equipment/ATAR_HV/Variables/Measured",
-    "Demand Path": "/Equipment/ATAR_HV/Settings/Demand",
-    "Position Path": "/Equipment/Motion/Variables/Position",
-    "Motion Settings": "/Equipment/Motion/Settings",
-    "Bias Tolerance V": 5.0,
-    "Leakage Warn uA": 2.0,
-    "Temp Warn C": 30.0,
-    "History Timescale": "1h"
   }
 };
 
@@ -240,9 +211,9 @@ async function _merge(cfg, path, want) {
  *
  * Two reads: /DQM for what every page shares, then /DQM/<page> for this page's
  * own. The page name is the canonical one from the spec, not the /Custom key --
- * with --prefix the key is "PIRates" and the URL says page=PIRates, but a
+ * with --prefix the key is "PIATAR" and the URL says page=PIATAR, but a
  * prefix is a menu-collision fix, not an experiment fork, so two prefixed
- * installations share one /DQM/Rates and that is the right behaviour.
+ * installations share one /DQM/ATAR and that is the right behaviour.
  */
 async function loadConfig(page, rootOverride) {
   const base = rootOverride || CONFIG_ROOT;

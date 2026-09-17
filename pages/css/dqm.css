@@ -75,21 +75,25 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 
 /* The target end-on, one map per strip orientation, side by side because the
    two are the two projections of one event and are read together. The depth
-   profile sits under both at full width: its x axis is the layer number, the
-   same axis the maps use vertically, so stacking them keeps that axis shared
-   down the panel. */
+   profile is its own tile directly below, at full width: its x axis is the
+   layer number, the same axis the maps use vertically, so the two tiles in
+   catalogue order keep that axis shared down the page. */
 #scope-ed-panels .dqm-ed-row {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px;
 }
-#scope-ed-panels .dqm-scope-plot { height: 300px; margin-top: 2px; min-width: 0; }
-#scope-ed-panels .dqm-ed-profile { margin-top: 10px; }
+#scope-ed-panels .dqm-scope-plot,
+#scope-depth-panels .dqm-scope-plot { height: 300px; margin-top: 2px; min-width: 0; }
+#scope-depth-panels .dqm-ed-profile { margin-top: 4px; }
 /* Shorter than a map: it carries one curve and needs the width far more than
    the height. */
-#scope-ed-panels .dqm-ed-profile .dqm-scope-plot { height: 200px; }
-#scope-ed-panels .dqm-col-head {
+#scope-depth-panels .dqm-ed-profile .dqm-scope-plot { height: 200px; }
+#scope-ed-panels .dqm-col-head,
+#scope-depth-panels .dqm-col-head {
   font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px;
 }
-#scope-ed-panels .dqm-subhead { margin-top: 8px; font-weight: 600; }
+#scope-ed-panels .dqm-subhead,
+#scope-depth-panels .dqm-subhead { margin-top: 8px; font-weight: 600; }
+#scope-depth-totals { margin: 6px 0 4px 0; }
 @media (max-width: 1100px) {
   #scope-ed-panels .dqm-ed-row { grid-template-columns: 1fr; }
 }
@@ -156,3 +160,27 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 
 .dqm-pagehead    { margin-bottom: 4px; }
 .dqm-pagehead h2 { margin-bottom: 0; }
+
+/* Tabs. A tab is a spec group; the bar is the page's table of contents and the
+   count on each tab is how many of its panels are not drawing, so the size of
+   the gap is legible without opening anything.
+
+   Styled as buttons rather than links because they are buttons: the tab bodies
+   are already in the document and switching one on is not a navigation. */
+.dqm-tabbar      { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end;
+                   border-bottom: 2px solid var(--mgray, #ccc); margin: 10px 0 14px 0; }
+.dqm-tab         { display: inline-flex; align-items: center; gap: 7px;
+                   padding: 7px 16px; border: 1px solid var(--mgray, #ccc);
+                   border-bottom: none; border-radius: 6px 6px 0 0;
+                   background: #f0f0f0; color: inherit; cursor: pointer;
+                   font-size: 1em; font-family: inherit; line-height: 1.2;
+                   position: relative; bottom: -2px; }
+.dqm-tab:hover   { background: #e4e4e4; }
+/* Sits on the bar's own border rather than above it, so the open tab reads as
+   joined to the panel below it. */
+.dqm-tab.active  { background: #fff; font-weight: 600;
+                   border-bottom: 2px solid #fff; }
+.dqm-tabcount    { display: inline-block; min-width: 1.5em; padding: 1px 6px;
+                   border-radius: 9px; background: var(--myellow, #ff8);
+                   font-size: 80%; font-weight: 600; text-align: center; }
+.dqm-tabpanel    { margin-top: 2px; }

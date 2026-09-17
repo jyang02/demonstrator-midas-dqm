@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build a self-contained HTML preview of the Scope page, with real events in it.
+"""Build a self-contained HTML preview of the Scope tab, with real events in it.
 
-The Scope page needs a live MIDAS to do anything, which makes it the one page in
+The Scope tab needs a live MIDAS to do anything, which makes it the one part of
 this set you cannot review by opening a file. This assembles the real page code
 -- dqm-common, dqm-panels, dqm-page, dqm-adbanks, dqm-scope, unmodified -- with
 a stubbed MIDAS surface and a few dozen real events from a run file baked in, so

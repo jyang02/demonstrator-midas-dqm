@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Scope &mdash; offline preview</title>
+<html lang="en"><head><meta charset="UTF-8"><title>ATAR Scope tab &mdash; offline preview</title>
 <style>
 /* A stand-in for midas.css: only the four custom properties dqm.css rides, plus
    the two classes it borrows. The real page inherits all of this from MIDAS. */
@@ -27,14 +27,14 @@ const EVENTS = __EVENTS__;
 const CFG = __CFG__;
 let next = 0;
 function mhttpd_init(){} function mhttpd_set_refresh_interval(){}
-function mhttpd_getParameterByName(n){ return n === "page" ? "Scope" : ""; }
+function mhttpd_getParameterByName(n){ return n === "page" ? "ATAR" : ""; }
 function dlgOdbEdit(p){ alert("Would open " + p + " in the ODB editor."); }
 function b64(s){ const t=atob(s), a=new Uint8Array(t.length);
   for(let i=0;i<t.length;i++) a[i]=t.charCodeAt(i); return a; }
 function mjsonrpc_db_get_values(paths){
   return Promise.resolve({result:{
-    data: paths.map(p => p.endsWith("/Scope") ? CFG.Scope : null),
-    status: paths.map(p => p.endsWith("/Scope") ? 1 : 312)}});
+    data: paths.map(p => p.endsWith("/ATAR") ? CFG.ATAR : null),
+    status: paths.map(p => p.endsWith("/ATAR") ? 1 : 312)}});
 }
 function mjsonrpc_call(method){
   if (method !== "bm_receive_event") return Promise.resolve({result:{}});
@@ -87,5 +87,16 @@ class MPlotGraph {
 <script>__PAGE__</script>
 <script>__ADBANKS__</script>
 <script>__SCOPE__</script>
-<script>window.addEventListener("load", function(){ DQMPage.boot("Scope"); });</script>
+<!-- Straight onto the Scope tab: the preview exists to look at the waveform
+     and event-display panels, and they are built when their tab is shown.
+     The hash is the page's own deep link, so this is the same route a
+     pasted eLog link takes rather than a preview-only hook. -->
+<script>
+window.addEventListener("load", function(){
+  DQMPage.boot("ATAR").then(function(){
+    var b = document.getElementById("tab-atar_scope");
+    if (b) b.click();
+  });
+});
+</script>
 </body></html>

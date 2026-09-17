@@ -1,9 +1,9 @@
 # Replaying a run and looking at the page
 
-The Scope page decodes one event out of a live event buffer, so seeing it work
+The Scope tab decodes one event out of a live event buffer, so seeing it work
 needs three things: a MIDAS with `mplot.js`, an experiment, and something putting
 `AD00` banks into a buffer. There is no detector, so the third is a replay of an
-existing run file. Channels and Pulses need a fourth, an analyzer, because a
+existing run file. The Channels and Trends tabs need a fourth, an analyzer, because a
 histogram is accumulated across events and the browser only ever sees one.
 
 ## Without MIDAS at all
@@ -23,7 +23,7 @@ each of which costs an afternoon if you meet it the other way round.
 
 | | has `mplot.js` | use it? |
 |---|---|---|
-| `~/midas/install` (March 2023) | **no** | no — the Scope and Waveforms pages need `MPlotGraph` and would silently load nothing |
+| `~/midas/install` (March 2023) | **no** | no — the Scope tab needs `MPlotGraph` and would silently load nothing |
 | `~josh/modern_midas/install` | yes | **yes** — this is the one `mhttpd` is already running from |
 
 **Do not disturb WDSCALERS.** `mhttpd -e WDSCALERS` and `mlogger -e WDSCALERS`
@@ -101,7 +101,7 @@ python3 -m mdqm.install.register_pages --experiment DEMODQM
 Worth running after *every* `git pull` and after moving the checkout: the keys
 are absolute paths into your working tree, and registration is idempotent
 precisely so that a moved checkout heals itself. A `/Custom` left pointing at a
-directory that no longer exists is a 404 on all six pages at once.
+directory that no longer exists is a 404 on the whole page at once.
 
 ### Get a run file onto the box
 
@@ -138,7 +138,7 @@ to run while a run is active, which on a fresh experiment it is not.
 
 ### The analyzer
 
-Channels and Pulses are blocked without one. It needs numpy, **which the system
+The Channels and Trends tabs are blocked without one. It needs numpy, **which the system
 Python does not have** -- and since there is no pip, it cannot be given any. The
 only interpreters on that box with both numpy and working MIDAS bindings belong
 to Josh. Running one read-only is fine; do not install anything into them.
@@ -171,27 +171,31 @@ anything under `src/mdqm/dqm/`.
 ssh -N -L 8090:localhost:8090 pioneer@192.168.40.106
 ```
 
-Then open <http://localhost:8090/?cmd=custom&page=Scope>. The waveform panel
-should show a trace per hit, the raw-event table the decoded hit scalars, and
-the status line the event serial and hit count.
+Then open <http://localhost:8090/?cmd=custom&page=ATAR#tab=atar_scope>. The
+waveform panel should show a trace per hit, the raw-event table the decoded hit
+scalars, and the status line the event serial and hit count.
 
-### What to expect on the other pages
+**The fragment matters.** There is one page now, with four tabs, and a tab is
+built the first time it is shown -- so a plain `page=ATAR` opens on Channels and
+nothing on Scope has polled for an event yet. `#tab=<group>` is the page's own
+deep link and the way to land on a particular tab.
+
+### What to expect on the other tabs
 
 With the replay and the analyzer both up:
 
-| page | on DEMODQM |
+| tab | on DEMODQM |
 |---|---|
-| Rates | `midas_event_rate` lists the replay client's equipment if it registers any; otherwise "no equipment is registered" |
-| Scope | **live** from the replay |
-| Channels | **live**: hits per event, occupancy, and baseline and noise by channel as recent-value scatters (the last 10 per channel, over `dqm::series`) |
-| Pulses | **live**: persistence and amplitude by channel, both colormaps and both open off -- `Show plot` on the tile draws them |
-| Physics | blocked, and stays blocked -- it wants a calibration nobody has written |
-| SlowControls | six panels, each waiting for `ATAR_SC` / `ATAR_HV` / `Motion` |
+| `#tab=atar_channels` | **live**: hits per event, occupancy, and baseline and noise by channel as recent-value scatters (the last 10 per channel, over `dqm::series`); amplitude by channel is a colormap and opens off -- `Show plot` on the tile draws it |
+| `#tab=atar_scope` | **live** from the replay: waveforms by layer, the two hit-position maps, the charge-depth profile with the event total, and the raw dump. The layer hit rate stays blocked |
+| `#tab=atar_trends` | persistence is **live** behind its `Show plot`; the other three stay blocked -- they want a calibration and track finding nobody has written |
+| `#tab=atar_proposed` | eight panels, each naming what it waits for. This tab is the backlog and is expected to be empty of plots |
 
-Individual panels on Channels and Pulses stay blocked too, and correctly so:
-they ask for a calorimeter or `fesampic` bank that run 108 does not contain.
-Each says which. Without the analyzer, every panel on both pages is blocked and
-names the client it got no answer from.
+Individual panels on Channels and Scope stay blocked too, and correctly so: they
+ask for a counting equipment or an `fesampic` bank that run 108 does not
+contain. Each says which. Without the analyzer, every analyzer-backed panel is
+blocked and names the client it got no answer from -- including on a tab opened
+later, because the probe's answer is cached at boot.
 
 ### Checking it really rendered
 
@@ -202,8 +206,8 @@ with your eyes on a screenshot:
 
 ```bash
 source ~/demo-dqm/env.sh && cd $REPO
-python3 scripts/shoot.py "http://localhost:8090/?cmd=custom&page=Scope" /tmp/scope.png \
-    --wait-for "document.querySelector('.dqm-chip')" --console
+python3 scripts/shoot.py "http://localhost:8090/?cmd=custom&page=ATAR#tab=atar_scope" \
+    /tmp/scope.png --wait-for "document.querySelector('.dqm-chip')" --console
 ```
 
 `shoot.py` exits non-zero if the condition never comes true, so it works as a

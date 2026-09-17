@@ -6,16 +6,18 @@
 // buffer as an ArrayBuffer, bkToObj() in midas.js splits it into banks,
 // dqm-adbanks.js turns AD00 into volts, and mplot.js draws it.
 //
-// Three of the five panels here are live. event_display_energy draws the same
-// event as the waveforms, as charge against strip position: one row per layer
-// pair, x on the left and y on the right, matching the column order of the
-// waveforms above it. calo_waveforms is the one that keeps its reason from the
-// catalogue and gets no renderer -- there is no calorimeter frontend and no
-// bank, which no amount of code here will fix.
+// Four panels here are live, all off the same decoded event. atar_hit_positions
+// draws it as two target maps -- layer up, strip across, one map per strip
+// orientation, in the column order the waveforms above use. event_display_energy
+// draws the charge summed per layer as a depth profile, with the event total
+// beside it. raw_event dumps the banks.
 //
-// event_display_position is gone from the spec rather than sitting blocked
-// beside this one. Position and energy were two views of one event display,
-// and the energy one carries the position on its x axis.
+// Those two were one panel until the tab conversion, and splitting them is a
+// return to what the spec always said: its note on event_display_energy argued
+// that position and energy are two questions -- where did the charge land, and
+// how deep did it get -- and that collapsing them lets the second disappear
+// into the first one's readiness. They still share one channel map, one poll
+// and one event, so the split is in the tiles and not in the mechanism.
 //
 // On the shared read pointer (MIDAS elog 2391): mhttpd holds ONE event-buffer
 // read pointer for the whole process. With get_recent:true each poll drains the
@@ -50,7 +52,8 @@ const state = {
   excluded: null,          // channels the operator has explicitly unticked
   graph: null,
   cfg: null,
-  edHost: null,            // the charge display's host div, once it renders
+  mapHost: null,           // the hit-position maps' host div, once it renders
+  depthHost: null,         // the charge-depth profile's host div, once it renders
   chargeGraphs: null,      // one entry per layer cell in that display
 };
 
@@ -230,23 +233,21 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
             + "Settings carries no ATAR geometry, and which layer a channel is "
             + "in cannot be guessed from the bank.";
         }
-        const edNote = document.getElementById("scope-ed-note");
-        if (edNote) {
-          edNote.className = "dqm-diagnosis";
-          edNote.textContent = "No charge display: it plots against strip "
+        [["scope-ed-note", "No hit-position display: it plots against strip "
             + "position, and /Equipment/SAMPIC/Settings carries no ATAR "
-            + "geometry to place a channel on a layer or a strip.";
-        }
+            + "geometry to place a channel on a layer or a strip."],
+         ["scope-depth-note", "No depth profile: charge is summed per layer, "
+            + "and /Equipment/SAMPIC/Settings carries no ATAR geometry to say "
+            + "which layer a channel is in."]].forEach(function (pair) {
+          const note = document.getElementById(pair[0]);
+          if (note) { note.className = "dqm-diagnosis"; note.textContent = pair[1]; }
+        });
         return;
       }
       buildLayerPanels(ctx.body, plot, map);
-      // The charge panel below may have rendered before this resolved, in
-      // which case its host is waiting and empty.
-      if (state.edHost) {
-        const edNote = document.getElementById("scope-ed-note");
-        if (edNote) edNote.textContent = chargeNote(map);
-        buildChargePanels(state.edHost, map);
-      }
+      // The two charge tiles below may have rendered before this resolved, in
+      // which case their hosts are waiting and empty.
+      fillChargeHosts(map);
       if (state.event) draw();
     });
     // An event can easily arrive before this timeout runs -- the poll starts
@@ -724,7 +725,7 @@ function setText(id, text) {
  * what this is: the integral of a voltage over time, which is a charge up to
  * the input impedance, and is a *deposited energy* only after a per-channel
  * calibration that does not exist. That calibration is the blocker the two
- * energy panels on Pulses already name. Even "charge" is uncalibrated here --
+ * energy panels on the Trends and Proposed tabs already name. Even "charge" is uncalibrated here --
  * hence V.ns on the axis rather than coulombs.
  *
  * Baseline-subtracted and sign-flipped so it comes out positive: the pulses are
@@ -772,13 +773,33 @@ function markerSize(charge, maxCharge) {
 }
 
 /**
- * Build the two target maps and the depth profile.
+ * Fill whichever of the two charge hosts have rendered, now that the map is in.
+ *
+ * Both tiles depend on the same channel map and either may render first -- they
+ * are separate panels on one tab, and the order the catalogue puts them in is
+ * not something either renderer should have to know.
+ */
+function fillChargeHosts(map) {
+  if (state.mapHost) {
+    const note = document.getElementById("scope-ed-note");
+    if (note) note.textContent = mapsNote(map);
+    buildHitMaps(state.mapHost, map);
+  }
+  if (state.depthHost) {
+    const note = document.getElementById("scope-depth-note");
+    if (note) note.textContent = depthNote(map);
+    buildDepthProfile(state.depthHost, map);
+  }
+}
+
+/**
+ * Build the two target maps.
  *
  * Which orientation goes on the left is read from the ODB rather than assumed,
  * the same way the waveform columns do it -- a target built the other way round
  * would otherwise put every label on the wrong side.
  */
-function buildChargePanels(host, map) {
+function buildHitMaps(host, map) {
   if (!host || host.dataset.built) return;
   host.dataset.built = "1";
   host.innerHTML = "";
@@ -819,11 +840,29 @@ function buildChargePanels(host, map) {
     state.chargeMaps.push({ coord: coord, layers: layers, graph: g, div: div });
     g.resize();
   });
+}
+
+/**
+ * Build the depth profile and the total beside it.
+ *
+ * "Total edep" is a chip and not a plot on purpose: it is one number about this
+ * event, and the rule this page set follows is that a value nobody is asking a
+ * temporal question about is a chip. It is charge, in V*ns, and the label says
+ * so -- calling it energy would need the calibration nobody owns.
+ */
+function buildDepthProfile(host, map) {
+  if (!host || host.dataset.built) return;
+  host.dataset.built = "1";
+  host.innerHTML = "";
 
   const foot = el("div", { class: "dqm-ed-profile" });
   host.appendChild(foot);
   foot.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
     "Charge against depth — every layer, both orientations"));
+  const totals = el("div", { class: "dqm-strip", id: "scope-depth-totals" });
+  foot.appendChild(totals);
+  totals.appendChild(chip("total", el("span", { id: "scope-depth-total" }, "—"), "V·ns"));
+  totals.appendChild(chip("layers hit", el("span", { id: "scope-depth-nlayers" }, "—"), ""));
   const pdiv = el("div", { class: "dqm-scope-plot", id: "scope-ed-profile" });
   foot.appendChild(pdiv);
   const pg = new MPlotGraph(pdiv, {
@@ -849,7 +888,11 @@ function buildChargePanels(host, map) {
  * without being told.
  */
 function drawChargeDisplay() {
-  if (!state.event || !state.chargeMaps || !state.chargeMaps.length) return;
+  if (!state.event) return;
+  // Guarded separately from here down: the maps and the profile are two tiles
+  // now and either can be absent -- a channel map that never arrived leaves
+  // both unbuilt, and a renderer that threw leaves one.
+  if (!layerMap) return;
   const dt = Number(state.cfg["Sample Period ns"]) || 0;
 
   // One pass over the hits, since both views are the same event read two ways.
@@ -874,7 +917,7 @@ function drawChargeDisplay() {
   const xLo = layerMap.stripLo - 0.5;
   const xHi = layerMap.stripHi + 0.5;
 
-  state.chargeMaps.forEach(function (m) {
+  (state.chargeMaps || []).forEach(function (m) {
     m.graph.param.plot = [];
     const lo = Math.min.apply(null, m.layers) - 0.5;
     const hi = Math.max.apply(null, m.layers) + 0.5;
@@ -953,32 +996,63 @@ function drawChargeDisplay() {
     }];
     p.graph.calcMinMax();
     p.graph.redraw();
+
+    // The total is over every layer that recorded something, which is the same
+    // set the curve is drawn from -- so the number and the plot cannot disagree
+    // about what "this event" means.
+    let total = 0;
+    ys.forEach(function (v) { total += v; });
+    setText("scope-depth-total", total > 0 ? total.toPrecision(4) : "—");
+    setText("scope-depth-nlayers", xs.length ? `${xs.length} of ${p.layers.length}` : "—");
   }
 }
 
-DQMPage.register("event_display_energy", function (ctx) {
+DQMPage.register("atar_hit_positions", function (ctx) {
   const note = el("div", { class: "dqm-note", id: "scope-ed-note" },
     "Reading the channel map…");
   const host = el("div", { id: "scope-ed-panels" });
   ctx.body.appendChild(note);
   ctx.body.appendChild(host);
-  state.edHost = host;
+  state.mapHost = host;
 
   // The map may already be in hand: this panel renders after the waveform one,
   // and whether its load has resolved yet is a race nobody should have to win.
   if (layerMap) {
-    note.textContent = chargeNote(layerMap);
-    buildChargePanels(host, layerMap);
+    note.textContent = mapsNote(layerMap);
+    buildHitMaps(host, layerMap);
     if (state.event) drawChargeDisplay();
   }
 });
 
-function chargeNote(map) {
-  return `The event shown above, from ${map.source}. The maps are the target `
-    + `end-on -- strip across, layer up, marker area and colour both the `
-    + `charge -- and the profile below is the total charge in each layer. `
-    + `Charge is the baseline-subtracted integral of the waveform, which is an `
-    + `energy only after a calibration nobody owns, hence V·ns.`;
+DQMPage.register("event_display_energy", function (ctx) {
+  const note = el("div", { class: "dqm-note", id: "scope-depth-note" },
+    "Reading the channel map…");
+  const host = el("div", { id: "scope-depth-panels" });
+  ctx.body.appendChild(note);
+  ctx.body.appendChild(host);
+  state.depthHost = host;
+
+  if (layerMap) {
+    note.textContent = depthNote(layerMap);
+    buildDepthProfile(host, layerMap);
+    if (state.event) drawChargeDisplay();
+  }
+});
+
+function mapsNote(map) {
+  return `The event shown above, from ${map.source}. Each map is the target `
+    + `end-on -- strip across, layer up, one map per strip orientation, marker `
+    + `area and colour both the charge. A channel the map cannot place is left `
+    + `out here and still drawn as a waveform above, which is where a hit `
+    + `nobody can place belongs.`;
+}
+
+function depthNote(map) {
+  return `The same event, from ${map.source}: the charge in each layer, and the `
+    + `total over the layers that recorded any. A layer with no hit is left out `
+    + `rather than drawn at zero -- it did not measure zero, it measured `
+    + `nothing. Charge is the baseline-subtracted integral of the waveform, `
+    + `which is an energy only after a calibration nobody owns, hence V·ns.`;
 }
 
 // ---------------------------------------------------------------------------

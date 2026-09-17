@@ -1,23 +1,28 @@
 //
-// dqm-hists.js -- the analyzer-backed panels on Channels and Pulses.
+// dqm-hists.js -- the analyzer-backed panels, on the Channels and Trends tabs.
 //
-// Six of the fifteen. Every one of them names a histogram the `sampic` plugin
+// Six of them. Every one names a histogram or a series the `sampic` plugin
 // accumulates from AD00 (src/mdqm/dqm/sampic_plugin.py), fetched over binary
 // RPC and drawn by mplot. The mechanism is entirely generic -- dqm-brpc.js
 // knows nothing about which histograms exist -- so the only thing this file
 // adds is the one page-shaped fact: which plot belongs in which tile.
 //
-// Two of the six draw when the page opens: occupancy and hits per event, both
-// 1D and both a few hundred bins. The other four are colormaps and start off,
-// each with a Show plot toggle in its own tile -- see TWO_D below, which
-// carries the reasoning. Off is a real off: no fetch, no draw, no timer.
+// Four of the six draw when their tab opens: occupancy and hits per event, both
+// 1D and a few hundred bins, and the baseline and noise scatters. The other two
+// are colormaps and start off, each with a Show plot toggle in its own tile --
+// see TWO_D below, which carries the reasoning. Off is a real off: no fetch, no
+// draw, no timer.
 //
-// The nine it does not claim are not oversights. Crosstalk and the time-between
-// -layers panels need a channel-to-layer map that exists nowhere; the three
-// time-vs-T0 panels need T0 in the same event record; MuPix and calorimeter
-// panels need banks nothing writes; and the two energy panels on Pulses need a
-// calibration with an owner. Those keep the empty state and their own reason,
-// which is the correct outcome and needs no code here.
+// Nothing here knows which tab it is on, and it must not: a renderer claims a
+// panel id, and where that panel sits is the spec's business. The Channels tab
+// gets occupancy, hits per event, baseline, noise and the amplitude colormap;
+// persistence is on Trends beside the average waveform that has been proposed
+// to sit with it.
+//
+// What it does not claim is not an oversight. Crosstalk and the time-between-
+// layers panel need a channel-to-layer map that exists nowhere, and the two
+// energy panels need a calibration with an owner. Those keep the empty state
+// and their own reason, which is the correct outcome and needs no code here.
 //
 // `channel_health` is deliberately left unclaimed too. "Dead, noisy or
 // drifting" is a verdict, not a histogram: occupancy, noise and baseline each
@@ -32,7 +37,7 @@ const { el, chip, blocked, editButton, probeThisBox } = DQMPage;
 
 //: Panel id -> the histogram the analyzer publishes for it.
 //:
-//: The single source of this mapping. `/DQM/<page>/Histograms` lists the same
+//: The single source of this mapping. `/DQM/ATAR/Histograms` lists the same
 //: names for probeAnalyzer() to check against what the analyzer publishes, and
 //: tests/test_panels.py asserts the two agree -- so the duplication is a
 //: checked invariant rather than two places to forget.
@@ -58,7 +63,7 @@ const PANELS = {
 //: rectangles is what lets these two draw on open while the remaining
 //: colormaps stay behind their toggle.
 //:
-//: Not in /DQM/<page>/Histograms, deliberately: they are not histograms, the
+//: Not in /DQM/ATAR/Histograms, deliberately: they are not histograms, the
 //: analyzer does not list them in dqm::list, and probeAnalyzer would report
 //: them as missing. seriesPanel says whether its own series arrived.
 const SERIES = {

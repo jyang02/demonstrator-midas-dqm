@@ -2,69 +2,40 @@
   "_readme": [
     "The DQM screen: what a shift crew looks at while data is being taken.",
     "",
-    "Three tabs, in the order the questions actually get asked at 3am. 'Alive' is",
-    "what you check first and what you check when something feels wrong. 'Healthy'",
-    "is the hardware. 'Physics' is the one you look at when the first two are fine",
-    "and you want to know whether the run is any good.",
+    "One page, ATAR, with four tabs in the order the questions get asked at 3am.",
+    "'Channels' is per-channel health and is what you check when something feels",
+    "wrong. 'Scope' is one event, decoded in the browser. 'Trends' is what has moved",
+    "since the run started. 'Proposed' is the backlog, kept on the screen rather than",
+    "in a document so that what is missing is visible from the page it is missing from.",
     "",
-    "That ordering is the one real design proposal in this file, and it differs from",
-    "demonstrator-dqm's shipped default (DAQ / Detector / Nearline / Raw), which is",
-    "organised by where the data comes from rather than by what is being asked.",
-    "Nearline browsing is deliberately absent: it answers 'what did we record', which",
-    "is not a question you ask while watching.",
+    "It was six pages -- Rates, Scope, Channels, Pulses, Physics and SlowControls --",
+    "organised by mechanism: what the panel reads from. Tabs on one page are organised",
+    "by the question instead, and the two pages that had no ATAR question on them at",
+    "all are gone. Rates waited on a counting equipment nobody has specified, and",
+    "every panel on SlowControls waited on fecaen_hv or featar_sc; once MIDAS",
+    "histories those variables mhttpd trends them for free, and it was never obvious",
+    "those panels should exist here. Everything they carried is in the retired group",
+    "below with the reason it left, so the decision is not re-argued in November.",
     "",
-    "The Healthy tab is framed around MIDAS, not around this repo. Every panel on it",
-    "waits on a slow-control frontend writing /Equipment/<name>/Variables/, not on any",
-    "DQM code -- see docs/frontend_requirements.md, where those variables are the ODB Variables",
-    "on the fecaen_hv and featar_sc cards. The consequence is an open decision, stated",
-    "in the tab's banner: once MIDAS histories those variables, mhttpd draws the trends",
-    "for free, and it is not obvious these panels should exist here at all.",
-    "",
-    "Every slide-8 ask appears here exactly once, either ready or blocked with the",
-    "reason from docs/dqm_inventory.md. Nothing is quietly dropped, and nothing is",
-    "filled with synthetic data to make the layout look finished -- that is how the",
-    "2023 testbeam mocks rotted.",
+    "Nothing is quietly dropped and nothing is filled with synthetic data to make the",
+    "layout look finished -- that is how the 2023 testbeam mocks rotted. A panel that",
+    "cannot draw says what it is waiting for, in the panel.",
     "",
     "Figure types and histogram keys are checked against spec/vocab.json, so a panel",
     "that names a real figure is a panel that could be built this afternoon."
   ],
   "spec_version": 1,
   "surface": "dqm",
-  "title": "Demonstrator DQM — shift view",
-  "subtitle": "Is the system alive and healthy?",
+  "title": "Demonstrator DQM — ATAR shift view",
+  "subtitle": "Is the ATAR alive and healthy?",
   "chrome": {
     "style": "midas",
     "experiment": "pim1",
     "links": [
       {
-        "label": "Rates",
+        "label": "ATAR",
         "via": "custom",
-        "href": "dqm_rates.html"
-      },
-      {
-        "label": "Scope",
-        "via": "custom",
-        "href": "dqm_scope.html"
-      },
-      {
-        "label": "Channels",
-        "via": "custom",
-        "href": "dqm_channels.html"
-      },
-      {
-        "label": "Pulses",
-        "via": "custom",
-        "href": "dqm_pulses.html"
-      },
-      {
-        "label": "Physics",
-        "via": "custom",
-        "href": "dqm_physics.html"
-      },
-      {
-        "label": "SlowControls",
-        "via": "custom",
-        "href": "dqm_slowcontrols.html"
+        "href": "dqm_atar.html"
       },
       {
         "label": "ELog",
@@ -78,80 +49,126 @@
       }
     ],
     "custom_pages": [
-      "Rates",
-      "Scope",
-      "Channels",
-      "Pulses",
-      "Physics",
-      "SlowControls"
+      "ATAR"
     ]
   },
   "groups": [
     {
-      "id": "rates",
-      "name": "Rates",
-      "question": "Is anything arriving, and at what rate?",
-      "page": "Rates",
+      "id": "atar_channels",
+      "name": "Channels",
+      "question": "Is every channel behaving?",
+      "page": "ATAR",
       "elements": [
         {
-          "id": "midas_event_rate",
+          "id": "baseline_by_channel",
           "kind": "panel",
-          "label": "MIDAS event rate",
-          "question": "Is anything arriving, and how much of it?",
-          "why": "it is the only tile on this page that waits on nothing",
-          "status": "proposed",
-          "evidence": "none",
-          "size": "s",
-          "sketch": "scalar",
+          "label": "Baseline vs. channel (last N events)",
+          "question": "Is every channel sitting where it should?",
+          "why": "a channel whose baseline has walked is the cheapest fault to find",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "l",
+          "sketch": "hist2d",
           "targets": {},
-          "proposed_figure": "dqm-midas-event-rate",
-          "alarm": {
-            "condition": "the event counter stops moving while the run is marked running",
-            "action": "check the frontend before the DQM; a dead publisher and a dead beam look identical here"
-          },
-          "cites": [
-            "docs/dqm_inventory.md",
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
-          ],
-          "_note": "The one item of the 28 that requires nothing new: Events sent, Events per sec. and kBytes per sec. are in /Equipment/<name>/Statistics for any equipment that exists. Proposed rather than ready because a ready panel needs targets.figure (R3) and under MIDAS there is no figure registry to name one from -- see the warning at the top of docs/dqm_inventory.md.\n\nRe-sketched from `trend`. These are the three quantities wavedream-midas-dqm shows as plain modbvalue spans and trends nowhere (pages/js/dqm-scalars.js:204, :524-526), though MIDAS histories all three and mhistory.js would draw them for free. The shift question is 'is anything arriving', which one number answers; 'has the rate changed since the run started' is a different question and mhistory_dialog_var answers it in a popup without a tile."
-        },
-        {
-          "id": "t0_hit_rate",
-          "kind": "panel",
-          "label": "T0 hit rate",
-          "question": "Is the beam counter seeing beam?",
-          "why": "it is the first number that separates no beam from no readout",
-          "status": "blocked",
-          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. Wishlist 1b.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "trend",
-          "targets": {},
-          "proposed_figure": "dqm-t0-rate",
-          "alarm": {
-            "condition": "the T0 singles rate falls to zero while the run is running",
-            "action": "check the beamline before the DAQ -- this counter is upstream of everything else on this page"
-          },
+          "proposed_figure": "dqm-baseline-by-channel",
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ]
         },
         {
-          "id": "t0_t1_coincidence_rate",
+          "id": "noise_by_channel",
           "kind": "panel",
-          "label": "T0 + T1 coincidence rate",
-          "question": "How many particles go all the way through?",
-          "why": "it is the denominator the stop rate is measured against",
-          "status": "blocked",
-          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. The coincidence needs its own Variables key as well as the singles. Wishlist 1c.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "trend",
+          "label": "Noise (RMS of the leading samples) vs. channel (last N events)",
+          "question": "Which channels are noisier than their neighbours?",
+          "why": "noise is what separates a dead channel from a loud one",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "l",
+          "sketch": "hist2d",
           "targets": {},
-          "proposed_figure": "dqm-t0t1-rate",
+          "proposed_figure": "dqm-noise-by-channel",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
+        },
+        {
+          "id": "amplitude_by_channel",
+          "kind": "panel",
+          "label": "Amplitude by channel",
+          "question": "Is every channel seeing the same pulse height?",
+          "why": "it is where a channel whose gain has drifted shows up first",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "l",
+          "sketch": "hist2d",
+          "targets": {},
+          "proposed_figure": "dqm-amplitude-by-channel",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Decision 6, taken 2026-09-14: no Landau fit, and no reference peak in its place either. A MIP Landau MPV is a per-channel calibration number rather than a monitoring one, and a fit over a partial run is wrong early in a way a shifter cannot see. The reference peak that had been proposed instead needs an owner and has none, and an unowned reference is not a harmless placeholder: a stale one makes a correct spectrum look wrong and a shifter re-tunes a channel that was fine. The comparison this tile actually supports is across its own channel axis -- every channel saw the same beam, so one whose peak has moved is a row out of line with its neighbours. It comes back when the energy calibration has an owner, who is the same person."
+        },
+        {
+          "id": "atar_occupancy",
+          "kind": "panel",
+          "label": "ATAR occupancy",
+          "question": "Is the beam hitting the target where we put it?",
+          "why": "it is the fastest check that the geometry matches the ODB",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "l",
+          "sketch": "hist2d",
+          "targets": {},
+          "_note": "Moved to Channels rather than Physics by commit 9: whether every channel is seeing hits is the same question as whether it is quiet, and it is indexed by channel like the rest of that page.",
+          "proposed_figure": "dqm-atar-occupancy",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
+          ]
+        },
+        {
+          "id": "hits_per_event",
+          "kind": "panel",
+          "label": "Hits per event",
+          "question": "Is the trigger selecting what we think it is?",
+          "why": "the cheapest single number that says the trigger changed",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "alarm": {
+            "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
+            "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
+          },
+          "proposed_figure": "dqm-hits-per-event",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "atar_scope",
+      "name": "Scope",
+      "question": "What does this event look like?",
+      "page": "ATAR",
+      "elements": [
+        {
+          "id": "scope_refresh",
+          "kind": "note",
+          "label": "One event per second, read from the ODB at load",
+          "why": "one page now drives two views that tolerate different rates",
+          "status": "proposed",
+          "evidence": "none",
+          "targets": {},
+          "body": "This page refreshes one event per second by default, matching mhttpd's own one-second loop so a shifter does not hold two cadences in their head. The rate is read from an ODB key at load -- the same pattern as the layer definition -- so it is tunable during a shift without a rebuild. The merge of the event display into this page is what makes the number worth stating: a waveform view and a position view tolerate different rates, and leaving it to whoever builds the page would have produced two.",
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md"
@@ -176,130 +193,9 @@
           ]
         },
         {
-          "id": "t0_atar_coincidence_by_layer",
-          "kind": "panel",
-          "label": "T0 + ATAR coincidence per layer",
-          "question": "Which layers are in time with the beam counter?",
-          "why": "it is the per-layer version of the question the stop rate asks in one number",
-          "status": "blocked",
-          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. A key per layer, and the same decision 2 question about where the coincidence is formed. Wishlist 1f.",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-t0atar-layer-rate",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "stop_rate",
-          "kind": "panel",
-          "label": "Stop rate — T0 + ATAR without T1",
-          "question": "How many muons are actually stopping in the target?",
-          "why": "it is the rate the whole campaign is trying to maximise",
-          "status": "blocked",
-          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. This one needs a vetoed coincidence key, which is a third thing for the same frontend to count rather than a third frontend. Wishlist 1g.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "trend",
-          "targets": {},
-          "proposed_figure": "dqm-stop-rate",
-          "alarm": {
-            "condition": "the stop rate moves while the T0 singles rate does not",
-            "action": "suspect the degrader or the beam momentum before the readout -- the beam is still there and is stopping somewhere else"
-          },
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "calo_event_rate",
-          "kind": "panel",
-          "label": "Calorimeter event rate",
-          "question": "Is the calorimeter seeing the positrons?",
-          "why": "a calorimeter that has gone quiet invalidates every energy tile downstream",
-          "status": "blocked",
-          "blocked_by": "No calorimeter equipment exists; docs/frontend_requirements.md lists fecalo. Its Statistics would give the rate for free once it does, or a scaler Variables key if the rate wanted is hits rather than events. Wishlist 1j.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "trend",
-          "targets": {},
-          "proposed_figure": "dqm-calo-rate",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "mupix_hit_rate",
-          "kind": "panel",
-          "label": "MuPix hit rate",
-          "question": "Is the tracker seeing anything at all?",
-          "why": "it is the cheapest check that the tracker is in the run",
-          "status": "blocked",
-          "blocked_by": "No MuPix equipment exists; docs/frontend_requirements.md lists femupix. This is the scalar rate only -- the position density map is a 2D accumulation and belongs on Channels, which is mechanism C and waits on the analyzer. Wishlist 1i, the first half.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "trend",
-          "targets": {},
-          "proposed_figure": "dqm-mupix-rate",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "trigger_settings",
-          "kind": "panel",
-          "label": "Trigger settings for this run",
-          "question": "What trigger made these events, and what is this rate divided by?",
-          "why": "different runs have different trigger settings and a rate means nothing without them",
-          "status": "blocked",
-          "blocked_by": "No fetrigger and no fesampic, so not one of the four keys this panel reads exists: /Equipment/Trigger/Settings/{Mode, Prescale, Coincidence window} and /Equipment/SAMPIC/Settings/Threshold. Until they do, every rate on this screen is an uncorrected count and nothing on the page says so.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "table",
-          "targets": {},
-          "proposed_figure": "dqm-trigger-settings",
-          "alarm": {
-            "condition": "any of the four keys is absent, or Prescale is not 1 while the screen shows a raw rate",
-            "action": "read the prescale before believing any rate on this page; note it in the eLog with the run number"
-          },
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "Moved here from the Alive tab by commit 4 of the custom-pages plan: the divisor belongs next to the dividend. An event rate counts events the frontend sent -- already divided by the prescale, and silent about triggers lost to deadtime -- so a rate shown without the prescale beside it is a number nobody can act on."
-        }
-      ]
-    },
-    {
-      "id": "scope",
-      "name": "One event",
-      "question": "What does this event look like?",
-      "page": "Scope",
-      "elements": [
-        {
-          "id": "scope_refresh",
-          "kind": "note",
-          "label": "One event per second, read from the ODB at load",
-          "why": "one page now drives two views that tolerate different rates",
-          "status": "proposed",
-          "evidence": "none",
-          "targets": {},
-          "body": "This page refreshes one event per second by default, matching mhttpd's own one-second loop so a shifter does not hold two cadences in their head. The rate is read from an ODB key at load -- the same pattern as the layer definition -- so it is tunable during a shift without a rebuild. The merge of the event display into this page is what makes the number worth stating: a waveform view and a position view tolerate different rates, and leaving it to whoever builds the page would have produced two.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
           "id": "atar_raw_waveforms",
           "kind": "panel",
-          "label": "ATAR raw waveforms, by layer",
+          "label": "ATAR waveforms",
           "question": "Does a pulse look like a pulse?",
           "why": "it is the page you open when a histogram is empty and nothing else says why",
           "status": "ready",
@@ -315,28 +211,29 @@
           "help": "Draws. The bank layout is written down in demonstrator-midas-dqm's docs/sampic-bank-layout.md and decoded from it on both sides -- mdqm.dqm.sampic and pages/js/dqm-adbanks.js, checked against the same generated bytes -- which is what this asked for rather than a struct that happens to compile. The layer split needed no third thing, as this said: which channels are in which layer is declared configuration, read from /Equipment/SAMPIC/Settings together with the ATAR geometry that encodes the channel ids. A file whose frontend publishes neither still draws, in a single panel, and says so."
         },
         {
-          "id": "calo_waveforms",
+          "id": "atar_hit_positions",
           "kind": "panel",
-          "label": "Calorimeter waveforms",
-          "question": "Does a calorimeter pulse look like a pulse?",
-          "why": "the same question as the ATAR waveforms, asked of a different detector",
-          "status": "blocked",
-          "blocked_by": "No calorimeter bank and no document describing one; docs/frontend_requirements.md lists the quantities nobody writes because there is no fecalo. Same requirement as the ATAR waveforms and the same failure mode if the layout is assumed rather than written. Wishlist 3i.",
-          "evidence": "none",
+          "label": "ATAR hit positions",
+          "question": "Where in the target did this event put its charge?",
+          "why": "layer against strip, one column per strip orientation, is the view that shows a track where a channel list shows none",
+          "status": "ready",
+          "evidence": "replay",
           "size": "l",
           "sketch": "event",
           "targets": {},
-          "proposed_figure": "dqm-calo-waveforms",
+          "proposed_figure": "atar-event-display",
+          "_note": "Split back out of event_display_energy, which drew the two target maps and the depth profile in one tile. That element's own note always argued the pair should not collapse into one, and the tab conversion is where the argument won: the maps answer where, the profile answers how deep, and a shifter reads them one after the other.",
           "cites": [
             "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
           ]
         },
         {
           "id": "event_display_energy",
           "kind": "panel",
-          "label": "Event display — charge",
-          "question": "Does the charge deposited along the track rise the way a stopping muon should?",
+          "label": "ATAR charge deposit depth",
+          "question": "Does the charge along the track rise the way a stopping muon should, and how much is there in total?",
           "why": "it is the shape that says a muon stopped rather than passed through",
           "status": "ready",
           "evidence": "replay",
@@ -344,7 +241,7 @@
           "sketch": "event",
           "targets": {},
           "proposed_figure": "atar-event-display-energy",
-          "_note": "Slide 8 says 'Event displays (position, energy)' in one bullet. Splitting it into two panels is what keeps the second one from disappearing into the first one's readiness.",
+          "_note": "Was the whole event display -- two target maps and the depth profile in one tile. The maps are now atar_hit_positions beside it, and this half keeps the per-layer profile and gains the total charge in the event as a figure beside it, which is what the screenshot asks for as 'total edep'.",
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md",
@@ -373,11 +270,120 @@
       ]
     },
     {
-      "id": "channels",
-      "name": "Channels",
-      "question": "Is every channel behaving?",
-      "page": "Channels",
+      "id": "atar_trends",
+      "name": "Trends",
+      "question": "Is the detector's response holding still?",
+      "page": "ATAR",
       "elements": [
+        {
+          "id": "average_waveform",
+          "kind": "panel",
+          "label": "Average waveform",
+          "question": "Has the pulse shape moved since the run started?",
+          "why": "a mean that walks is a gain drift or a timing shift, and it is the cheapest trend the accumulated waveform data can carry",
+          "status": "proposed",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-average-waveform",
+          "_note": "Proposed in the tab conversion, and in tension with a decision already recorded here: pulse_persistence exists *because* a mean waveform hides the two-population case -- a track that stops early averaged with one that punches through draws a curve neither of them has. So this panel is only readable beside the persistence plot, which is why the two sit together on this tab. If it is ever built it wants the persistence plot's column means, not a separate accumulation.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
+        },
+        {
+          "id": "pulse_persistence",
+          "kind": "panel",
+          "label": "Persistence waveform",
+          "question": "What does a pulse actually look like?",
+          "why": "a mean waveform hides the two-population case this one shows immediately",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "l",
+          "sketch": "hist2d",
+          "targets": {},
+          "proposed_figure": "dqm-pulse-persistence",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "An accumulation and not a scope trace, which is why it is here and not on Scope. The persistence form -- a 2D histogram of sample against amplitude -- is the honest one: a mean waveform averages a population that stops early with one that punches through and draws a curve neither of them has. Putting it on Scope would also have put one analyzer-dependent tile on a page that otherwise requires no analyzer."
+        },
+        {
+          "id": "energy_vs_amplitude",
+          "kind": "panel",
+          "label": "Energy against amplitude",
+          "question": "Does the energy scale hold across the range?",
+          "why": "it is the tile that says whether the calibration is linear where it matters",
+          "status": "blocked",
+          "blocked_by": "Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f.",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist2d",
+          "targets": {},
+          "proposed_figure": "dqm-energy-vs-amplitude",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
+        },
+        {
+          "id": "n_tracks_in_window",
+          "kind": "panel",
+          "label": "Rate of events with 2 tracks",
+          "question": "How often does an event look like a stopped muon?",
+          "why": "slide 8 asks for it and the answer is further away than it looks",
+          "status": "blocked",
+          "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. A live count only, with no trend and honest about it: the analyzer writes its per-run summaries to the UDB, which no custom page can read, so the run-over-run comparison is a link out rather than a tile in (decision 3). That is also why it is here and not on Rates, whose whole premise is a value with a free history trend beside it.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-two-track-rate",
+          "_note": "This is the largest gap on the screen and the one with a real design choice behind it: either a tracklet count is published into the DQM stream, or 'number of tracks' is accepted as a nearline question and leaves the shift view entirely.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "atar_proposed",
+      "name": "Proposed",
+      "question": "What has been asked for and not built?",
+      "page": "ATAR",
+      "elements": [
+        {
+          "id": "physics_selection",
+          "kind": "note",
+          "label": "Every tile here states its selection, and the page counts what passed",
+          "why": "a histogram filled under an undeclared cut is unreadable at 3am",
+          "status": "proposed",
+          "evidence": "none",
+          "targets": {},
+          "body": "The wishlist heading for these items is an event selection -- stopped muons, has 2 tracks -- and this page treats that as a first-class thing rather than an implementation detail. A shifter cannot tell an empty plot from a cut that rejected everything, so every tile states the selection it was filled under and the page shows how many events passed it. The page that validates the selection is Scope: a stopped muon and its decay positron share a vertex, because the positron leaves from the strip the muon stopped in, and two unrelated muons in the same window do not.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
+        },
+        {
+          "id": "physics_nearline_rule",
+          "kind": "note",
+          "label": "The DQM shows the distribution; the nearline fits it",
+          "why": "a fit over a partial run is wrong early and silently",
+          "status": "proposed",
+          "evidence": "none",
+          "targets": {},
+          "body": "Each tile here carries the distribution a fit will run on, not the fit, because a number that is wrong early is worse than no number -- a shifter cannot tell which. The one argued exception is the time between tracks: the muon lifetime is a known physical constant, so fitting it is a check rather than a measurement and a shifter can act on its being wrong. The exception is why the rule is worth writing down: it is a rule with a stated hole rather than a prohibition.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
+        },
         {
           "id": "channel_health",
           "kind": "panel",
@@ -403,56 +409,18 @@
           ]
         },
         {
-          "id": "hits_per_event",
+          "id": "amplitude_recent_by_channel",
           "kind": "panel",
-          "label": "Hits per event",
-          "question": "Is the trigger selecting what we think it is?",
-          "why": "the cheapest single number that says the trigger changed",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "alarm": {
-            "condition": "the mean moves away from the run-108 reference near 2.3 hits per event",
-            "action": "check the trigger threshold and the enabled-channel mask before assuming physics"
-          },
-          "proposed_figure": "dqm-hits-per-event",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
-        },
-        {
-          "id": "baseline_by_channel",
-          "kind": "panel",
-          "label": "Baseline by channel",
-          "question": "Is every channel sitting where it should?",
-          "why": "a channel whose baseline has walked is the cheapest fault to find",
-          "status": "ready",
-          "evidence": "replay",
+          "label": "Amplitude vs. channel (last N events)",
+          "question": "Is any channel's pulse height drifting right now?",
+          "why": "the accumulated colormap answers what happened over the run where the shift question is what is happening now",
+          "status": "proposed",
+          "evidence": "none",
           "size": "l",
           "sketch": "hist2d",
           "targets": {},
-          "proposed_figure": "dqm-baseline-by-channel",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "noise_by_channel",
-          "kind": "panel",
-          "label": "Noise by channel",
-          "question": "Which channels are noisier than their neighbours?",
-          "why": "noise is what separates a dead channel from a loud one",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "proposed_figure": "dqm-noise-by-channel",
+          "proposed_figure": "dqm-amplitude-recent",
+          "_note": "Proposed in the tab conversion. It is the same argument that already moved baseline and noise off their colormaps and onto recent-value series: a channel that has walked inside a column carries every value it ever had and hides the walk. sampic_plugin.py already computes the amplitude, and RecentByChannel is the class that would carry it, so this is a contained change nobody has agreed to yet. Until then the Channels tab shows the accumulated colormap, which answers a different question and says so.",
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md"
@@ -495,161 +463,6 @@
           ]
         },
         {
-          "id": "atar_time_vs_t0",
-          "kind": "panel",
-          "label": "ATAR hit time relative to T0",
-          "question": "Is the ATAR timed in with the beam counter?",
-          "why": "an axis labelled relative to T0 is the check that the event builder works",
-          "status": "blocked",
-          "blocked_by": "Needs T0 and this detector in the same event record, not merely a T0 that exists somewhere. If each detector is read out as its own equipment with its own events, this tile draws a plot whose numbers mean nothing -- which is why it is the tile that reveals whether the event builder works. Nothing in docs/frontend_requirements.md provides a common time base across subsystems yet, and decision 7 settles what T0 names but not who wires it. Wishlist 3h. Per channel, which needs a channel identity within a layer -- the strip map, a frontend setting nobody has checked against the cabling.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-atar-time-t0",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "mupix_time_vs_t0",
-          "kind": "panel",
-          "label": "MuPix hit time relative to T0",
-          "question": "Is the tracker timed in at all?",
-          "why": "a flat distribution here says the subsystems are not synchronised",
-          "status": "blocked",
-          "blocked_by": "Needs T0 and this detector in the same event record, not merely a T0 that exists somewhere. If each detector is read out as its own equipment with its own events, this tile draws a plot whose numbers mean nothing -- which is why it is the tile that reveals whether the event builder works. Nothing in docs/frontend_requirements.md provides a common time base across subsystems yet, and decision 7 settles what T0 names but not who wires it. docs/frontend_requirements.md lists the quantities nobody writes because there is no femupix. Drawn as one distribution for the whole detector rather than per channel: the first question for MuPix is whether it is timed in at all.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-mupix-time-t0",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "Not on the wishlist. Added in review: it is how a shifter finds out the event builder is working, on the first run rather than in analysis, and it is the cheap precondition for the MuPix-against-positron direction comparison on Physics."
-        },
-        {
-          "id": "calo_time_vs_t0",
-          "kind": "panel",
-          "label": "Calo hit time relative to T0",
-          "question": "Is the calorimeter timed in with the rest?",
-          "why": "the same question the other two T0 tiles ask, asked of the calorimeter",
-          "status": "blocked",
-          "blocked_by": "Needs T0 and this detector in the same event record, not merely a T0 that exists somewhere. If each detector is read out as its own equipment with its own events, this tile draws a plot whose numbers mean nothing -- which is why it is the tile that reveals whether the event builder works. Nothing in docs/frontend_requirements.md provides a common time base across subsystems yet, and decision 7 settles what T0 names but not who wires it. docs/frontend_requirements.md lists the quantities nobody writes because there is no fecalo. Per channel, which the calorimeter channel count allows.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-calo-time-t0",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "Not on the wishlist. Added in review, for the same reason as the MuPix tile beside it."
-        },
-        {
-          "id": "mupix_hit_density",
-          "kind": "panel",
-          "label": "MuPix hit position density",
-          "question": "Where on the tracker is the beam landing?",
-          "why": "a beam that has moved shows here before it shows in any rate",
-          "status": "blocked",
-          "blocked_by": "No MuPix equipment and no bank carrying pixel addresses; docs/frontend_requirements.md lists the quantities nobody writes because there is no femupix. This is the 2D half of wishlist 1i -- the scalar rate is on Rates, where it gets a free history trend, and this accumulation is mechanism C and gets none.",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "proposed_figure": "dqm-mupix-density",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "atar_occupancy",
-          "kind": "panel",
-          "label": "ATAR occupancy",
-          "question": "Is the beam hitting the target where we put it?",
-          "why": "it is the fastest check that the geometry matches the ODB",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "_note": "Moved to Channels rather than Physics by commit 9: whether every channel is seeing hits is the same question as whether it is quiet, and it is indexed by channel like the rest of that page.",
-          "proposed_figure": "dqm-atar-occupancy",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "pulses",
-      "name": "Pulses",
-      "question": "What does a pulse look like, and what is it worth?",
-      "page": "Pulses",
-      "elements": [
-        {
-          "id": "pulse_persistence",
-          "kind": "panel",
-          "label": "Persistence waveform",
-          "question": "What does a pulse actually look like?",
-          "why": "a mean waveform hides the two-population case this one shows immediately",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "proposed_figure": "dqm-pulse-persistence",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "An accumulation and not a scope trace, which is why it is here and not on Scope. The persistence form -- a 2D histogram of sample against amplitude -- is the honest one: a mean waveform averages a population that stops early with one that punches through and draws a curve neither of them has. Putting it on Scope would also have put one analyzer-dependent tile on a page that otherwise requires no analyzer."
-        },
-        {
-          "id": "amplitude_by_channel",
-          "kind": "panel",
-          "label": "Amplitude by channel",
-          "question": "Is every channel seeing the same pulse height?",
-          "why": "it is where a channel whose gain has drifted shows up first",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "proposed_figure": "dqm-amplitude-by-channel",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "Decision 6, taken 2026-09-14: no Landau fit, and no reference peak in its place either. A MIP Landau MPV is a per-channel calibration number rather than a monitoring one, and a fit over a partial run is wrong early in a way a shifter cannot see. The reference peak that had been proposed instead needs an owner and has none, and an unowned reference is not a harmless placeholder: a stale one makes a correct spectrum look wrong and a shifter re-tunes a channel that was fine. The comparison this tile actually supports is across its own channel axis -- every channel saw the same beam, so one whose peak has moved is a row out of line with its neighbours. It comes back when the energy calibration has an owner, who is the same person."
-        },
-        {
-          "id": "energy_vs_amplitude",
-          "kind": "panel",
-          "label": "Energy against amplitude",
-          "question": "Does the energy scale hold across the range?",
-          "why": "it is the tile that says whether the calibration is linear where it matters",
-          "status": "blocked",
-          "blocked_by": "Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f.",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "proposed_figure": "dqm-energy-vs-amplitude",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
           "id": "energy_by_channel",
           "kind": "panel",
           "label": "Energy by ATAR and calo channel",
@@ -665,104 +478,6 @@
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "physics_page",
-      "name": "Physics",
-      "question": "Does this look like stopped muons?",
-      "page": "Physics",
-      "elements": [
-        {
-          "id": "physics_selection",
-          "kind": "note",
-          "label": "Every tile here states its selection, and the page counts what passed",
-          "why": "a histogram filled under an undeclared cut is unreadable at 3am",
-          "status": "proposed",
-          "evidence": "none",
-          "targets": {},
-          "body": "The wishlist heading for these items is an event selection -- stopped muons, has 2 tracks -- and this page treats that as a first-class thing rather than an implementation detail. A shifter cannot tell an empty plot from a cut that rejected everything, so every tile states the selection it was filled under and the page shows how many events passed it. The page that validates the selection is Scope: a stopped muon and its decay positron share a vertex, because the positron leaves from the strip the muon stopped in, and two unrelated muons in the same window do not.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "physics_nearline_rule",
-          "kind": "note",
-          "label": "The DQM shows the distribution; the nearline fits it",
-          "why": "a fit over a partial run is wrong early and silently",
-          "status": "proposed",
-          "evidence": "none",
-          "targets": {},
-          "body": "Each tile here carries the distribution a fit will run on, not the fit, because a number that is wrong early is worse than no number -- a shifter cannot tell which. The one argued exception is the time between tracks: the muon lifetime is a known physical constant, so fitting it is a check rather than a measurement and a shifter can act on its being wrong. The exception is why the rule is worth writing down: it is a rule with a stated hole rather than a prohibition.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "calo_spectrum",
-          "kind": "panel",
-          "label": "Total energy in ATAR and calo",
-          "question": "Does the energy add up to a stopped muon and its positron?",
-          "why": "the edge is a calibration anchor a shifter can watch",
-          "status": "blocked",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "alarm": {
-            "condition": "the edge near 52.8 MeV moves",
-            "action": "the calibration moved, or the HV did; note the run number and check the bias before the next run"
-          },
-          "proposed_figure": "dqm-total-energy",
-          "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which nothing in this design provides; until it exists the axis says amplitude rather than MeV. Wishlist 4b.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
-        },
-        {
-          "id": "n_tracks_in_window",
-          "kind": "panel",
-          "label": "Rate of events with 2 tracks",
-          "question": "How often does an event look like a stopped muon?",
-          "why": "slide 8 asks for it and the answer is further away than it looks",
-          "status": "blocked",
-          "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. A live count only, with no trend and honest about it: the analyzer writes its per-run summaries to the UDB, which no custom page can read, so the run-over-run comparison is a link out rather than a tile in (decision 3). That is also why it is here and not on Rates, whose whole premise is a value with a free history trend beside it.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-two-track-rate",
-          "_note": "This is the largest gap on the screen and the one with a real design choice behind it: either a tracklet count is published into the DQM stream, or 'number of tracks' is accepted as a nearline question and leaves the shift view entirely.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
-          "id": "time_between_hits",
-          "kind": "panel",
-          "label": "Time between tracks",
-          "question": "Is the time between the two tracks a muon lifetime?",
-          "why": "it is slide 8's timing ask in the form that exists today",
-          "status": "blocked",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "_note": "The one argued exception to this page's rule. The DQM shows the distribution and the nearline fits it, because a fit over a partial run is wrong early and a shifter cannot tell which -- but the muon lifetime is a known physical constant, so the fit is a check rather than a measurement and a shifter can act on its being wrong. A rule with a stated hole, not a prohibition.",
-          "proposed_figure": "dqm-time-between-tracks",
-          "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And a time base good to the muon lifetime. Wishlist 5a.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
           ]
         },
         {
@@ -809,209 +524,31 @@
           "_note": "Not on the wishlist. It is the check that the stopping distribution beside it is made of stops: a muon coming to rest leaves its Bragg peak in the layer it stops in, less in the one before, less again in the one before that. Three properties earn it a tile. It reads without an energy calibration, alone among the tiles that plot an energy, because a shifter reads three peaks in an order rather than three numbers in MeV -- and an inverted order means a muon that left, or a layer assignment off by one. It is indexed relative to the stop rather than to the detector, so every stopped muon fills the same three histograms and it is readable early in a run. And it is one graph, because 1D histograms overlay where a colormap cannot. The three do not hold equal entries -- a muon stopping in layer 2 has no third-to-last layer -- so the third is both smaller and a biased sample, and unstated that shortfall reads as missing data rather than as geometry."
         },
         {
-          "id": "mupix_vs_positron_direction",
+          "id": "time_between_hits",
           "kind": "panel",
-          "label": "MuPix direction against positron direction",
-          "question": "Do the tracker and the target agree about where the positron went?",
-          "why": "it is the tile most likely to leave this screen entirely, and it says so",
+          "label": "Time between tracks",
+          "question": "Is the time between the two tracks a muon lifetime?",
+          "why": "it is slide 8's timing ask in the form that exists today",
           "status": "blocked",
-          "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. MuPix hits in the same event as the ATAR, which is the event-building requirement the T0 tiles on Channels carry. The channel to strip map, which is a frontend setting nobody has checked against the cabling. And a relative alignment nobody has measured. Wishlist 5c.",
           "evidence": "none",
           "size": "m",
-          "sketch": "hist2d",
+          "sketch": "hist1d",
           "targets": {},
-          "proposed_figure": "dqm-direction-comparison",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "The item most likely to leave the shift screen: a direction comparison that is wrong by a misalignment nobody has measured is worse than no plot. The nearline is its home if it goes."
-        }
-      ]
-    },
-    {
-      "id": "slow_controls",
-      "name": "Slow controls",
-      "question": "Is the hardware where it should be?",
-      "page": "SlowControls",
-      "elements": [
-        {
-          "id": "healthy_banner",
-          "kind": "note",
-          "label": "This page is blocked on frontends and sensors, not on the DQM",
-          "why": "an entire tab of empty panels needs explaining once",
-          "status": "blocked",
-          "blocked_by": "Every panel here waits on a slow-control frontend writing ODB Variables -- fecaen_hv for bias, readback and leakage current, featar_sc for temperature and light. Neither exists. See docs/frontend_requirements.md.",
-          "evidence": "none",
-          "targets": {},
-          "body": "Every tile on this page is a MIDAS history plot over a slow-control equipment's Variables. None of it is DQM work: once those equipment exist, mhttpd draws all of it with no code on this side. What is missing is sensors and frontends, which is why this page is last in the menu and requires the most.",
-          "cites": [
-            "docs/frontend_requirements.md"
-          ]
-        },
-        {
-          "id": "temperature_sensors",
-          "kind": "panel",
-          "label": "Temperature",
-          "question": "Is the ATAR or the SAMPIC crate heating up?",
-          "why": "gain depends on it, so a drift here explains a drift there",
-          "status": "blocked",
-          "blocked_by": "No featar_sc frontend, and further back than that no temperature sensor is installed or catalogued. The UDB has sc.quantity temperature_c waiting for one.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "trend",
-          "targets": {
-            "figure": "nearline-slow-control",
-            "odb": {
-              "path": "/Equipment/ATAR_SC/Variables/Temperature",
-              "type": "FLOAT"
-            }
-          },
-          "cites": [
-            "docs/frontend_requirements.md"
-          ]
-        },
-        {
-          "id": "humidity_sensors",
-          "kind": "panel",
-          "label": "Humidity",
-          "question": "Is the enclosure dry enough to hold bias?",
-          "why": "wishlist 2b asks for it and nothing can record the reading yet",
-          "status": "blocked",
-          "blocked_by": "One step further back than the other three on this page: not 'no sensor' but nowhere to put the reading. The run-conditions vocabulary records slow-control readings under a fixed set of quantity names -- temperature, light level, leakage current, pressure, beam current -- and there is no name for humidity, so spec/vocab.json has nothing this tile could reference. That is a vocabulary change somebody else owns; CLAUDE.md section 1 says this repo may reference such a name and may not invent one. Flagging it is the useful thing this design can do.",
-          "evidence": "none",
-          "size": "s",
-          "sketch": "scalar",
-          "targets": {},
-          "proposed_figure": "dqm-humidity",
+          "_note": "The one argued exception to this page's rule. The DQM shows the distribution and the nearline fits it, because a fit over a partial run is wrong early and a shifter cannot tell which -- but the muon lifetime is a known physical constant, so the fit is a check rather than a measurement and a shifter can act on its being wrong. A rule with a stated hole, not a prohibition.",
+          "proposed_figure": "dqm-time-between-tracks",
+          "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And a time base good to the muon lifetime. Wishlist 5a.",
           "cites": [
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md",
-            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
-          ],
-          "_note": "Re-sketched from `trend`. 'Dry enough to hold bias' is a threshold. No frontend writes humidity and no ODB path is proposed, so the arity is unknown -- if it turns out to be one sensor per enclosure this is right, and if it is an array it becomes a bar per sensor like the leakage current beside it."
-        },
-        {
-          "id": "light_sensors",
-          "kind": "panel",
-          "label": "Light level",
-          "question": "Is the detector volume light-tight?",
-          "why": "slide 4 catalogues light sensors, so somebody intends to fit them",
-          "status": "blocked",
-          "blocked_by": "One step further back than the temperature: no sensor exists, none is catalogued, and no featar_sc frontend would read one. cat.sensor_kind has 'light' and sc.quantity has 'light_level', so only the database is ready.",
-          "evidence": "none",
-          "size": "s",
-          "sketch": "scalar",
-          "targets": {
-            "figure": "nearline-slow-control",
-            "odb": {
-              "path": "/Equipment/ATAR_SC/Variables/Light level",
-              "type": "FLOAT"
-            }
-          },
-          "cites": [
-            "docs/dqm_inventory.md",
-            "docs/frontend_requirements.md",
-            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
-          ],
-          "_note": "Re-sketched from `trend`. /Equipment/ATAR_SC/Variables/Light level is a scalar FLOAT, not an array, and 'is the volume light-tight' is a threshold rather than a shape -- there is no temporal question here until somebody says what a reading means beyond light-tightness, which docs/frontend_requirements.md records that nobody has."
-        },
-        {
-          "id": "leakage_current",
-          "kind": "panel",
-          "label": "ATAR leakage current",
-          "question": "Is a channel drawing current it should not be?",
-          "why": "slide 8 asks for it and it is an early damage warning",
-          "status": "blocked",
-          "blocked_by": "No fecaen_hv frontend. A MIDAS hv class driver reads current alongside voltage, so this variable costs nothing extra once that frontend exists -- and until it does, demonstrator-dqm's slow_control table holds fixtures from db/seed_slow_control.py, which backend/services/scan.py:94 says out loud.",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "hist1d",
-          "targets": {
-            "figure": "nearline-slow-control",
-            "odb": {
-              "path": "/Equipment/ATAR_HV/Variables/Current",
-              "type": "FLOAT"
-            }
-          },
-          "alarm": {
-            "condition": "a channel's current crosses the alarm limit for that channel",
-            "action": "note it and call the detector expert; do not change the bias yourself"
-          },
-          "_note": "Re-sketched from `trend` to a bar per channel. /Equipment/ATAR_HV/Variables/Current is FLOAT[8] and the question is which of the eight is drawing current it should not be -- a comparison across channels at one instant, which is wavedream-midas-dqm's rates bar chart exactly (pages/js/dqm-scalars.js:373-395: MPlotGraph bar, category x, one bar per channel). A trend of eight superimposed traces answers a question nobody asked and hides the one they did.\\n\\nWith history on, the MIDAS alarm system can watch this variable directly, which is a cheaper route to slide 8's alarm ask than anything the DQM would build.",
-          "cites": [
-            "docs/dqm_inventory.md",
-            "docs/frontend_requirements.md",
-            "demonstrator-dqm/backend/services/scan.py",
-            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+            "docs/dqm_inventory.md"
           ]
-        },
-        {
-          "id": "hv_readback",
-          "kind": "panel",
-          "label": "Bias: demand vs measured",
-          "question": "Is the bias actually what the DAQ page claims it is?",
-          "why": "nothing anywhere currently checks a setpoint against a readback",
-          "status": "blocked",
-          "blocked_by": "No fecaen_hv frontend. The hv class driver's Demand and Measured arrays are exactly this comparison, and today neither number exists in the ODB: the CAEN crate is driven from its own front panel and the value is retyped into a record.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "table",
-          "targets": {
-            "figure": "nearline-slow-control",
-            "odb": {
-              "path": "/Equipment/ATAR_HV/Variables/Measured",
-              "type": "FLOAT"
-            }
-          },
-          "alarm": {
-            "condition": "measured and demand differ by more than the channel tolerance",
-            "action": "the run is still usable; flag it so analysis knows the recorded bias is wrong"
-          },
-          "_note": "Re-sketched from `trend` to a table. The question is whether the readback matches the demand, so the panel has to draw two numbers per channel side by side; a trend cannot show a comparison and a bar chart cannot show the pair. wavedream-midas-dqm's scaler table is this shape -- a value column and a setpoint column per channel, the setpoint a modbvalue (pages/js/dqm-scalars.js:344-356).\\n\\nNot on the wishlist. It is here because it answers this page's question -- is the hardware where it should be -- and because it comes from the same equipment as a tile that is.",
-          "cites": [
-            "docs/dqm_inventory.md",
-            "docs/frontend_requirements.md",
-            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
-          ]
-        },
-        {
-          "id": "motion_readback",
-          "kind": "panel",
-          "label": "Degrader and rotations",
-          "question": "Is the geometry what the run record says it is?",
-          "why": "a stage move that nobody types is invisible to every analysis",
-          "status": "blocked",
-          "blocked_by": "There are no actuators, so there is nothing for a femotion frontend to read back. Today the degrader plate is swapped by hand and the turntables are set by hand, and the only record is what somebody typed. This panel exists to make that gap visible on the screen a shifter is actually looking at.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "table",
-          "targets": {
-            "figure": "nearline-slow-control",
-            "odb": {
-              "path": "/Equipment/Motion/Variables/Position",
-              "type": "FLOAT"
-            }
-          },
-          "alarm": {
-            "condition": "a measured position differs from the demanded one",
-            "action": "stop before the next run: every downstream analysis will use the demanded value"
-          },
-          "cites": [
-            "docs/dqm_inventory.md",
-            "docs/frontend_requirements.md",
-            "demonstrator-pim1/mc_analysis/docs/closed_plans/atar_rotation_plan.md",
-            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
-          ],
-          "_note": "Re-sketched from `trend` to a table, for the same reason as the bias readback beside it: FLOAT[3] against the three numbers the run record claims, which is a comparison and not a shape. A stage that has not moved draws a flat line for the whole run, which is a trend saying nothing in the space where 'these two disagree' should be.\\n\\nNot on the wishlist. It is here because it answers this page's question -- is the hardware where it should be -- and because it comes from the same equipment as a tile that is."
         }
       ]
     },
     {
       "id": "retired",
-      "name": "Dropped in the conversion",
-      "question": "What did the webapp carry that these pages do not?",
+      "name": "Dropped in the conversions",
+      "question": "What did the six-page set carry that the ATAR page does not?",
       "elements": [
         {
           "id": "daq_heartbeat",
@@ -1063,6 +600,486 @@
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ],
           "_note": "Dropped by commit 9, and it was two things. MIDAS has an alarm system that evaluates conditions on ODB values and comes free with the frontends, which the DAQ spec already draws (CLAUDE.md section 11). The UDB's own alarm table is for what only the DQM can see, and no custom page can read the UDB (decision 3), so that half is a link out rather than a tile in. Neither half is a panel on this screen."
+        },
+        {
+          "id": "midas_event_rate",
+          "kind": "panel",
+          "label": "MIDAS event rate",
+          "question": "Is anything arriving, and how much of it?",
+          "why": "it is the only tile on this page that waits on nothing",
+          "status": "dropped",
+          "evidence": "none",
+          "size": "s",
+          "sketch": "scalar",
+          "targets": {},
+          "proposed_figure": "dqm-midas-event-rate",
+          "alarm": {
+            "condition": "the event counter stops moving while the run is marked running",
+            "action": "check the frontend before the DQM; a dead publisher and a dead beam look identical here"
+          },
+          "cites": [
+            "docs/dqm_inventory.md",
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+          ],
+          "_note": "Went with the Rates page. mhttpd's own status page already shows events and bytes per second, so this tile was a copy of MIDAS's own readout on a page we owned. The one item of the 28 that requires nothing new: Events sent, Events per sec. and kBytes per sec. are in /Equipment/<name>/Statistics for any equipment that exists. Proposed rather than ready because a ready panel needs targets.figure (R3) and under MIDAS there is no figure registry to name one from -- see the warning at the top of docs/dqm_inventory.md.\n\nRe-sketched from `trend`. These are the three quantities wavedream-midas-dqm shows as plain modbvalue spans and trends nowhere (pages/js/dqm-scalars.js:204, :524-526), though MIDAS histories all three and mhistory.js would draw them for free. The shift question is 'is anything arriving', which one number answers; 'has the rate changed since the run started' is a different question and mhistory_dialog_var answers it in a popup without a tile."
+        },
+        {
+          "id": "t0_hit_rate",
+          "kind": "panel",
+          "label": "T0 hit rate",
+          "question": "Is the beam counter seeing beam?",
+          "why": "it is the first number that separates no beam from no readout",
+          "status": "dropped",
+          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. Wishlist 1b.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "trend",
+          "targets": {},
+          "proposed_figure": "dqm-t0-rate",
+          "alarm": {
+            "condition": "the T0 singles rate falls to zero while the run is running",
+            "action": "check the beamline before the DAQ -- this counter is upstream of everything else on this page"
+          },
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. T0 is not ATAR, and no frontend counts it."
+        },
+        {
+          "id": "t0_t1_coincidence_rate",
+          "kind": "panel",
+          "label": "T0 + T1 coincidence rate",
+          "question": "How many particles go all the way through?",
+          "why": "it is the denominator the stop rate is measured against",
+          "status": "dropped",
+          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. The coincidence needs its own Variables key as well as the singles. Wishlist 1c.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "trend",
+          "targets": {},
+          "proposed_figure": "dqm-t0t1-rate",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. A T0+T1 coincidence is a beamline measurement, not an ATAR one."
+        },
+        {
+          "id": "t0_atar_coincidence_by_layer",
+          "kind": "panel",
+          "label": "T0 + ATAR coincidence per layer",
+          "question": "Which layers are in time with the beam counter?",
+          "why": "it is the per-layer version of the question the stop rate asks in one number",
+          "status": "dropped",
+          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. A key per layer, and the same decision 2 question about where the coincidence is formed. Wishlist 1f.",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-t0atar-layer-rate",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. Half of it is T0, which this screen no longer covers."
+        },
+        {
+          "id": "stop_rate",
+          "kind": "panel",
+          "label": "Stop rate — T0 + ATAR without T1",
+          "question": "How many muons are actually stopping in the target?",
+          "why": "it is the rate the whole campaign is trying to maximise",
+          "status": "dropped",
+          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. This one needs a vetoed coincidence key, which is a third thing for the same frontend to count rather than a third frontend. Wishlist 1g.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "trend",
+          "targets": {},
+          "proposed_figure": "dqm-stop-rate",
+          "alarm": {
+            "condition": "the stop rate moves while the T0 singles rate does not",
+            "action": "suspect the degrader or the beam momentum before the readout -- the beam is still there and is stopping somewhere else"
+          },
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. It needs T0 and T1 as well as ATAR, so it cannot live on an ATAR-only screen."
+        },
+        {
+          "id": "calo_event_rate",
+          "kind": "panel",
+          "label": "Calorimeter event rate",
+          "question": "Is the calorimeter seeing the positrons?",
+          "why": "a calorimeter that has gone quiet invalidates every energy tile downstream",
+          "status": "dropped",
+          "blocked_by": "No calorimeter equipment exists; docs/frontend_requirements.md lists fecalo. Its Statistics would give the rate for free once it does, or a scaler Variables key if the rate wanted is hits rather than events. Wishlist 1j.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "trend",
+          "targets": {},
+          "proposed_figure": "dqm-calo-rate",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. There is no calorimeter frontend and no calorimeter on this screen."
+        },
+        {
+          "id": "mupix_hit_rate",
+          "kind": "panel",
+          "label": "MuPix hit rate",
+          "question": "Is the tracker seeing anything at all?",
+          "why": "it is the cheapest check that the tracker is in the run",
+          "status": "dropped",
+          "blocked_by": "No MuPix equipment exists; docs/frontend_requirements.md lists femupix. This is the scalar rate only -- the position density map is a 2D accumulation and belongs on Channels, which is mechanism C and waits on the analyzer. Wishlist 1i, the first half.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "trend",
+          "targets": {},
+          "proposed_figure": "dqm-mupix-rate",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. MuPix is not ATAR."
+        },
+        {
+          "id": "trigger_settings",
+          "kind": "panel",
+          "label": "Trigger settings for this run",
+          "question": "What trigger made these events, and what is this rate divided by?",
+          "why": "different runs have different trigger settings and a rate means nothing without them",
+          "status": "dropped",
+          "blocked_by": "No fetrigger and no fesampic, so not one of the four keys this panel reads exists: /Equipment/Trigger/Settings/{Mode, Prescale, Coincidence window} and /Equipment/SAMPIC/Settings/Threshold. Until they do, every rate on this screen is an uncorrected count and nothing on the page says so.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "table",
+          "targets": {},
+          "proposed_figure": "dqm-trigger-settings",
+          "alarm": {
+            "condition": "any of the four keys is absent, or Prescale is not 1 while the screen shows a raw rate",
+            "action": "read the prescale before believing any rate on this page; note it in the eLog with the run number"
+          },
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Went with the Rates page. The trigger is what the rates were divided by; with the rates gone the table has nothing to qualify. Moved here from the Alive tab by commit 4 of the custom-pages plan: the divisor belongs next to the dividend. An event rate counts events the frontend sent -- already divided by the prescale, and silent about triggers lost to deadtime -- so a rate shown without the prescale beside it is a number nobody can act on."
+        },
+        {
+          "id": "healthy_banner",
+          "kind": "note",
+          "label": "This page is blocked on frontends and sensors, not on the DQM",
+          "why": "an entire tab of empty panels needs explaining once",
+          "status": "dropped",
+          "blocked_by": "Every panel here waits on a slow-control frontend writing ODB Variables -- fecaen_hv for bias, readback and leakage current, featar_sc for temperature and light. Neither exists. See docs/frontend_requirements.md.",
+          "evidence": "none",
+          "targets": {},
+          "body": "Every tile on this page is a MIDAS history plot over a slow-control equipment's Variables. None of it is DQM work: once those equipment exist, mhttpd draws all of it with no code on this side. What is missing is sensors and frontends, which is why this page is last in the menu and requires the most.",
+          "cites": [
+            "docs/frontend_requirements.md"
+          ],
+          "_note": "Went with the SlowControls page, whose every panel waited on fecaen_hv and featar_sc rather than on anything here."
+        },
+        {
+          "id": "temperature_sensors",
+          "kind": "panel",
+          "label": "Temperature",
+          "question": "Is the ATAR or the SAMPIC crate heating up?",
+          "why": "gain depends on it, so a drift here explains a drift there",
+          "status": "dropped",
+          "blocked_by": "No featar_sc frontend, and further back than that no temperature sensor is installed or catalogued. The UDB has sc.quantity temperature_c waiting for one.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "trend",
+          "targets": {
+            "figure": "nearline-slow-control",
+            "odb": {
+              "path": "/Equipment/ATAR_SC/Variables/Temperature",
+              "type": "FLOAT"
+            }
+          },
+          "cites": [
+            "docs/frontend_requirements.md"
+          ],
+          "_note": "Went with the SlowControls page. Once MIDAS histories the variable, mhttpd trends it for free and this tile earns nothing."
+        },
+        {
+          "id": "humidity_sensors",
+          "kind": "panel",
+          "label": "Humidity",
+          "question": "Is the enclosure dry enough to hold bias?",
+          "why": "wishlist 2b asks for it and nothing can record the reading yet",
+          "status": "dropped",
+          "blocked_by": "One step further back than the other three on this page: not 'no sensor' but nowhere to put the reading. The run-conditions vocabulary records slow-control readings under a fixed set of quantity names -- temperature, light level, leakage current, pressure, beam current -- and there is no name for humidity, so spec/vocab.json has nothing this tile could reference. That is a vocabulary change somebody else owns; CLAUDE.md section 1 says this repo may reference such a name and may not invent one. Flagging it is the useful thing this design can do.",
+          "evidence": "none",
+          "size": "s",
+          "sketch": "scalar",
+          "targets": {},
+          "proposed_figure": "dqm-humidity",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md",
+            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+          ],
+          "_note": "Went with the SlowControls page, and it never had a name in the run-conditions vocabulary. Re-sketched from `trend`. 'Dry enough to hold bias' is a threshold. No frontend writes humidity and no ODB path is proposed, so the arity is unknown -- if it turns out to be one sensor per enclosure this is right, and if it is an array it becomes a bar per sensor like the leakage current beside it."
+        },
+        {
+          "id": "light_sensors",
+          "kind": "panel",
+          "label": "Light level",
+          "question": "Is the detector volume light-tight?",
+          "why": "slide 4 catalogues light sensors, so somebody intends to fit them",
+          "status": "dropped",
+          "blocked_by": "One step further back than the temperature: no sensor exists, none is catalogued, and no featar_sc frontend would read one. cat.sensor_kind has 'light' and sc.quantity has 'light_level', so only the database is ready.",
+          "evidence": "none",
+          "size": "s",
+          "sketch": "scalar",
+          "targets": {
+            "figure": "nearline-slow-control",
+            "odb": {
+              "path": "/Equipment/ATAR_SC/Variables/Light level",
+              "type": "FLOAT"
+            }
+          },
+          "cites": [
+            "docs/dqm_inventory.md",
+            "docs/frontend_requirements.md",
+            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+          ],
+          "_note": "Went with the SlowControls page. Re-sketched from `trend`. /Equipment/ATAR_SC/Variables/Light level is a scalar FLOAT, not an array, and 'is the volume light-tight' is a threshold rather than a shape -- there is no temporal question here until somebody says what a reading means beyond light-tightness, which docs/frontend_requirements.md records that nobody has."
+        },
+        {
+          "id": "leakage_current",
+          "kind": "panel",
+          "label": "ATAR leakage current",
+          "question": "Is a channel drawing current it should not be?",
+          "why": "slide 8 asks for it and it is an early damage warning",
+          "status": "dropped",
+          "blocked_by": "No fecaen_hv frontend. A MIDAS hv class driver reads current alongside voltage, so this variable costs nothing extra once that frontend exists -- and until it does, demonstrator-dqm's slow_control table holds fixtures from db/seed_slow_control.py, which backend/services/scan.py:94 says out loud.",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist1d",
+          "targets": {
+            "figure": "nearline-slow-control",
+            "odb": {
+              "path": "/Equipment/ATAR_HV/Variables/Current",
+              "type": "FLOAT"
+            }
+          },
+          "alarm": {
+            "condition": "a channel's current crosses the alarm limit for that channel",
+            "action": "note it and call the detector expert; do not change the bias yourself"
+          },
+          "_note": "Went with the SlowControls page. It is a detector-health question the HV frontend and the MIDAS alarm system own. Re-sketched from `trend` to a bar per channel. /Equipment/ATAR_HV/Variables/Current is FLOAT[8] and the question is which of the eight is drawing current it should not be -- a comparison across channels at one instant, which is wavedream-midas-dqm's rates bar chart exactly (pages/js/dqm-scalars.js:373-395: MPlotGraph bar, category x, one bar per channel). A trend of eight superimposed traces answers a question nobody asked and hides the one they did.\\n\\nWith history on, the MIDAS alarm system can watch this variable directly, which is a cheaper route to slide 8's alarm ask than anything the DQM would build.",
+          "cites": [
+            "docs/dqm_inventory.md",
+            "docs/frontend_requirements.md",
+            "demonstrator-dqm/backend/services/scan.py",
+            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+          ]
+        },
+        {
+          "id": "hv_readback",
+          "kind": "panel",
+          "label": "Bias: demand vs measured",
+          "question": "Is the bias actually what the DAQ page claims it is?",
+          "why": "nothing anywhere currently checks a setpoint against a readback",
+          "status": "dropped",
+          "blocked_by": "No fecaen_hv frontend. The hv class driver's Demand and Measured arrays are exactly this comparison, and today neither number exists in the ODB: the CAEN crate is driven from its own front panel and the value is retyped into a record.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "table",
+          "targets": {
+            "figure": "nearline-slow-control",
+            "odb": {
+              "path": "/Equipment/ATAR_HV/Variables/Measured",
+              "type": "FLOAT"
+            }
+          },
+          "alarm": {
+            "condition": "measured and demand differ by more than the channel tolerance",
+            "action": "the run is still usable; flag it so analysis knows the recorded bias is wrong"
+          },
+          "_note": "Went with the SlowControls page. Demand against measured is a slow-control comparison, not a DQM one. Re-sketched from `trend` to a table. The question is whether the readback matches the demand, so the panel has to draw two numbers per channel side by side; a trend cannot show a comparison and a bar chart cannot show the pair. wavedream-midas-dqm's scaler table is this shape -- a value column and a setpoint column per channel, the setpoint a modbvalue (pages/js/dqm-scalars.js:344-356).\\n\\nNot on the wishlist. It is here because it answers this page's question -- is the hardware where it should be -- and because it comes from the same equipment as a tile that is.",
+          "cites": [
+            "docs/dqm_inventory.md",
+            "docs/frontend_requirements.md",
+            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+          ]
+        },
+        {
+          "id": "motion_readback",
+          "kind": "panel",
+          "label": "Degrader and rotations",
+          "question": "Is the geometry what the run record says it is?",
+          "why": "a stage move that nobody types is invisible to every analysis",
+          "status": "dropped",
+          "blocked_by": "There are no actuators, so there is nothing for a femotion frontend to read back. Today the degrader plate is swapped by hand and the turntables are set by hand, and the only record is what somebody typed. This panel exists to make that gap visible on the screen a shifter is actually looking at.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "table",
+          "targets": {
+            "figure": "nearline-slow-control",
+            "odb": {
+              "path": "/Equipment/Motion/Variables/Position",
+              "type": "FLOAT"
+            }
+          },
+          "alarm": {
+            "condition": "a measured position differs from the demanded one",
+            "action": "stop before the next run: every downstream analysis will use the demanded value"
+          },
+          "cites": [
+            "docs/dqm_inventory.md",
+            "docs/frontend_requirements.md",
+            "demonstrator-pim1/mc_analysis/docs/closed_plans/atar_rotation_plan.md",
+            "wavedream-midas-dqm/pages/js/dqm-scalars.js"
+          ],
+          "_note": "Went with the SlowControls page. Degrader and rotation positions are run conditions, not quality. Re-sketched from `trend` to a table, for the same reason as the bias readback beside it: FLOAT[3] against the three numbers the run record claims, which is a comparison and not a shape. A stage that has not moved draws a flat line for the whole run, which is a trend saying nothing in the space where 'these two disagree' should be.\\n\\nNot on the wishlist. It is here because it answers this page's question -- is the hardware where it should be -- and because it comes from the same equipment as a tile that is."
+        },
+        {
+          "id": "calo_waveforms",
+          "kind": "panel",
+          "label": "Calorimeter waveforms",
+          "question": "Does a calorimeter pulse look like a pulse?",
+          "why": "the same question as the ATAR waveforms, asked of a different detector",
+          "status": "dropped",
+          "blocked_by": "No calorimeter bank and no document describing one; docs/frontend_requirements.md lists the quantities nobody writes because there is no fecalo. Same requirement as the ATAR waveforms and the same failure mode if the layout is assumed rather than written. Wishlist 3i.",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "event",
+          "targets": {},
+          "proposed_figure": "dqm-calo-waveforms",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Not ATAR. There is no calorimeter frontend and no calorimeter bank; the screen is now one detector's."
+        },
+        {
+          "id": "atar_time_vs_t0",
+          "kind": "panel",
+          "label": "ATAR hit time relative to T0",
+          "question": "Is the ATAR timed in with the beam counter?",
+          "why": "an axis labelled relative to T0 is the check that the event builder works",
+          "status": "dropped",
+          "blocked_by": "Needs T0 and this detector in the same event record, not merely a T0 that exists somewhere. If each detector is read out as its own equipment with its own events, this tile draws a plot whose numbers mean nothing -- which is why it is the tile that reveals whether the event builder works. Nothing in docs/frontend_requirements.md provides a common time base across subsystems yet, and decision 7 settles what T0 names but not who wires it. Wishlist 3h. Per channel, which needs a channel identity within a layer -- the strip map, a frontend setting nobody has checked against the cabling.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-atar-time-t0",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Needs T0 in the same event record, and T0 left the screen with the Rates page."
+        },
+        {
+          "id": "mupix_time_vs_t0",
+          "kind": "panel",
+          "label": "MuPix hit time relative to T0",
+          "question": "Is the tracker timed in at all?",
+          "why": "a flat distribution here says the subsystems are not synchronised",
+          "status": "dropped",
+          "blocked_by": "Needs T0 and this detector in the same event record, not merely a T0 that exists somewhere. If each detector is read out as its own equipment with its own events, this tile draws a plot whose numbers mean nothing -- which is why it is the tile that reveals whether the event builder works. Nothing in docs/frontend_requirements.md provides a common time base across subsystems yet, and decision 7 settles what T0 names but not who wires it. docs/frontend_requirements.md lists the quantities nobody writes because there is no femupix. Drawn as one distribution for the whole detector rather than per channel: the first question for MuPix is whether it is timed in at all.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-mupix-time-t0",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Not ATAR, and needs T0 as well. Not on the wishlist. Added in review: it is how a shifter finds out the event builder is working, on the first run rather than in analysis, and it is the cheap precondition for the MuPix-against-positron direction comparison on Physics."
+        },
+        {
+          "id": "calo_time_vs_t0",
+          "kind": "panel",
+          "label": "Calo hit time relative to T0",
+          "question": "Is the calorimeter timed in with the rest?",
+          "why": "the same question the other two T0 tiles ask, asked of the calorimeter",
+          "status": "dropped",
+          "blocked_by": "Needs T0 and this detector in the same event record, not merely a T0 that exists somewhere. If each detector is read out as its own equipment with its own events, this tile draws a plot whose numbers mean nothing -- which is why it is the tile that reveals whether the event builder works. Nothing in docs/frontend_requirements.md provides a common time base across subsystems yet, and decision 7 settles what T0 names but not who wires it. docs/frontend_requirements.md lists the quantities nobody writes because there is no fecalo. Per channel, which the calorimeter channel count allows.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-calo-time-t0",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Not ATAR, and needs T0 as well. Not on the wishlist. Added in review, for the same reason as the MuPix tile beside it."
+        },
+        {
+          "id": "mupix_hit_density",
+          "kind": "panel",
+          "label": "MuPix hit position density",
+          "question": "Where on the tracker is the beam landing?",
+          "why": "a beam that has moved shows here before it shows in any rate",
+          "status": "dropped",
+          "blocked_by": "No MuPix equipment and no bank carrying pixel addresses; docs/frontend_requirements.md lists the quantities nobody writes because there is no femupix. This is the 2D half of wishlist 1i -- the scalar rate is on Rates, where it gets a free history trend, and this accumulation is mechanism C and gets none.",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist2d",
+          "targets": {},
+          "proposed_figure": "dqm-mupix-density",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Not ATAR."
+        },
+        {
+          "id": "calo_spectrum",
+          "kind": "panel",
+          "label": "Total energy in ATAR and calo",
+          "question": "Does the energy add up to a stopped muon and its positron?",
+          "why": "the edge is a calibration anchor a shifter can watch",
+          "status": "dropped",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "alarm": {
+            "condition": "the edge near 52.8 MeV moves",
+            "action": "the calibration moved, or the HV did; note the run number and check the bias before the next run"
+          },
+          "proposed_figure": "dqm-total-energy",
+          "blocked_by": "This panel was ready against a figure type that demonstrator-dqm registers, and the conversion retires that registry. the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which nothing in this design provides; until it exists the axis says amplitude rather than MeV. Wishlist 4b.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
+          ],
+          "_note": "Not ATAR in the half that mattered: the ATAR side of the sum survives as energy_by_channel on the proposed tab."
+        },
+        {
+          "id": "mupix_vs_positron_direction",
+          "kind": "panel",
+          "label": "MuPix direction against positron direction",
+          "question": "Do the tracker and the target agree about where the positron went?",
+          "why": "it is the tile most likely to leave this screen entirely, and it says so",
+          "status": "dropped",
+          "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. MuPix hits in the same event as the ATAR, which is the event-building requirement the T0 tiles on Channels carry. The channel to strip map, which is a frontend setting nobody has checked against the cabling. And a relative alignment nobody has measured. Wishlist 5c.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist2d",
+          "targets": {},
+          "proposed_figure": "dqm-direction-comparison",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Not ATAR. The item most likely to leave the shift screen: a direction comparison that is wrong by a misalignment nobody has measured is worse than no plot. The nearline is its home if it goes."
         }
       ]
     }
