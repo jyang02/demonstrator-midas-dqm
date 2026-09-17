@@ -202,7 +202,9 @@ for (const group of TABS) {
   test(`${name}: the tab counts its own panels that are not drawing`, async () => {
     const page = bootPage(PAGE);
     await page.load();
-    const waiting = catalogue.elements.filter((e) => e.status !== "ready").length;
+    // Panels only: a note is not a plot that is missing.
+    const waiting = catalogue.elements.filter(
+      (e) => e.kind === "panel" && e.status !== "ready").length;
     const button = page.doc.getElementById(`tab-${group}`);
     const count = button.byClass("dqm-tabcount");
     if (!waiting) {

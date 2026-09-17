@@ -332,8 +332,11 @@ are still explaining themselves *in a sentence*. Scope is 1 of 5: its waveform,
 hit-position, charge-depth and raw-event tiles are all built, and only the layer
 hit rate is left waiting on a counting equipment. Trends is 4 of 4 and Proposed
 is 8 of 8, which is the honest picture of a backlog -- those two tabs are the
-gap, and the tab buttons carry the same numbers so it is legible without opening
-either.
+gap, and the tab buttons carry a count so it is legible without opening either.
+That badge counts *panels that are not `ready`*, so it is 1, 3 and 8 rather than
+the `$W` above: `$W` is what is on screen now, and on Trends it includes the
+persistence colormap sitting behind its toggle, which is ready and drawing the
+moment anyone asks.
 
 Those invocations failing is the signal to update them.
 

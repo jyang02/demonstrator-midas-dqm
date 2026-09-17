@@ -256,7 +256,12 @@ function render(entry, page) {
   entry.tabs.forEach(function (tab, i) {
     const button = el("button", { class: "dqm-tab", type: "button", role: "tab",
                                   id: `tab-${tab.group}` }, tab.name);
-    const waiting = tab.elements.filter((e) => e.status !== "ready").length;
+    // Panels only. A note is a sentence the tab wants read, not a plot that is
+    // missing, and counting one as waiting made the Scope tab claim two empty
+    // panels when it has one. The strip inside the tab still counts every
+    // element, because there it is labelled with the status it is counting.
+    const waiting = tab.elements.filter(
+      (e) => e.kind === "panel" && e.status !== "ready").length;
     // The count is on the tab and not only inside it, so the size of the gap is
     // legible without opening anything. A tab that draws everything it has
     // wears no number rather than a zero.

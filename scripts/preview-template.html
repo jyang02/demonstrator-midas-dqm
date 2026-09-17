@@ -49,13 +49,26 @@ function mjsonrpc_call(method){
 function bkToObj(rpc){ return rpc.__event; }
 
 // A minimal canvas plotter standing in for mplot.js, with the surface the page
-// uses: param.plot, draw, redraw, resize. Deliberately crude -- it exists so the
-// page has somewhere to put traces, not to reproduce mplot.
+// uses: param.plot, draw, redraw, resize, calcMinMax. Deliberately crude -- it
+// exists so the page has somewhere to put traces, not to reproduce mplot.
+//
+// calcMinMax was missing for a long time and nothing noticed, because the only
+// callers are the per-layer waveform panels and the two charge tiles, and all
+// of those need a channel map in /Equipment/SAMPIC/Settings that this stub
+// answers null for. Supply one -- as a patched copy of the generated file, which
+// is how the tab conversion was checked -- and every one of them threw. A stub
+// that models a method surface has to model the whole of it, or it silently
+// stops covering the paths that need it most.
 class MPlotGraph {
   constructor(div, param){ this.div=div; this.param=Object.assign({plot:[]},param||{});
     this.c=document.createElement("canvas"); this.c.width=1000; this.c.height=380;
     this.c.style.maxWidth="100%"; div.appendChild(this.c); }
   resize(){} draw(){ this.redraw(); }
+  // mplot folds the per-plot xMin/xMax/yMin/yMax into graph-level bounds here.
+  // This stub rescales per redraw from the data it is handed, so there is
+  // nothing to precompute -- but the method has to exist, and be callable
+  // before any data has arrived.
+  calcMinMax(){}
   redraw(){
     const ctx=this.c.getContext("2d"), W=this.c.width, H=this.c.height, P=44;
     ctx.clearRect(0,0,W,H);
