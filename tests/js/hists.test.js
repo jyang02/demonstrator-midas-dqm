@@ -521,7 +521,12 @@ test("the hover hook names a function that exists", async () => {
     `the div names ${name} and no such function is on the global`);
 });
 
-test("hovering a point names the channel, its layer and its strip", async () => {
+test("hovering names the channel at the pointer and the rest in the readout", async () => {
+  // Split on purpose. mplot draws its label to the right of the cursor and
+  // flips it to sx - 10 - w if that would overflow the right edge, with no
+  // matching check against the LEFT edge -- so a label wider than the plot is
+  // clipped wherever it lands. Four panels to a row leaves about 185px of
+  // plot, and the full sentence is nearer 270.
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
   const g = graphAt(page, "baseline-plot-L4");
   const tip = globalThis.window[
@@ -530,14 +535,46 @@ test("hovering a point names the channel, its layer and its strip", async () => 
   // What mplot hands the function: the trace it found and the point on it.
   const idx = 9;
   g.marker = { graphIndex: idx, x: -12, y: 0.7382 };
-  const text = tip(g);
-
+  const label = tip(g);
   const plot = g.param.plot[idx];
-  assert.match(text, new RegExp(`ch ${plot.dqmChannel}\\b`), "no channel named");
-  assert.match(text, /layer 4/, "no layer named");
-  assert.match(text, new RegExp(`strip ${plot.dqmStrip}\\b`), "no strip named");
-  assert.match(text, /0\.7382 V/, "no value");
-  assert.match(text, /12 s ago/, "no age");
+
+  // On the canvas: the channel and what it reads, and nothing else.
+  assert.match(label, new RegExp(`ch ${plot.dqmChannel}\\b`), "no channel at the pointer");
+  assert.match(label, /0\.7382 V/, "no value at the pointer");
+  // 12px sans-serif is a shade over 6px a character, and mplot adds 6px of
+  // padding. Pinned as a character budget because the failure it guards is a
+  // label silently running off the edge of a panel, with nothing in the
+  // console and the plot looking fine.
+  assert.ok(label.length <= 24,
+    `the pointer label is ${label.length} chars and will be clipped: "${label}"`);
+
+  // In the readout, which is ordinary DOM and cannot be clipped: the lot.
+  const readout = page.root.byClass("dqm-readout")[0];
+  assert.ok(readout, "no readout line");
+  assert.match(readout.textContent, new RegExp(`ch ${plot.dqmChannel}\\b`));
+  assert.match(readout.textContent, /layer 4/, "no layer named");
+  assert.match(readout.textContent, new RegExp(`strip ${plot.dqmStrip}\\b`));
+  assert.match(readout.textContent, /0\.7382 V/);
+  assert.match(readout.textContent, /12 s ago/, "no age");
+});
+
+test("the readout keeps the last channel hovered rather than blanking", async () => {
+  // Reading a channel number and then looking down at the ranking should not
+  // blank the number you just went to get.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const g = graphAt(page, "baseline-plot-L4");
+  const tip = globalThis.window.dqmBaselineTip;
+  g.marker = { graphIndex: 3, x: -5, y: 0.74 };
+  tip(g);
+  const after = page.root.byClass("dqm-readout")[0].textContent;
+  assert.match(after, /ch \d+/);
+  // Nothing clears it; a later draw with no marker never calls the function.
+  assert.strictEqual(page.root.byClass("dqm-readout")[0].textContent, after);
+});
+
+test("the readout says what to do before anything has been hovered", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  assert.match(page.root.byClass("dqm-readout")[0].textContent, /Hover a point/);
 });
 
 test("hovering a placeholder does not print ch undefined", async () => {
@@ -549,6 +586,7 @@ test("hovering a placeholder does not print ch undefined", async () => {
   const text = tip(g);
   assert.doesNotMatch(text, /undefined/, `printed "${text}"`);
   assert.match(text, /0\.7400 V/);
+  assert.doesNotMatch(page.root.byClass("dqm-readout")[0].textContent, /undefined/);
 });
 
 // --- the ranking ------------------------------------------------------------

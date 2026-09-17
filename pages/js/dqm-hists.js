@@ -588,11 +588,46 @@ function baselineTip(graph) {
   const volts = `${graph.marker.y.toFixed(4)} V`;
   // Age is the negated x, back the way it went in.
   const age = `${Math.round(-graph.marker.x)} s ago`;
-  if (!plot || plot.dqmChannel === undefined) return `${volts}, ${age}`;
+  if (!plot || plot.dqmChannel === undefined) {
+    say(`${volts}, ${age}`);
+    return `${volts}, ${age}`;
+  }
   const where = plot.dqmLayer === null || plot.dqmLayer === undefined
     ? "unmapped"
     : `layer ${plot.dqmLayer}` + (plot.dqmStrip === null ? "" : `, strip ${plot.dqmStrip}`);
-  return `ch ${plot.dqmChannel} — ${where} — ${volts}, ${age}`;
+
+  // The full sentence goes to the readout line, which is ordinary DOM and
+  // cannot be clipped by anything. The canvas label keeps only what has to be
+  // under the pointer -- which channel, and what it reads.
+  say(`ch ${plot.dqmChannel} — ${where} — ${volts}, ${age}`);
+  return `ch ${plot.dqmChannel} · ${volts}`;
+}
+
+//: The readout line, set when the tile builds. One baseline tile per page, so
+//: one of these; a second would need this keyed by graph.
+let readoutEl = null;
+
+/**
+ * Put the full identification somewhere it cannot be cut off.
+ *
+ * mplot draws its hover label to the right of the cursor and, if that would
+ * overflow the right edge, flips it to `sx - 10 - w` -- with no matching check
+ * against the left edge. So a label wider than the plot is clipped wherever it
+ * goes, and in a panel four to a row the plot is about 185px while the full
+ * sentence is nearer 270. Reported as "hovering points on the left cuts the
+ * label off", which is exactly that flip running off the other side.
+ *
+ * mplot is a stock MIDAS resource and is not ours to patch, so the fix is to
+ * stop asking it to draw something that does not fit. This is called from the
+ * tooltip function on every hover, so the line follows the pointer without a
+ * second mouse handler.
+ *
+ * It keeps the last thing hovered rather than clearing, on purpose: reading a
+ * channel number and then looking down at the ranking should not blank the
+ * number you just went to get.
+ */
+function say(text) {
+  if (readoutEl) readoutEl.textContent = text;
 }
 if (typeof window !== "undefined") window.dqmBaselineTip = baselineTip;
 
@@ -742,6 +777,9 @@ function baselineTrend(name) {
         // stripLo/stripHi the lines are coloured with, so it cannot describe a
         // ramp the plot is not using.
         ctx.body.insertBefore(ATARGeom.stripLegend(map), host);
+        readoutEl = el("div", { class: "dqm-readout" },
+          "Hover a point to identify its channel.");
+        ctx.body.insertBefore(readoutEl, host);
         // Straight into a four-column grid in layer order, so eight layers
         // fall into two rows of four. No grouping by strip orientation, unlike
         // the waveforms on Scope: which way a layer's strips run decides how a
@@ -772,6 +810,9 @@ function baselineTrend(name) {
           + `is one panel with every channel on it rather than eight by layer. `
           + `The layer of a channel cannot be guessed: the pixel id decodes only `
           + `under the base and the stride it was made with.`;
+        readoutEl = el("div", { class: "dqm-readout" },
+          "Hover a point to identify its channel.");
+        ctx.body.insertBefore(readoutEl, host);
       }
       // Last, and hidden while the map places everything -- but shown from the
       // start when it is the only panel there is, so the tile is not blank
