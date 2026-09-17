@@ -633,7 +633,7 @@ test("each key sits above what it explains, and says the scale is shared", async
     `keys and maps came out in the order ${names.join(", ")}`);
 
   // And the sharing is stated, not left to be inferred from two identical ramps.
-  assert.match(textOf(maps), /one scale for both maps below/);
+  assert.match(textOf(maps), /[Oo]ne scale for both maps below/);
 });
 
 test("hovering a cell names the channel, its layer and its strip", async () => {
