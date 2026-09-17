@@ -216,8 +216,39 @@ function stripColour(strip, lo, hi) {
 // runPage's `also` rather than require(), which is how they get a fresh map
 // per boot. A cache that needed clearing by hand would be one more thing to
 // forget in the test that mattered.
+/**
+ * The key to stripColour: a swatch per strip, labelled at both ends.
+ *
+ * Here rather than in the page that shows it, because it is the ramp's own
+ * documentation and the two have to change together. A legend built next to
+ * the plot would go on claiming viridis over 0..45 the day the ramp or the
+ * instrumented window moved, and a colour key that is wrong is worse than
+ * none: it is read as authority.
+ *
+ * One swatch per strip, not a CSS gradient, for the same reason. What a
+ * channel actually gets is a discrete colour out of the ramp at its own strip,
+ * so the key shows exactly those colours -- a smooth bar would imply a
+ * precision of reading the plot does not have.
+ */
+function stripLegend(map) {
+  const el = DQMPage.el;
+  const lo = map.stripLo, hi = map.stripHi;
+  const bar = el("div", { class: "dqm-ramp-bar" });
+  for (let strip = lo; strip <= hi; strip++) {
+    const sw = el("div", { class: "dqm-ramp-swatch" });
+    sw.style.background = stripColour(strip, lo, hi);
+    sw.title = `strip ${strip}`;
+    bar.appendChild(sw);
+  }
+  return el("div", { class: "dqm-ramp-key" },
+    el("span", { class: "dqm-ramp-label" }, "strip across the layer"),
+    el("span", { class: "dqm-ramp-end" }, String(lo)),
+    bar,
+    el("span", { class: "dqm-ramp-end" }, String(hi)));
+}
+
 const ATARGeom = { SETTINGS, load, orientationOf, layerOf, stripOf,
-                   layerColumns, colourFor, stripColour,
+                   layerColumns, stripLegend, colourFor, stripColour,
                    PALETTE, VIRIDIS, RAMP_TOP };
 root.ATARGeom = ATARGeom;
 if (typeof module !== "undefined" && module.exports) module.exports = ATARGeom;

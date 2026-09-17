@@ -27,6 +27,12 @@ const PER_LAYER = 32;
 const STRIDE = 46;
 const BASE = 100000;
 const DEPTH = 10;
+//: The fixed x window. Written out rather than imported, because requiring
+//: dqm-hists.js at load destructures DQMPage and there is no page yet -- and
+//: because a test that reads the value it is checking checks nothing. The one
+//: test below ties this to the module's own constant, so changing it there
+//: fails here, once, in an obvious place.
+const WINDOW_S = 60;
 
 //: /Equipment/SAMPIC/Settings as a demonstrator file's frontend publishes it.
 //: The same shape scope.test.js builds, and deliberately the same numbers: the
@@ -189,7 +195,131 @@ test("the x axis is time running back from now, and each line is ordered along i
     }
   });
   assert.strictEqual(g.xMax, 0, "the right-hand end of the axis is not now");
-  assert.strictEqual(g.xMin, -(DEPTH - 1) * 2.0, "the axis does not reach the oldest point");
+  assert.strictEqual(g.xMin, -WINDOW_S, "the axis is not the fixed window");
+});
+
+test("the window is fixed, whatever the ring happens to reach back to", async () => {
+  // Fitting the axis to the oldest point made it a different width on every
+  // refresh, and a wide one most of the time: channels are hit at very
+  // different rates, so one quiet channel dragged the axis out past three
+  // minutes and squeezed everything that mattered into the last centimetre.
+  // The same distance has to mean the same time on every panel and reload.
+  for (const spacing of [0.2, 2.0, 40.0]) {   // reaches back 1.8 s, 18 s, 360 s
+    const s = series(N_LAYERS * PER_LAYER, DEPTH);
+    s.age = s.age.map((a) => (a / 2.0) * spacing);
+    const page = await boot(s, sampicSettings());
+    layerGraphs(page).forEach(function (g, L) {
+      assert.strictEqual(g.xMin, -WINDOW_S,
+        `at ${spacing} s spacing layer ${L} fitted its axis to the data`);
+      assert.strictEqual(g.xMax, 0);
+    });
+  }
+});
+
+test("a point outside the window does not stretch the y axis around itself", async () => {
+  // A channel that walked three minutes ago is off the left of every panel.
+  // Letting it set the y range would stretch all eight around a line nobody
+  // can see: the axis would say something had moved and the plot would show
+  // nothing that had.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH, () => 0.74);
+  // One channel, one point, far out of the window and far off the baseline.
+  s.channel.push(3); s.value.push(0.2); s.age.push(WINDOW_S * 4);
+
+  const page = await boot(s, sampicSettings());
+  const g = graphAt(page, "baseline-plot-L0");
+  assert.ok(g.yMin > 0.5,
+    `a point ${WINDOW_S * 4} s old dragged the y floor to ${g.yMin}`);
+});
+
+test("channels with nothing inside the window are counted, not quietly dropped", async () => {
+  // The price of a fixed axis, and the tile has to say it: a quiet channel
+  // whose last ten values all predate the window is drawn nowhere at all.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH);
+  // Push layer 1's channels -- 32 of them -- entirely out of the window.
+  for (let i = 0; i < s.channel.length; i++) {
+    const ch = s.channel[i];
+    if (ch >= PER_LAYER && ch < 2 * PER_LAYER) s.age[i] += WINDOW_S * 2;
+  }
+  const page = await boot(s, sampicSettings());
+
+  const tile = page.doc.getElementById("baseline_by_channel");
+  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
+  assert.match(text, new RegExp(`${PER_LAYER} channels older than the window`),
+    "the tile does not say how many channels it could not draw");
+
+  // And their panel keeps its axes rather than vanishing.
+  const g = graphAt(page, "baseline-plot-L1");
+  assert.strictEqual(g.xMin, -WINDOW_S);
+  assert.ok(g.yMax > g.yMin);
+});
+
+test("with every channel inside the window the tile says so plainly", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const tile = page.doc.getElementById("baseline_by_channel");
+  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
+  assert.match(text, new RegExp(`every channel within ${WINDOW_S} s`));
+});
+
+test("the window these tests assume is the window the page uses", async () => {
+  // Written out above rather than imported: a test that reads the number it is
+  // asserting asserts nothing. This is the one place the two are tied, and it
+  // needs a booted page first because dqm-hists.js destructures DQMPage at load.
+  await boot(series(1, DEPTH), sampicSettings());
+  const H = require(path.join(JS, "dqm-hists.js"));
+  assert.strictEqual(H.BASELINE_WINDOW_S, WINDOW_S,
+    "dqm-hists.js moved the window and these tests still assume the old one");
+});
+
+// --- the colour key ---------------------------------------------------------
+
+test("the strip ramp gets a key, built from the ramp the lines use", async () => {
+  // There is no legend on the panels and there cannot be one at 32 lines
+  // apiece, so the colour is the only thing naming a line and it needs a key.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  const key = page.root.byClass("dqm-ramp-key")[0];
+  assert.ok(key, "the block has no colour key");
+  const swatches = key.byClass("dqm-ramp-swatch");
+  // One per strip that is *instrumented*, not per strip the stride allows.
+  // The fixture maps 32 channels per layer at a stride of 46, and the ramp
+  // spans 0..31 because those are the strips that exist -- spanning 0..45
+  // would spend a third of the ramp on colours no channel can have and make
+  // every real one darker than the plot draws it.
+  assert.strictEqual(swatches.length, PER_LAYER,
+    "the key does not have a swatch per instrumented strip");
+  assert.ok(PER_LAYER < STRIDE, "the fixture no longer distinguishes the two");
+
+  // The colours are the ramp's own, so the key cannot describe one the plot is
+  // not using -- which is the failure a hand-built legend has, and it is worse
+  // than no key at all because it is read as authority.
+  const geom = require(path.join(JS, "dqm-atar-geom.js"));
+  const lo = 0, hi = PER_LAYER - 1;
+  assert.strictEqual(swatches[0].style.background, geom.stripColour(lo, lo, hi));
+  assert.strictEqual(swatches[hi].style.background, geom.stripColour(hi, lo, hi));
+  // And the middle, so a key that only got its ends right still fails.
+  const mid = Math.floor(hi / 2);
+  assert.strictEqual(swatches[mid].style.background, geom.stripColour(mid, lo, hi));
+
+  // Labelled at both ends, so a colour can be turned back into a strip number.
+  const ends = key.byClass("dqm-ramp-end").map((e) => e.textContent);
+  assert.deepStrictEqual(ends, [String(lo), String(hi)]);
+});
+
+test("the key sits above the panels it explains", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const tile = page.doc.getElementById("baseline_by_channel");
+  const body = tile.byClass("dqm-tile-body")[0];
+  const kids = body.children;
+  const keyAt = kids.findIndex((e) => e.className.includes("dqm-ramp-key"));
+  const hostAt = kids.findIndex((e) => e.id === "baseline-layer-panels");
+  assert.ok(keyAt >= 0 && hostAt >= 0, "key or panel block missing");
+  assert.ok(keyAt < hostAt, "the key is below the block it is a key to");
+});
+
+test("with no geometry there is no key, because there are no strips to key", async () => {
+  const page = await boot(series(64, DEPTH));
+  assert.strictEqual(page.root.byClass("dqm-ramp-key").length, 0,
+    "a strip key was drawn for channels that have no strip");
 });
 
 test("a reply out of order is still drawn as a line, not a zigzag", async () => {

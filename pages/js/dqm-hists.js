@@ -542,13 +542,23 @@ function seriesPanel(name) {
 // per ATAR layer
 // ---------------------------------------------------------------------------
 
-//: The x span to draw before anything has arrived, in seconds.
+//: How far back the baseline axis reaches, in seconds. Fixed, not fitted.
 //:
-//: A plot whose only points are at t=0 has a zero-width x axis, and mplot
-//: draws that as a blank frame. Sixty seconds is not a claim about the data --
-//: it is the empty axis a shifter reads as "nothing yet" rather than as
-//: "broken".
-const BASELINE_EMPTY_SPAN_S = 60;
+//: Letting the axis grow to the oldest point in the ring made it a different
+//: width on every refresh, and a wide one most of the time: channels are hit
+//: at very different rates, so one quiet channel's tenth-oldest value dragged
+//: the axis out past three minutes and squeezed everything that mattered into
+//: the last centimetre. A fixed window is a ruler -- the same distance means
+//: the same time on every panel and on every reload -- which is the whole
+//: argument for one y range across the eight, applied to the other axis.
+//:
+//: It also fixes the empty case for free: a plot whose only points are at t=0
+//: has a zero-width x axis and mplot draws it as a blank frame.
+//:
+//: The cost is stated rather than hidden. A channel whose last ten values are
+//: all older than this has nothing on the plot, and `outside` below counts
+//: those so the tile can say how many rather than letting them disappear.
+const BASELINE_WINDOW_S = 60;
 
 /**
  * Baseline against time: one line per channel, one panel per ATAR layer.
@@ -657,6 +667,12 @@ function baselineTrend(name) {
     function build() {
       panels = [];
       if (map) {
+        // The ramp's key above the block, because the colour is the only thing
+        // naming a line: there is no legend on the panels and there cannot be
+        // one at 32 lines apiece. Built by dqm-atar-geom.js from the same
+        // stripLo/stripHi the lines are coloured with, so it cannot describe a
+        // ramp the plot is not using.
+        ctx.body.insertBefore(ATARGeom.stripLegend(map), host);
         const columns = ATARGeom.layerColumns(host, map, "baseline");
         map.layers.forEach(function (layer) {
           const orient = ATARGeom.orientationOf(map, layer);
@@ -668,9 +684,10 @@ function baselineTrend(name) {
           panels.push({ layer: layer, graph: graphIn(div, ""), div: div, used: false });
         });
         geoNote.textContent = `One panel per ATAR layer, in two columns by strip `
-          + `orientation, from ${map.source}. Lines are coloured by strip `
-          + `position, on the ramp the waveforms on the Scope tab use, so a `
-          + `channel is the same colour in both views.`;
+          + `orientation, from ${map.source}. The axis is the last `
+          + `${BASELINE_WINDOW_S} seconds on every panel, and the ramp below is `
+          + `the one the waveforms on the Scope tab use, so a channel is the `
+          + `same colour in both views.`;
       } else {
         // No geometry is not no plot. Every channel on one panel still answers
         // "has anything walked", and it says why it cannot answer "which
@@ -726,7 +743,11 @@ function baselineTrend(name) {
       panels.forEach(function (p) { p.graph.param.plot = []; p.used = false; });
       const fallback = byLayer.get(null);
 
-      let xLo = 0, yLo = 0, yHi = 0, any = false;
+      const xLo = -BASELINE_WINDOW_S;
+      let yLo = 0, yHi = 0, any = false;
+      //: Channels whose every point is older than the window, and so are drawn
+      //: nowhere. Counted rather than dropped quietly.
+      let outside = 0;
       lines.forEach(function (pts, ch) {
         // Its layer's panel, or the unmapped one. Never dropped.
         const panel = byLayer.get(ATARGeom.layerOf(map, ch)) || fallback;
@@ -756,13 +777,25 @@ function baselineTrend(name) {
           xData: xs, yData: ys,
         });
         panel.used = true;
+        // Only what the window can show. A channel that walked three minutes
+        // ago is off the left of every panel, and letting it set the y range
+        // would stretch all eight around a line nobody can see -- the axis
+        // would say something had moved and the plot would show nothing that
+        // had.
+        let shown = 0;
         for (let i = 0; i < ys.length; i++) {
+          if (xs[i] < -BASELINE_WINDOW_S) continue;
+          shown++;
           if (!any) { yLo = yHi = ys[i]; any = true; }
           if (ys[i] < yLo) yLo = ys[i];
           if (ys[i] > yHi) yHi = ys[i];
-          if (xs[i] < xLo) xLo = xs[i];
         }
+        if (!shown) outside++;
       });
+
+      // Nothing inside the window at all: keep an axis rather than collapsing
+      // it, so the panels read as "nothing recent" instead of as broken.
+      if (!any) { yLo = 0; yHi = 1; }
 
       // Padded so lines do not sit on the frame, and never zero-height: a set
       // of channels sitting at exactly one voltage is a real and good outcome,
@@ -770,7 +803,6 @@ function baselineTrend(name) {
       const pad = (yHi - yLo) * 0.05 || Math.abs(yHi) * 0.01 || 0.01;
       yLo -= pad;
       yHi += pad;
-      if (!(xLo < 0)) xLo = -BASELINE_EMPTY_SPAN_S;
 
       // One x range and one y range across all eight, deliberately. Per-panel
       // autoscaling would give a layer sitting flat at 0.74 V the same picture
@@ -814,14 +846,23 @@ function baselineTrend(name) {
       drawn = true;
       points.textContent = String(s.channel.length);
       depth.textContent = String(s.depth);
-      // The honest part. Channels are hit at very different rates, so the
-      // oldest point on the plot can be far older than the newest, and a tile
-      // that did not say so would be quietly claiming these are one window.
-      const maxAge = s.age && s.age.length ? Math.max.apply(null, s.age) : 0;
-      oldest.textContent = `reaches back ${Math.round(maxAge)} s`;
-      oldest.title = `Every channel's last ${s.depth} values, so a channel that `
-        + `is rarely hit reaches further back than a busy one. This is the age `
-        + `of the oldest point drawn, and the left-hand end of the axis.`;
+      // The honest part, and the price of a fixed axis. Channels are hit at
+      // very different rates, so a quiet one's last ten values can all predate
+      // the window and it is then drawn nowhere at all. A tile that let those
+      // channels simply go missing would be the opposite of what it is for.
+      oldest.textContent = outside
+        ? `${outside} channels older than the window`
+        : `every channel within ${BASELINE_WINDOW_S} s`;
+      // Yellow, not red: a quiet channel is a fact about the beam as often as
+      // it is a fault, and this tile cannot tell which.
+      oldest.className = outside ? "dqm-chip yellow" : "dqm-chip";
+      oldest.title = outside
+        ? `The axis is the last ${BASELINE_WINDOW_S} seconds. These channels `
+          + `have not been hit inside it -- their last ${s.depth} values are all `
+          + `older -- so they have no line on any panel. That is the plot being `
+          + `honest about a quiet channel, not a channel that has gone.`
+        : `The axis is the last ${BASELINE_WINDOW_S} seconds, and every channel `
+          + `the analyzer knows about has been hit inside it.`;
       note.className = "dqm-note";
       note.textContent = s.channel.length
         ? ""
@@ -863,7 +904,7 @@ DQMPage.register("baseline_by_channel", baselineTrend(BASELINE));
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { PANELS, SERIES, BASELINE, TWO_D, refreshFor, cadenceText,
                     REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS,
-                    BASELINE_EMPTY_SPAN_S };
+                    BASELINE_WINDOW_S };
 }
 
 })();
