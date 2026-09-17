@@ -231,25 +231,6 @@
           ]
         },
         {
-          "id": "raw_event",
-          "kind": "panel",
-          "label": "Raw EVENT",
-          "question": "What is actually on the wire?",
-          "why": "it is the panel you open when a plot is empty",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "m",
-          "sketch": "table",
-          "targets": {},
-          "_note": "Moved to Scope by commit 9: it is one event straight from the buffer, which is that page's whole question.",
-          "proposed_figure": "dqm-raw-event",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md",
-            "docs/dqm_inventory.md"
-          ]
-        },
-        {
           "id": "amplitude_by_channel",
           "kind": "panel",
           "label": "Amplitude by channel",
@@ -1080,6 +1061,25 @@
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ],
           "_note": "Not ATAR. The item most likely to leave the shift screen: a direction comparison that is wrong by a misalignment nobody has measured is worse than no plot. The nearline is its home if it goes."
+        },
+        {
+          "id": "raw_event",
+          "kind": "panel",
+          "label": "Raw EVENT",
+          "question": "What is actually on the wire?",
+          "why": "it is the panel you open when a plot is empty",
+          "status": "dropped",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "table",
+          "targets": {},
+          "_note": "Dropped 2026-09-17 at the owner's request. Recorded here rather than deleted, per this spec's rule that nothing is quietly dropped. The standing argument for it was that it is the panel you open when a plot is empty; what it restated is MIDAS's own Event Dump, which is a link in the sidebar of this very page and decodes any bank in the buffer without a custom renderer to keep correct. That is the daq_heartbeat reasoning above: a spec that restates a fact it does not own has to go on restating it correctly, forever. The AD00/AT00/AC00 decode the tile used is in pages/js/dqm-adbanks.js and is still checked field by field by tests/js/adbank.test.js against fixtures generated from the Python decoder, so no bank layout became untested when the tile went; what went with it is the rendering of the AT00 telemetry and AC00 collector tables. The AC00-disagrees-with-AD00 check is unaffected -- it reports on the Scope status line, not here.",
+          "proposed_figure": "dqm-raw-event",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md",
+            "docs/dqm_inventory.md"
+          ]
         }
       ]
     }

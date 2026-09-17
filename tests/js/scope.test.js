@@ -135,7 +135,7 @@ function text(page, id) {
 
 // --- the live half ----------------------------------------------------------
 
-test("a real event reaches the traces and the table", async () => {
+test("a real event reaches the traces", async () => {
   const ev = REAL.events[3];                      // 5 hits, channels 3..7
   const page = await boot([ev]);
   await pump(page, 2);
@@ -151,10 +151,6 @@ test("a real event reaches the traces and the table", async () => {
   ev.decoded.channels.forEach(function (ch) {
     assert.ok(labels.some((l) => l.startsWith(`ch ${ch}`)), `no trace for ch ${ch}`);
   });
-
-  // And the raw dump, from the same event.
-  const rows = page.doc.getElementById("raw-table").byTag("tr");
-  assert.strictEqual(rows.length, ev.decoded.nhits + 1, "one header plus one row per hit");
 });
 
 test("the trace carries volts against nanoseconds, from the configured period", async () => {
@@ -356,9 +352,6 @@ test("a multi-board demonstrator event draws one trace per readout channel", asy
   const colours = graphOf(page).param.plot.map((p) => p.line.color);
   assert.strictEqual(new Set(colours).size, new Set(labels).size,
     "two readout channels share a colour");
-
-  const rows = page.doc.getElementById("raw-table").byTag("tr");
-  assert.strictEqual(rows.length, ev.decoded.nhits + 1);
 });
 
 test("unticking one board's channel leaves the other boards drawn", async () => {
@@ -379,43 +372,6 @@ test("unticking one board's channel leaves the other boards drawn", async () => 
 
 
 // --- AT00 telemetry and AC00, where an operator can read them ---------------
-
-test("a demonstrator event shows its readout telemetry and collector record", async () => {
-  const ev = DEMO.events[0];
-  const page = await boot([ev]);
-  await pump(page, 2);
-
-  const at = page.doc.getElementById("at-telemetry");
-  assert.ok(at, "no telemetry table");
-  const cells = at.byTag("td").map((c) => c.textContent);
-  // Filled, so real numbers rather than the not-reported dash.
-  assert.ok(!cells.includes("—"), `telemetry read as not reported: ${cells}`);
-  assert.ok(cells.includes(String(ev.decoded.timing.sp_total_us_sum)),
-    "the summed readout time is not on the page");
-  assert.ok(cells.includes(String(ev.decoded.timing.sp_total_us_max)),
-    "the worst-chip readout time is not on the page");
-  assert.match(text(page, "at-parents"), new RegExp(`${ev.decoded.timing.nparents} parent`));
-
-  const c = ev.decoded.collector;
-  assert.match(text(page, "ac-note"), new RegExp(`${c.total_hits} hits`));
-  assert.match(text(page, "ac-note"), new RegExp(`${c.collector_timestamp_ns} ns`));
-  const acCells = page.doc.getElementById("ac-timing").byTag("td").map((x) => x.textContent);
-  assert.deepStrictEqual(acCells, [String(c.wait_us), String(c.group_build_us),
-                                   String(c.finalize_us), String(c.total_us)]);
-});
-
-test("a repackaged event says its telemetry is absent rather than showing zeros", async () => {
-  // Run 108 has AT00 with every telemetry field zero and no AC00 at all.
-  const ev = REAL.events[0];
-  const page = await boot([ev]);
-  await pump(page, 2);
-
-  const cells = page.doc.getElementById("at-telemetry").byTag("td")
-    .map((c) => c.textContent).filter((c) => c !== "sum" && c !== "max");
-  assert.ok(cells.every((c) => c === "—"),
-    `zeros shown as measurements: ${cells}`);
-  assert.match(text(page, "ac-note"), /No collector bank/);
-});
 
 test("a collector that disagrees with the banks it collected is reported", async () => {
   const ev = DEMO.events[0];

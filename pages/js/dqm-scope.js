@@ -6,11 +6,11 @@
 // buffer as an ArrayBuffer, bkToObj() in midas.js splits it into banks,
 // dqm-adbanks.js turns AD00 into volts, and mplot.js draws it.
 //
-// Four panels here are live, all off the same decoded event. atar_hit_positions
+// Three panels here are live, all off the same decoded event. atar_hit_positions
 // draws it as two target maps -- layer up, strip across, one map per strip
 // orientation, in the column order the waveforms above use. event_display_energy
 // draws the charge summed per layer as a depth profile, with the event total
-// beside it. raw_event dumps the banks.
+// beside it.
 //
 // Those two were one panel until the tab conversion, and splitting them is a
 // return to what the spec always said: its note on event_display_energy argued
@@ -324,7 +324,6 @@ function onEvent(event) {
   renderChannelPicker();
   draw();
   update();
-  updateRawEvent();
 }
 
 /**
@@ -917,124 +916,6 @@ function depthNote(map) {
     + `rather than drawn at zero -- it did not measure zero, it measured `
     + `nothing. Charge is the baseline-subtracted integral of the waveform, `
     + `which is an energy only after a calibration nobody owns, hence V·ns.`;
-}
-
-// ---------------------------------------------------------------------------
-// raw_event -- the dump you open when a plot is empty
-// ---------------------------------------------------------------------------
-
-DQMPage.register("raw_event", function (ctx) {
-  ctx.body.appendChild(el("div", { class: "dqm-note", id: "raw-note" },
-    "Fills from the same event as the waveforms above."));
-  ctx.body.appendChild(el("div", { id: "raw-timing" }));
-  ctx.body.appendChild(el("div", { id: "raw-table" }));
-});
-
-//: Microseconds, or an em dash. AT00's telemetry is zero in anything that
-//: repackages a recording, so a column of "0" would read as "the readout took
-//: no time" rather than "nobody reported it".
-function us(v, reported) {
-  return reported ? `${v}` : "—";
-}
-
-/**
- * AT00's readout telemetry and AC00's collector record, as two small tables.
- *
- * Neither is plotted anywhere: they are per-event scalars about how the DAQ
- * assembled the event, and the place to read them is beside the event they
- * describe. What they are good for is spotting an event that was built wrong --
- * a collector that disagrees with the banks it collected, or a chip whose
- * readout took far longer than its siblings.
- */
-function updateTimingTables() {
-  const host = document.getElementById("raw-timing");
-  if (!host || !state.event) return;
-  host.innerHTML = "";
-
-  const t = state.event.timing;
-  if (t) {
-    // Zero throughout means the frontend does not report it, which is the case
-    // for every repackaged recording. Say that once rather than tabulate zeros.
-    const reported = ADBanks.AT_TELEMETRY_FIELDS.some((f) => t[f] > 0);
-    host.appendChild(el("div", { class: "dqm-note" },
-      reported
-        ? "AT00 readout telemetry, microseconds, per chip summed and worst-case."
-        : "AT00 carries no readout telemetry in this file: every field is zero, "
-          + "which is what a repackaged recording writes."));
-
-    const table = el("table", { class: "dqm-table mtable", id: "at-telemetry" });
-    table.appendChild(el("tr", {},
-      el("th", { class: "label" }, ""), el("th", {}, "prepare"),
-      el("th", {}, "read"), el("th", {}, "decode"), el("th", {}, "total")));
-    [["sum", "sum"], ["max", "max"]].forEach(function (row) {
-      table.appendChild(el("tr", {},
-        el("td", { class: "label" }, row[0]),
-        el("td", {}, us(t[`sp_prepare_us_${row[1]}`], reported)),
-        el("td", {}, us(t[`sp_read_us_${row[1]}`], reported)),
-        el("td", {}, us(t[`sp_decode_us_${row[1]}`], reported)),
-        el("td", {}, us(t[`sp_total_us_${row[1]}`], reported))));
-    });
-    host.appendChild(table);
-    host.appendChild(el("div", { class: "dqm-note", id: "at-parents" },
-      `${t.nparents} parent${t.nparents === 1 ? "" : "s"}, `
-      + `acquisition retries ${us(t.sp_acq_retry_sum, reported)} `
-      + `(worst chip ${us(t.sp_acq_retry_max, reported)}).`));
-  }
-
-  const c = state.event.collector;
-  if (!c) {
-    host.appendChild(el("div", { class: "dqm-note", id: "ac-note" },
-      "No collector bank in this event: nothing describes how it was built."));
-    return;
-  }
-  host.appendChild(el("div", { class: "dqm-note", id: "ac-note" },
-    `AC00 collector: ${c.n_events} event${c.n_events === 1 ? "" : "s"}, `
-    + `${c.total_hits} hits, stamped ${c.collector_timestamp_ns} ns.`));
-
-  const ac = el("table", { class: "dqm-table mtable", id: "ac-timing" });
-  ac.appendChild(el("tr", {},
-    el("th", {}, "wait"), el("th", {}, "group build"),
-    el("th", {}, "finalize"), el("th", {}, "total")));
-  ac.appendChild(el("tr", {},
-    el("td", {}, String(c.wait_us)), el("td", {}, String(c.group_build_us)),
-    el("td", {}, String(c.finalize_us)), el("td", {}, String(c.total_us))));
-  host.appendChild(ac);
-}
-
-function updateRawEvent() {
-  updateTimingTables();
-  const host = document.getElementById("raw-table");
-  if (!host || !state.event) return;
-  host.innerHTML = "";
-
-  const note = document.getElementById("raw-note");
-  if (note && state.event.timing) {
-    note.textContent = `Event ${state.event.serial}, frontend timestamp `
-      + `${state.event.timing.timestamp_ns} ns, banks ${state.event.bankNames.join(" ")}.`;
-  }
-
-  const table = el("table", { class: "dqm-table mtable" });
-  table.appendChild(el("tr", {},
-    el("th", { class: "label" }, "ch"), el("th", { class: "label" }, "chip/in"),
-    el("th", {}, "n"), el("th", {}, "baseline V"), el("th", {}, "amplitude V"),
-    el("th", {}, "peak V"), el("th", {}, "ToT ns"), el("th", {}, "t0 ns")));
-
-  state.event.hits.forEach(function (h) {
-    table.appendChild(el("tr", {},
-      el("td", { class: "label" }, String(h.global_channel)),
-      el("td", { class: "label" }, `${h.sampic_index}/${h.channel_index}`),
-      el("td", {}, String(h.data_size)),
-      el("td", {}, h.baseline.toFixed(4)),
-      el("td", {}, h.amplitude.toFixed(4)),
-      el("td", {}, h.peak.toFixed(4)),
-      // The converter writes -1 where its source carries no time-over-threshold.
-      // Printing the sentinel as a number would put -1.000 ns in a column of
-      // real measurements.
-      h.haveTot ? el("td", {}, h.tot_value.toFixed(3))
-                : el("td", { class: "masked" }, "—"),
-      el("td", {}, h.first_cell_timestamp.toFixed(1))));
-  });
-  host.appendChild(table);
 }
 
 // ---------------------------------------------------------------------------

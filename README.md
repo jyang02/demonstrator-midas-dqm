@@ -36,7 +36,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 | tab | asks | mechanism | state |
 |---|---|---|---|
 | **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise as three more strip-by-layer maps and baseline as eight per-layer trends against time |
-| **Scope** | What does this event look like? | event buffer | **five of six draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event, plus amplitude by channel behind a per-tile toggle; the layer hit rate waits on a counting equipment |
+| **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps and the charge-depth profile, all off one event, plus amplitude by channel behind a per-tile toggle; the layer hit rate waits on a counting equipment |
 | **Trends** | Is the detector's response holding still? | analyzer | persistence draws behind its toggle; the average waveform is proposed, and energy-against-amplitude and the two-track rate want a calibration and track finding |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
 
@@ -56,10 +56,11 @@ That is the point of registering them: a shifter who opens the Proposed tab at
 told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
-Ten of the twenty-five panels are `ready` and draw real data against a replay
-today: four on Scope (waveforms, the hit-position maps, the charge-depth
-profile, the raw dump), five on Channels, and persistence on Trends. Two of
-those ten are colormaps and open off, a click from drawing — held for the paint
+Nine of the twenty-one panels are `ready` and draw real data against a replay
+today: four on Channels (the occupancy map, hits per event, the baseline trends,
+the noise maps), four on Scope (waveforms, the hit-position maps, the
+charge-depth profile, amplitude by channel), and persistence on Trends. Two of
+those nine are colormaps and open off, a click from drawing — held for the paint
 cost of a colormap, not for want of data, which is a page's choice rather than a
 blocker and so not what the chip reports.
 

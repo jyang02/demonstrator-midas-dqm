@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       97a5bb56d15a1f4fc9e915045f67e2091f523df5e2ce70bc99ca94fe32d7b0ab
+// sha256:       7e88ec51a91a8369660ef40c7d60d5b10e7d7b4826a1f3a2d929e0caf9d84932
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "97a5bb56d15a1f4fc9e915045f67e2091f523df5e2ce70bc99ca94fe32d7b0ab";
+const SPEC_SHA256 = "7e88ec51a91a8369660ef40c7d60d5b10e7d7b4826a1f3a2d929e0caf9d84932";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -132,16 +132,6 @@ const PAGES = [
             "status": "ready",
             "size": "l",
             "sketch": "event"
-          },
-          {
-            "id": "raw_event",
-            "kind": "panel",
-            "label": "Raw EVENT",
-            "question": "What is actually on the wire?",
-            "why": "it is the panel you open when a plot is empty",
-            "status": "ready",
-            "size": "m",
-            "sketch": "table"
           },
           {
             "id": "amplitude_by_channel",
