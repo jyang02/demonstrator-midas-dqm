@@ -675,7 +675,7 @@ function baselineTrend(name) {
     // this digitiser that is not an ATAR strip still has a baseline worth
     // watching. It is hidden until such a channel turns up -- and it is also
     // the only panel when there is no geometry at all.
-    const host = el("div", { class: "dqm-layer-grid", id: "baseline-layer-panels" });
+    const host = el("div", { class: "dqm-layer-quad", id: "baseline-layer-panels" });
     const soloHead = el("div", { class: "dqm-subhead", id: "baseline-unmapped-head" },
       "Channels the map does not place");
     const solo = el("div", { class: "dqm-plot", id: "baseline-plot-all" });
@@ -742,21 +742,24 @@ function baselineTrend(name) {
         // stripLo/stripHi the lines are coloured with, so it cannot describe a
         // ramp the plot is not using.
         ctx.body.insertBefore(ATARGeom.stripLegend(map), host);
-        const columns = ATARGeom.layerColumns(host, map, "baseline");
+        // Straight into a four-column grid in layer order, so eight layers
+        // fall into two rows of four. No grouping by strip orientation, unlike
+        // the waveforms on Scope: which way a layer's strips run decides how a
+        // *track* is read, and a baseline is a baseline whichever way the
+        // strip lies. Grouping by something this tile does not ask about would
+        // be a parity for the reader to decode before they could find layer 5.
         map.layers.forEach(function (layer) {
-          const orient = ATARGeom.orientationOf(map, layer);
+          const cell = el("div", { class: "dqm-layer-cell" });
           const div = el("div", { class: "dqm-plot", id: `baseline-plot-L${layer}` });
-          const col = columns.get(layer % 2);
-          col.appendChild(el("div", { class: "dqm-subhead" },
-            orient ? `Layer ${layer} (${orient})` : `Layer ${layer}`));
-          col.appendChild(div);
+          cell.appendChild(el("div", { class: "dqm-subhead" }, `Layer ${layer}`));
+          cell.appendChild(div);
+          host.appendChild(cell);
           panels.push({ layer: layer, graph: graphIn(div, ""), div: div, used: false });
         });
-        geoNote.textContent = `One panel per ATAR layer, in two columns by strip `
-          + `orientation, from ${map.source}. The axis is the last `
-          + `${BASELINE_WINDOW_S} seconds on every panel, and the ramp below is `
-          + `the one the waveforms on the Scope tab use, so a channel is the `
-          + `same colour in both views.`;
+        geoNote.textContent = `One panel per ATAR layer, from ${map.source}. `
+          + `The axis is the last ${BASELINE_WINDOW_S} seconds on every panel, `
+          + `and the ramp below is the one the waveforms on the Scope tab use, `
+          + `so a channel is the same colour in both views.`;
       } else {
         // No geometry is not no plot. Every channel on one panel still answers
         // "has anything walked", and it says why it cannot answer "which

@@ -235,9 +235,11 @@ hits per event, baseline, noise and amplitude by channel on the Channels tab,
 and persistence on Trends -- each fetching one histogram and handing it to mplot
 through `BRPC.display()`. Baseline is the exception to the one-tile-one-plot
 shape: it reads its series and draws it as *eight* plots, baseline against time
-over a fixed 60 s window with a line per channel, one panel per ATAR layer in
-the two-column block the waveforms on Scope use, under a key to the strip
-colour. Against time a channel that has walked is a slope,
+over a fixed 60 s window with a line per channel, one panel per ATAR layer
+flowing four to a row, under a key to the strip colour. Hovering a point names
+the channel, and a short ranking under the block names the channels furthest
+from the median -- a ranking, not a verdict, for the same reason
+`channel_health` was never built. Against time a channel that has walked is a slope,
 where against channel it is only a wider column and indistinguishable from one
 that got noisier -- and eight panels answer the question underneath, which is
 nearly always "is it one channel or is it a layer". The map it lays them out by

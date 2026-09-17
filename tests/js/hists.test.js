@@ -131,31 +131,40 @@ function layerGraphs(page) {
 
 // --- the block --------------------------------------------------------------
 
-test("the baseline tile is eight panels, two columns and so four rows", async () => {
+test("the baseline tile is eight panels flowing four to a row", async () => {
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
 
   const host = page.doc.getElementById("baseline-layer-panels");
   assert.ok(host, "the baseline tile built no layer block");
-  assert.ok(host.className.includes("dqm-layer-grid"),
-    "the block is not in the two-column grid the waveforms use");
+  // The four-column grid is what makes eight panels two rows. Asserting the
+  // count alone would pass on a single stack of eight, which is what the
+  // narrow-viewport fallback deliberately is.
+  assert.ok(host.className.includes("dqm-layer-quad"),
+    `the block is not in the four-column grid: ${host.className}`);
+  assert.strictEqual(host.byClass("dqm-plot").length, N_LAYERS);
 
-  // Two columns, and the grid is what makes eight panels four rows: asserting
-  // the count alone would pass on a single stack of eight.
-  const even = page.doc.getElementById("baseline-col-even");
-  const odd = page.doc.getElementById("baseline-col-odd");
-  assert.ok(even && odd, "the block is not split into even and odd columns");
-  assert.strictEqual(even.byClass("dqm-plot").length, 4, "four rows in the left column");
-  assert.strictEqual(odd.byClass("dqm-plot").length, 4, "four rows in the right column");
+  // In layer order, not grouped by parity. Which way a layer's strips run
+  // decides how a *track* is read, which is the Scope tab's question; a
+  // baseline is a baseline whichever way the strip lies, so grouping by it
+  // here would be a parity for the reader to decode before finding layer 5.
+  const order = host.byClass("dqm-plot").map((d) => d.id);
+  assert.deepStrictEqual(order,
+    Array.from({ length: N_LAYERS }, (_, L) => `baseline-plot-L${L}`),
+    "the panels are not in layer order");
+});
 
-  // Even layers left, odd right, which is what puts one strip orientation down
-  // each column -- the same convention the Scope tab reads.
-  for (let L = 0; L < N_LAYERS; L++) {
-    const div = page.doc.getElementById(`baseline-plot-L${L}`);
-    assert.ok(div, `layer ${L} got no panel`);
-    const wanted = L % 2 === 0 ? even : odd;
-    assert.strictEqual(div.parent, wanted,
-      `layer ${L} is in the wrong column, so the columns are not by orientation`);
-  }
+test("the panel headings do not name a strip orientation", async () => {
+  // Dropped on purpose: it is not what this tile is asked, and a label nobody
+  // needs is a label that has to stay true.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const host = page.doc.getElementById("baseline-layer-panels");
+  const heads = host.byClass("dqm-subhead").map((e) => e.textContent.trim());
+  assert.deepStrictEqual(heads,
+    Array.from({ length: N_LAYERS }, (_, L) => `Layer ${L}`));
+
+  const text = [...host.walk()].map((e) => e._text || "").join(" ");
+  assert.doesNotMatch(text, /vertical|horizontal/i,
+    "an orientation label survived in the block");
 });
 
 test("each panel carries a line per channel of its layer, not a cloud of markers", async () => {

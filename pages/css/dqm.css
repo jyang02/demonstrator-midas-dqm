@@ -77,6 +77,32 @@ table.dqm-table tr.stale td { opacity: 0.55; }
   font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px;
 }
 .dqm-layer-grid .dqm-subhead    { margin-top: 8px; font-weight: 600; }
+
+/* The baseline block: all eight layers flowing across four columns, so they
+   fall into two rows of four. Its panels carry a time axis and want the width
+   far more than the waveforms do, and unlike the waveforms they have no charge
+   display below them whose left and right they have to agree with -- so this
+   one is free to take the shape that reads best on its own.
+
+   No orientation grouping here, and that is the point rather than an omission.
+   Which way a layer's strips run decides how a *track* is read, which is the
+   Scope tab's question; a baseline is a baseline whichever way the strip lies.
+   So the layers run in their own order, 0-3 then 4-7, and a reader counts
+   rather than decoding a parity.
+
+   Four across, then two, then one: a time axis squeezed into a quarter of a
+   narrow window is worse than a taller page. */
+.dqm-layer-quad {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px;
+}
+@media (max-width: 1700px) { .dqm-layer-quad { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px)  { .dqm-layer-quad { grid-template-columns: 1fr; } }
+.dqm-layer-quad .dqm-plot    { height: 190px; width: auto; margin-top: 2px; min-width: 0; }
+.dqm-layer-quad .dqm-subhead { margin-top: 8px; font-weight: 600; }
+/* min-width:0 on the cell too, or a grid item refuses to shrink below the
+   content's intrinsic width and the four columns overflow the page. */
+.dqm-layer-cell { min-width: 0; }
+
 .dqm-subhead { font-size: 0.9em; color: #333; }
 
 /* The key to the strip-position ramp, above the layer block it explains. One
