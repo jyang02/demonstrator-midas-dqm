@@ -468,24 +468,299 @@ test("with no geometry it is one panel and says why, rather than eight invented 
     "the tile does not say which key it wanted");
 });
 
-// --- the tile beside it -----------------------------------------------------
+// --- the tile beside it: noise as a map of the target ------------------------
+//
+// Three grids of one div per channel, placed by strip and layer. What these
+// pin is not the colour of any cell but the three readings a colour cannot
+// carry -- absent, stale and seen-once -- because those are the states a
+// colormap would have painted as "low", which is the reason the tile is divs.
+//
+// Text is read with walk() and _text rather than textContent throughout: the
+// page clears a box with `textContent = ""` before refilling it, and the stub's
+// getter returns that empty string in preference to its children.
 
-test("noise is still a scatter against channel, which is its own question", async () => {
-  // Changing the baseline tile must not drag this one with it: what is asked
-  // of noise is which channel is louder than its neighbours, a comparison
-  // across the channel axis that reads best with that axis on the plot.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+const NOISE_FRESH = 60;
+
+function textOf(node) {
+  return [...node.walk()].map((e) => e._text || "").join(" ");
+}
+
+/** The channel cells of one map, in document order. Row and axis labels are
+ *  not cells and positions with no channel carry no ch. */
+function cellsOf(page, id) {
+  return page.doc.getElementById(id).byClass("dqm-heat-cell")
+    .filter((c) => c.dataset.ch !== undefined);
+}
+
+function cellFor(page, id, ch) {
+  return cellsOf(page, id).find((c) => c.dataset.ch === String(ch));
+}
+
+/** The same reply with every value on `ch` but the first taken away. */
+function seenOnce(s, ch) {
+  const out = Object.assign({}, s, { channel: [], value: [], age: [] });
+  let kept = false;
+  for (let i = 0; i < s.channel.length; i++) {
+    if (s.channel[i] === ch) {
+      if (kept) continue;
+      kept = true;
+    }
+    out.channel.push(s.channel[i]);
+    out.value.push(s.value[i]);
+    out.age.push(s.age[i]);
+  }
+  return out;
+}
+
+test("a channel with nothing in the window is not a cell sitting at zero", async () => {
+  // The failure this exists for: an absent channel painted as the bottom of the
+  // ramp, which reads as "quiet" when what it means is "nobody hit it". The
+  // analyzer evicts on the way out, so absent is all the page is ever told --
+  // and a quiet beam produces it exactly as readily as a dead channel.
+  const page = await boot(series(7 * PER_LAYER, DEPTH), sampicSettings());
+
+  const ch = 7 * PER_LAYER;           // layer 7, strip 0: never in the reply
+  ["noise-map-avg", "noise-map-now", "noise-map-diff"].forEach(function (id) {
+    const cell = cellFor(page, id, ch);
+    assert.ok(cell, `${id} has no cell for channel ${ch}`);
+    assert.ok(cell.classList.contains("dqm-heat-nodata"),
+      `${id} drew an unhit channel as a measurement`);
+    assert.notStrictEqual(cell.style.background, ATARGeom.heatColour(0),
+      `${id} painted an absent channel the bottom of the ramp`);
+    assert.match(cell.title, /no value in the last/,
+      `${id} does not say why the cell is empty`);
+    // Never "dead": the tile cannot tell an uninstrumented channel from one
+    // that went two minutes without a hit, and must not claim to.
+    assert.doesNotMatch(cell.title, /dead/i);
+  });
+
+  const hit = cellFor(page, "noise-map-avg", 0);
+  assert.ok(!hit.classList.contains("dqm-heat-nodata"),
+    "a channel that was hit is drawn as absent");
+});
+
+test("the average and the freshest are drawn against one scale", async () => {
+  // Structural and behavioural, because either alone passes on a coincidence.
+  // The point of stacking the maps is that one colour means one RMS in both;
+  // two scales fitted independently would make the comparison silently false.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
+    if (ch === 0) return k % 2 ? 0.6 : 0.4;       // average 0.5
+    if (ch === 1) return k === DEPTH - 1 ? 0.5 : 0.1;  // freshest 0.5
+    return 0.3;
+  }), sampicSettings());
+
+  const avg = page.doc.getElementById("noise-map-avg");
+  const now = page.doc.getElementById("noise-map-now");
+  const diff = page.doc.getElementById("noise-map-diff");
+
+  assert.ok(avg.dqmScale, "the average map carries no scale");
+  assert.deepStrictEqual(avg.dqmScale, now.dqmScale,
+    "the two sequential maps are drawn against different scales");
+  // The difference is a different quantity and must not be forced onto the
+  // sequential ramp: zero is its middle, not its bottom.
+  assert.strictEqual(diff.dqmScale, undefined,
+    "the difference map was given the sequential scale");
+  assert.ok(diff.dqmDiffScale, "the difference map carries no scale of its own");
+
+  // The behavioural half: an average of 0.5 and a freshest of 0.5 are the same
+  // colour, which is what "one scale" means to somebody reading the tile.
+  assert.strictEqual(cellFor(page, "noise-map-avg", 0).style.background,
+                     cellFor(page, "noise-map-now", 1).style.background,
+    "equal values got different colours on the two maps");
+});
+
+test("a channel seen once has no difference, and says so rather than showing zero", async () => {
+  // With one value the mean IS that value, so the difference is zero by
+  // construction and says nothing about whether the channel moved. Painting it
+  // as zero would be the opposite reading of the truth.
+  const s = seenOnce(series(N_LAYERS * PER_LAYER, DEPTH), 137);
+  const page = await boot(s, sampicSettings());
+
+  const d = cellFor(page, "noise-map-diff", 137);
+  assert.ok(d.classList.contains("dqm-heat-single"),
+    "a channel seen once was drawn as a measured difference");
+  assert.notStrictEqual(d.style.background, ATARGeom.diffColour(0),
+    "a channel seen once was painted as 'did not move'");
+  assert.match(d.title, /seen once/);
+
+  // Its average and its freshest are perfectly ordinary readings, though: one
+  // value is enough for both, and blanking all three would hide a real number.
+  ["noise-map-avg", "noise-map-now"].forEach(function (id) {
+    const c = cellFor(page, id, 137);
+    assert.ok(!c.classList.contains("dqm-heat-single"), `${id} blanked a real value`);
+    assert.ok(!c.classList.contains("dqm-heat-nodata"), `${id} blanked a real value`);
+    assert.ok(c.style.background, `${id} left a measured cell unpainted`);
+  });
+});
+
+test("with no geometry the maps say which key they wanted, rather than inventing layers", async () => {
+  // Same contract the baseline block keeps: no geometry is a caveat on the
+  // view, not a fault, and never a guess. A pixel id decodes only under the
+  // base and stride it was made with.
+  const page = await boot(series(64, DEPTH));
 
   const tile = page.doc.getElementById("noise_by_channel");
-  assert.ok(tile, "the noise tile is gone");
-  const div = tile.byClass("dqm-plot")[0];
-  assert.ok(div && div.mpg, "the noise tile drew nothing");
-  const p = div.mpg.param.plot[0];
-  assert.strictEqual(p.line.draw, false, "noise grew a line across the channel axis");
-  assert.strictEqual(p.marker.draw, true);
-  // One trace for every channel, not one per channel: this tile's x axis is
-  // the channel, which is what the baseline block gave up to get a time axis.
-  assert.strictEqual(div.mpg.param.plot.length, 1);
+  assert.match(textOf(tile), /Equipment\/SAMPIC\/Settings/,
+    "the tile does not say which key it wanted");
+  assert.strictEqual(tile.byClass("yellow").length > 0, true,
+    "a missing map was reported as a fault rather than a caveat");
+
+  // Still a map of every channel, in one row. Nothing is dropped for want of a
+  // place to put it.
+  assert.strictEqual(cellsOf(page, "noise-map-avg").length, 64);
+
+  // And it does not borrow the strip ramp's key, which is a different ramp:
+  // that one stops short of the pale end because it draws lines on white.
+  assert.strictEqual(page.root.byClass("dqm-ramp-key").length, 0,
+    "the heat key was built out of the strip ramp's classes");
+  assert.ok(page.root.byClass("dqm-heat-key").length > 0,
+    "the maps were drawn with no key at all");
+});
+
+test("hovering a cell names the channel, its layer and its strip", async () => {
+  // A 19px cell carries no label, so the identity has to be reachable. The
+  // global channel number is what the ODB, the frontend and the cable map all
+  // speak, and it is what goes in the elog.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  cellFor(page, "noise-map-avg", 137).dispatch("mouseenter");
+  const said = page.doc.getElementById("noise-readout").textContent;
+  assert.match(said, /ch 137/);
+  assert.match(said, /layer 4/);
+  assert.match(said, /strip 9/);
+  assert.match(said, / V/);
+  assert.match(said, /s ago/);
+  assert.doesNotMatch(said, /undefined/);
+});
+
+test("the noise readout does not steal the baseline's", async () => {
+  // The two tiles are on one tab and both have a hover line. The baseline's is
+  // module-level, because mplot resolves a tooltip by eval()ing a name from its
+  // own scope and a closure is unreachable; the maps have no such constraint
+  // and must not write to it. Sharing would hand whichever tile answered first
+  // the other's readout -- a race, not an ordering.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  cellFor(page, "noise-map-avg", 137).dispatch("mouseenter");
+  assert.match(page.doc.getElementById("noise-readout").textContent, /ch 137/);
+  assert.match(page.doc.getElementById("baseline-readout").textContent,
+    /Hover a point/, "the noise tile wrote into the baseline's readout");
+});
+
+test("one loud channel does not flatten the other 255, and the key says it was clipped", async () => {
+  // A scale fitted to the maximum is a scale the worst channel owns: it takes
+  // the top colour and everything else lands in the bottom of the ramp,
+  // indistinguishable. The clip is only honest if the key admits to it.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function (ch) {
+    return ch === 200 ? 5.0 : 0.3;
+  }), sampicSettings());
+
+  const scale = page.doc.getElementById("noise-map-avg").dqmScale;
+  assert.strictEqual(scale.clipped, true, "the scale did not clip the outlier");
+  assert.ok(scale.hi < 1.0,
+    `one channel at 5 V dragged the scale to ${scale.hi} and flattened the rest`);
+  assert.strictEqual(page.doc.getElementById("noise-map-avg")
+    .byClass("dqm-heat-over").length, 1,
+    "the clip marked more than the one channel that was actually off the scale");
+
+  const loud = cellFor(page, "noise-map-avg", 200);
+  assert.ok(loud.classList.contains("dqm-heat-over"),
+    "a clipped cell is indistinguishable from one merely at the maximum");
+
+  // The key has to admit it: a scale that hides a channel and does not say so
+  // is a lie told in the one place a reader trusts to turn colour back into
+  // volts.
+  const tile = page.doc.getElementById("noise_by_channel");
+  assert.match(textOf(tile), /stops at 1\.5 x IQR/,
+    "the scale hides a channel and the key does not say so");
+  assert.match(textOf(tile), /the highest is 5\.0000 V/,
+    "the key does not say what was cut off");
+});
+
+test("a reply out of order still finds the freshest value on a channel", async () => {
+  // The analyzer emits oldest-first and says so, but this page decided once
+  // already not to rely on another process's emission order. The freshest is
+  // the point of least age, not the last one in the array.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
+    if (ch !== 137) return 0.3;
+    return k === DEPTH - 1 ? 0.99 : 0.10;    // 0.99 is the newest, age 0
+  });
+  const order = s.channel.map((_, i) => i).reverse();
+  const scrambled = Object.assign({}, s, {
+    channel: order.map((i) => s.channel[i]),
+    value: order.map((i) => s.value[i]),
+    age: order.map((i) => s.age[i]),
+  });
+  const page = await boot(scrambled, sampicSettings());
+
+  assert.match(cellFor(page, "noise-map-now", 137).title, /now 0\.9900 V/,
+    "the freshest value was taken from the end of the array, not from the age");
+});
+
+test("every cell carries its channel as data, and the three maps agree on where it is", async () => {
+  // Parsing a channel out of a display string would make the wording of that
+  // string load-bearing. And a column is only one strip read three ways if the
+  // three grids place the channels identically.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  const avg = cellsOf(page, "noise-map-avg").map((c) => c.dataset.ch);
+  assert.strictEqual(avg.length, N_LAYERS * PER_LAYER);
+  assert.deepStrictEqual(cellsOf(page, "noise-map-now").map((c) => c.dataset.ch), avg);
+  assert.deepStrictEqual(cellsOf(page, "noise-map-diff").map((c) => c.dataset.ch), avg);
+
+  // Placed by the map, not by the channel number: row 4 of the grid is layer 4.
+  const c137 = cellFor(page, "noise-map-avg", 137);
+  assert.strictEqual(c137.dataset.layer, "4");
+  assert.strictEqual(c137.dataset.strip, "9");
+});
+
+test("the ranking names channels, and ranks rather than judges", async () => {
+  // The same gap the baseline outlier table closes, and it matters more here:
+  // a cell has no label at all, so the map alone stops at "something, over
+  // there". No threshold, no colour, no verdict.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function (ch) {
+    return ch === 200 ? 0.9 : 0.3;
+  }), sampicSettings());
+
+  const box = page.doc.getElementById("noise-outliers");
+  assert.match(textOf(box), /ch 200/, "the loudest channel is not named");
+  assert.match(textOf(box), /ranking, not a verdict/);
+  box.byTag("tr").forEach(function (row) {
+    assert.doesNotMatch(row.className, /warn|alarm|red|yellow/,
+      "the ranking grew a verdict");
+  });
+});
+
+test("the constants these tests assume are the ones the page uses", async () => {
+  // Written out above rather than imported, for the reason the window test
+  // gives: a test that reads the number it is asserting asserts nothing.
+  await boot(series(1, DEPTH), sampicSettings());
+  const H = require(path.join(JS, "dqm-hists.js"));
+  assert.strictEqual(H.NOISE_FRESH_S, NOISE_FRESH,
+    "dqm-hists.js moved the staleness cut and these tests still assume the old one");
+  assert.ok(H.NOISE_FRESH_S < 120,
+    "the staleness cut is at or past the analyzer's horizon, so no cell can reach it");
+  assert.strictEqual(H.NOISE_FENCE, 1.5, "the outlier fence moved");
+});
+
+test("a healthy spread is not clipped, so the mark keeps meaning something", async () => {
+  // The failure a percentile clip has by construction: cut at the 98th and 2%
+  // of cells carry the "off the scale" outline on every run, healthy or not,
+  // so the outline means "top 2%" rather than "far out". A fence the bulk sits
+  // under marks nothing until something really is out.
+  let n = 0;
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function () {
+    n += 1;
+    return 0.0040 + (n % 17) * 0.00005;      // a plain spread, no outlier
+  }), sampicSettings());
+
+  const avg = page.doc.getElementById("noise-map-avg");
+  assert.strictEqual(avg.dqmScale.clipped, false,
+    "an ordinary spread was reported as clipped");
+  assert.strictEqual(avg.byClass("dqm-heat-over").length, 0,
+    "cells were marked as off the scale on a run with no outlier");
+  assert.doesNotMatch(textOf(page.doc.getElementById("noise_by_channel")),
+    /stops at/, "the key claims a clip that did not happen");
 });
 
 // --- naming the outlier -----------------------------------------------------
@@ -549,7 +824,7 @@ test("hovering names the channel at the pointer and the rest in the readout", as
     `the pointer label is ${label.length} chars and will be clipped: "${label}"`);
 
   // In the readout, which is ordinary DOM and cannot be clipped: the lot.
-  const readout = page.root.byClass("dqm-readout")[0];
+  const readout = page.doc.getElementById("baseline-readout");
   assert.ok(readout, "no readout line");
   assert.match(readout.textContent, new RegExp(`ch ${plot.dqmChannel}\\b`));
   assert.match(readout.textContent, /layer 4/, "no layer named");
@@ -566,15 +841,15 @@ test("the readout keeps the last channel hovered rather than blanking", async ()
   const tip = globalThis.window.dqmBaselineTip;
   g.marker = { graphIndex: 3, x: -5, y: 0.74 };
   tip(g);
-  const after = page.root.byClass("dqm-readout")[0].textContent;
+  const after = page.doc.getElementById("baseline-readout").textContent;
   assert.match(after, /ch \d+/);
   // Nothing clears it; a later draw with no marker never calls the function.
-  assert.strictEqual(page.root.byClass("dqm-readout")[0].textContent, after);
+  assert.strictEqual(page.doc.getElementById("baseline-readout").textContent, after);
 });
 
 test("the readout says what to do before anything has been hovered", async () => {
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  assert.match(page.root.byClass("dqm-readout")[0].textContent, /Hover a point/);
+  assert.match(page.doc.getElementById("baseline-readout").textContent, /Hover a point/);
 });
 
 test("hovering a placeholder does not print ch undefined", async () => {
@@ -586,7 +861,7 @@ test("hovering a placeholder does not print ch undefined", async () => {
   const text = tip(g);
   assert.doesNotMatch(text, /undefined/, `printed "${text}"`);
   assert.match(text, /0\.7400 V/);
-  assert.doesNotMatch(page.root.byClass("dqm-readout")[0].textContent, /undefined/);
+  assert.doesNotMatch(page.doc.getElementById("baseline-readout").textContent, /undefined/);
 });
 
 // --- the ranking ------------------------------------------------------------

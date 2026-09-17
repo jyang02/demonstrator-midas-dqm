@@ -79,9 +79,9 @@
         {
           "id": "noise_by_channel",
           "kind": "panel",
-          "label": "Noise (RMS of the leading samples) vs. channel (last N events)",
-          "question": "Which channels are noisier than their neighbours?",
-          "why": "noise is what separates a dead channel from a loud one",
+          "label": "Noise RMS by strip and layer: the window average, the freshest value, and the difference",
+          "question": "Which strips are noisier than their neighbours, and has any of them got louder just now?",
+          "why": "a map by strip and layer puts a loud channel beside its physical neighbours rather than beside the channel that happens to share its cable, and showing the average against the freshest value separates a channel that has always been noisy from one that has changed in the last minute",
           "status": "ready",
           "evidence": "replay",
           "size": "l",

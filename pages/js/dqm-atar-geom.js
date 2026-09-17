@@ -210,6 +210,129 @@ function stripColour(strip, lo, hi) {
   return lerpHex(VIRIDIS[i], VIRIDIS[i + 1], x - i);
 }
 
+/**
+ * A value's place on a sequential scale, as a fill colour.
+ *
+ * The whole of viridis, where stripColour stops at RAMP_TOP. The two are not
+ * the same ramp and must not share a function: RAMP_TOP exists because a pale
+ * 1px line on a white plot is ordered and invisible, and a filled cell has no
+ * such problem -- it is bounded by its neighbours and by the grid gap, so the
+ * yellow end reads perfectly well and throwing it away would waste a sixth of
+ * the scale. scope.test.js pins the line ramp's darkness; nothing here may
+ * loosen that.
+ *
+ * `t` is clamped rather than trusted. A caller working from a clipped scale
+ * hands this values above 1 by design, and a ramp that indexed past its own
+ * array for them would return undefined and paint the cell transparent.
+ */
+function heatColour(t) {
+  const c = Math.min(1, Math.max(0, t));
+  const x = c * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(x));
+  return lerpHex(VIRIDIS[i], VIRIDIS[i + 1], x - i);
+}
+
+//: The ends of a diverging scale, and its middle.
+//:
+//: ColorBrewer RdBu's extremes. Blue and red rather than red and green because
+//: the one thing this ramp has to carry is the SIGN -- quieter than average or
+//: louder -- and red/green is the pair that a deuteranope cannot separate at
+//: all. Blue and red stay distinguishable as light and dark even when the hue
+//: does not arrive.
+//:
+//: The midpoint is #f7f7f7 and not #fff on purpose. Zero is the commonest
+//: value on the difference map and a pure-white cell would be indistinguishable
+//: from the page behind a no-data cell, which is the one confusion this map
+//: cannot afford: "did not move" and "nothing to say" are opposite readings.
+const DIVERGE_LO = "#2166ac";
+const DIVERGE_MID = "#f7f7f7";
+const DIVERGE_HI = "#b2182b";
+
+/**
+ * A signed value's place on a diverging scale, as a fill colour.
+ *
+ * `t` runs -1..+1 and is clamped at both ends, for the reason heatColour is.
+ * Two straight legs off the midpoint rather than a table, because what a reader
+ * has to get off this is the sign and roughly the size, and a symmetric ramp is
+ * the only kind where equal moves in opposite directions look equally large.
+ */
+function diffColour(t) {
+  const c = Math.min(1, Math.max(-1, t));
+  return c < 0 ? lerpHex(DIVERGE_MID, DIVERGE_LO, -c)
+               : lerpHex(DIVERGE_MID, DIVERGE_HI, c);
+}
+
+//: How many swatches a heat key is drawn with.
+//:
+//: stripLegend uses one per strip because a strip's colour IS one discrete step
+//: out of the ramp and a smooth bar would claim a precision the plot does not
+//: have. Here the opposite is true: the value is continuous, so the key is as
+//: near continuous as it can be drawn, and 32 swatches at the bar's 320px is
+//: 10px each -- fine enough to read as a gradient and coarse enough that the
+//: DOM is not doing something silly.
+const KEY_STEPS = 32;
+
+function keyBar(colourAt) {
+  const bar = DQMPage.el("div", { class: "dqm-heat-bar" });
+  for (let i = 0; i < KEY_STEPS; i++) {
+    const sw = DQMPage.el("div", { class: "dqm-heat-swatch" });
+    sw.style.background = colourAt(i / (KEY_STEPS - 1));
+    bar.appendChild(sw);
+  }
+  return bar;
+}
+
+//: How many decimals a key end carries. The series arrives rounded to 4 (see
+//: RecentByChannel.points), so printing more would invent precision.
+function keyNum(v) { return Number(v).toFixed(4); }
+
+/**
+ * The key to heatColour: the ramp, its two ends as numbers, and any caveat.
+ *
+ * Here rather than beside the plot, for the reason stripLegend gives about
+ * itself -- it is the ramp's own documentation and the two have to change
+ * together. A key that goes on claiming a range the scale no longer uses is
+ * not a harmless stale label: a colour key is read as authority, and this one
+ * is how a reader turns a cell back into volts.
+ *
+ * `note` is where the scale says what it is hiding. A clipped scale that did
+ * not say so would be a lie told in the one place a reader trusts.
+ */
+function heatLegend(lo, hi, opts) {
+  const el = DQMPage.el;
+  const o = opts || {};
+  const kids = [
+    el("span", { class: "dqm-heat-label" }, o.label || "RMS (V)"),
+    el("span", { class: "dqm-heat-end" }, keyNum(lo)),
+    keyBar(heatColour),
+    el("span", { class: "dqm-heat-end" }, keyNum(hi)),
+  ];
+  if (o.note) kids.push(el("span", { class: "dqm-heat-note" }, o.note));
+  return el("div", { class: "dqm-heat-key" }, ...kids);
+}
+
+/**
+ * The key to diffColour. Symmetric by construction: one number, used twice.
+ *
+ * Taking a single half-range rather than a lo and a hi is the argument made in
+ * the type system. A diverging scale whose ends were set independently would
+ * put zero somewhere other than the middle of the bar, and every cell's colour
+ * would then encode a mixture of its size and the run's worst excursion in the
+ * other direction.
+ */
+function diffLegend(hi, opts) {
+  const el = DQMPage.el;
+  const o = opts || {};
+  const kids = [
+    el("span", { class: "dqm-heat-label" }, o.label || "change (V)"),
+    el("span", { class: "dqm-heat-end" }, `-${keyNum(hi)}`),
+    keyBar((t) => diffColour(t * 2 - 1)),
+    el("span", { class: "dqm-heat-end" }, `+${keyNum(hi)}`),
+  ];
+  if (o.note) kids.push(el("span", { class: "dqm-heat-note" }, o.note));
+  return el("div", { class: "dqm-heat-key" }, ...kids);
+}
+
 // Exports are what somebody reads, and nothing more. In particular there is no
 // reset(): the cache lives in this script's evaluation, so a browser clears it
 // by loading the page and the node tests clear it by loading this file through
@@ -248,8 +371,10 @@ function stripLegend(map) {
 }
 
 const ATARGeom = { SETTINGS, load, orientationOf, layerOf, stripOf,
-                   layerColumns, stripLegend, colourFor, stripColour,
-                   PALETTE, VIRIDIS, RAMP_TOP };
+                   layerColumns, stripLegend, heatLegend, diffLegend,
+                   colourFor, stripColour, heatColour, diffColour,
+                   PALETTE, VIRIDIS, RAMP_TOP,
+                   DIVERGE_LO, DIVERGE_MID, DIVERGE_HI };
 root.ATARGeom = ATARGeom;
 if (typeof module !== "undefined" && module.exports) module.exports = ATARGeom;
 

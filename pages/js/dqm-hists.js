@@ -8,16 +8,19 @@
 // adds is the one page-shaped fact: which plot belongs in which tile.
 //
 // Four of the six draw when their tab opens: occupancy and hits per event, both
-// 1D and a few hundred bins, the noise scatter, and the baseline block -- which
-// is not one plot but eight, one per ATAR layer, two columns by strip
-// orientation and so four rows, laid out the way the waveforms on the Scope tab
-// are. The other two are colormaps and start off, each with a Show plot toggle
-// in its own tile -- see TWO_D below, which carries the reasoning. Off is a
-// real off: no fetch, no draw, no timer.
+// 1D and a few hundred bins, and the two tiles that read a recent-value series
+// -- the baseline block, which is not one plot but eight, one per ATAR layer in
+// the two-column block the Scope tab's waveforms use, and the noise maps, which
+// are three grids of one div per channel placed by strip and layer. Neither is
+// drawn by mplot against the channel axis any more, and the reasons are
+// different: see baselineTrend and noiseMaps. The other two are colormaps and
+// start off, each with a Show plot toggle in its own tile -- see TWO_D below,
+// which carries the reasoning. Off is a real off: no fetch, no draw, no timer.
 //
 // Nothing here knows which tab it is on, and it must not: a renderer claims a
 // panel id, and where that panel sits is the spec's business. The Channels tab
-// gets occupancy, hits per event, baseline, noise and the amplitude colormap;
+// gets occupancy, hits per event, baseline, the noise maps and the amplitude
+// colormap;
 // persistence is on Trends beside the average waveform that has been proposed
 // to sit with it.
 //
@@ -50,35 +53,51 @@ const PANELS = {
   amplitude_by_channel: "sampic/amplitude_by_channel",
 };
 
-//: Panel id -> the recent-value series the analyzer publishes for it.
+//: The recent-value series the noise tile draws, and the two numbers it reads
+//: it with.
 //:
-//: These are not histograms and are fetched over dqm::series, not
-//: dqm::histogram. They were colormaps of everything since the run started;
-//: they are now the last N values on each channel. The argument for the change
-//: is in RecentByChannel in sampic_plugin.py and it is about the question
-//: rather than the cost: "is this channel sitting where it should" is about
-//: now, and a sum over the run both fails to answer it and hides a channel
-//: that has walked inside a column carrying every value it ever had.
+//: Not a histogram: it is fetched over dqm::series rather than dqm::histogram,
+//: and it is deliberately absent from /DQM/ATAR/Histograms -- the analyzer does
+//: not list it in dqm::list, so probeAnalyzer would report it missing. The tile
+//: says whether its own series arrived.
 //:
-//: The cost is the happy part. A few thousand markers instead of 26316
-//: rectangles is what lets these draw on open while the remaining colormaps
-//: stay behind their toggle.
-//:
-//: Not in /DQM/ATAR/Histograms, deliberately: they are not histograms, the
-//: analyzer does not list them in dqm::list, and probeAnalyzer would report
-//: them as missing. Each renderer says whether its own series arrived.
-//:
-//: Baseline is not in here any more. It reads the same series and draws it
-//: against time rather than against channel -- see BASELINE below -- because
-//: "has this channel walked" is a question about the last minute and not about
-//: the spread of a column. Noise keeps the scatter: what is asked of it is
-//: which channel is louder than its neighbours, which is a comparison across
-//: the channel axis and reads best with that axis on the plot.
-const SERIES = {
-  noise_by_channel:    "sampic/noise_by_channel",
-};
+//: Both tiles on the Channels tab now read this shape of series and neither
+//: draws it against the channel axis any more. The baseline goes against time,
+//: because a baseline that has walked is a walk; the noise goes against the
+//: target, because "which strips are loud" is a question about where they are,
+//: and the global channel number is a fact about cabling.
+const NOISE = "sampic/noise_by_channel";
 
-//: The baseline series, drawn by baselineTrend() rather than seriesPanel().
+//: Beyond this many seconds a channel's freshest value is dimmed rather than
+//: presented as now.
+//:
+//: Strictly less than the analyzer's horizon ("recent seconds per channel",
+//: 120 s) or the state is unreachable and the dimming is dead code. 60 is also
+//: the ruler BASELINE_WINDOW_S already set on this tab, and at the
+//: demonstrator's rate a channel is hit every few seconds -- so a minute
+//: without one is a quiet channel by any reading, which is the thing worth
+//: marking without claiming it is a fault.
+const NOISE_FRESH_S = 60;
+
+//: How many interquartile ranges above the upper quartile a scale reaches
+//: before it stops and starts marking cells instead.
+//:
+//: A scale fitted to the maximum is a scale one dead-loud channel owns: it
+//: takes the top colour and the other 255 cells land in the bottom tenth of the
+//: ramp, indistinguishable. So the top is cut -- but cut at a *fence*, not at a
+//: percentile, and that distinction is the whole of this number.
+//:
+//: A percentile clip is exceeded by a fixed fraction of the population by
+//: construction: clip at the 98th and 2% of cells carry the "off the scale"
+//: mark on every run, healthy or not, so the mark means "top 2%" and tells a
+//: reader nothing. Tukey's 1.5 x IQR above the upper quartile is a fence the
+//: bulk of a well-behaved population sits entirely below, so on a normal run
+//: nothing is marked and the scale simply spans the data -- and when one
+//: channel really is far out, it alone is marked and the other 255 keep the
+//: full ramp. The mark then means what it says.
+const NOISE_FENCE = 1.5;
+
+//: The baseline series, drawn by baselineTrend() against time.
 const BASELINE = "sampic/baseline_by_channel";
 
 //: The panels whose plot is a colormap. These are off when the page opens, and
@@ -384,24 +403,138 @@ function histPanel(name, twoD) {
 }
 
 // ---------------------------------------------------------------------------
-// One recent-value series, as a scatter
+// noise_by_channel -- the target as a map, three times over
 // ---------------------------------------------------------------------------
 
+//: How many channels each ranking names. Five for the reason BASELINE_OUTLIERS
+//: is five: it fits under the maps without scrolling, and it is enough to show
+//: a whole layer going together rather than one channel on its own.
+const NOISE_RANK = 5;
+
+//: Label every Nth strip along the bottom axis. A 2-digit number does not fit
+//: in a cell, so most columns go unlabelled and the reader counts from the
+//: nearest tick -- which is what an axis is.
+const NOISE_LABEL_EVERY = 4;
+
 /**
- * Baseline or noise: the last N values on each channel, channel against value.
+ * The middle of a sorted copy at the given fraction. Null on an empty list.
  *
- * Always on, unlike the colormaps. A channel's values over the analyzer's
- * recent window is a few thousand markers at the demonstrator's rate, which is
- * the size the tiles above are toggled off to avoid.
+ * A copy, for the reason median() takes one: the array handed in is the page's
+ * own data and sorting it in place would reorder the thing being drawn.
  *
- * What a reader is looking for here is a column out of line with its
- * neighbours -- every channel saw the same beam, so a channel whose baseline
- * has walked stands proud of the row. The scatter shows the spread within a
- * channel at the same time, which is the difference between a channel that has
- * moved and one that is merely noisy, and which a single mean per channel
- * would have thrown away.
+ * And a loop-free index rather than Math.min/max.apply, for the reason the old
+ * scatter wrote down: apply() on a long enough array throws rather than
+ * returning a wrong answer, and the point count here follows the event rate.
  */
-function seriesPanel(name) {
+function quantile(values, q) {
+  if (!values.length) return null;
+  const v = values.slice().sort((a, b) => a - b);
+  const i = Math.min(v.length - 1, Math.max(0, Math.round(q * (v.length - 1))));
+  return v[i];
+}
+
+/**
+ * The top of a scale that one outlier must not be allowed to own.
+ *
+ * Tukey's upper fence. Returns null on an empty list, and may legitimately come
+ * back at or below the maximum -- the caller decides whether that is a cut
+ * worth making, because a fence above everything is not a clip at all.
+ */
+function fenceTop(values) {
+  if (!values.length) return null;
+  const q1 = quantile(values, 0.25);
+  const q3 = quantile(values, 0.75);
+  return q3 + NOISE_FENCE * (q3 - q1);
+}
+
+/** The smallest and largest of a list, without apply(). Null on empty. */
+function span(values) {
+  if (!values.length) return null;
+  let lo = values[0], hi = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < lo) lo = values[i];
+    if (values[i] > hi) hi = values[i];
+  }
+  return { lo: lo, hi: hi };
+}
+
+/**
+ * One channel's window, reduced: how many values, their mean, and the freshest.
+ *
+ * The freshest is the point of *least age*, not the last element of the array.
+ * The analyzer does emit oldest-first and says so, but this file already
+ * decided once not to rely on another process's emission order -- see
+ * polylines() -- and the suite scrambles a reply on purpose to keep that
+ * honest. Taking the minimum costs nothing inside a pass that is happening
+ * anyway.
+ *
+ * `diff` is null on a channel seen once, and that is a real distinction rather
+ * than a missing number: with one value the mean *is* that value, so the
+ * difference is zero by construction and says nothing about whether the
+ * channel moved. The map marks those instead of painting them as "did not
+ * move", which is the opposite reading.
+ */
+function reduceByChannel(s) {
+  const by = new Map();
+  for (let i = 0; i < s.channel.length; i++) {
+    const ch = s.channel[i];
+    const v = s.value[i];
+    const age = (s.age && i < s.age.length) ? s.age[i] : 0;
+    let r = by.get(ch);
+    if (!r) {
+      r = { ch: ch, n: 0, sum: 0, newest: v, age: age };
+      by.set(ch, r);
+    }
+    r.n += 1;
+    r.sum += v;
+    if (age < r.age) { r.age = age; r.newest = v; }
+  }
+  by.forEach(function (r) {
+    r.avg = r.sum / r.n;
+    // Over all n including the freshest, so that what the Average map shows is
+    // exactly what the Difference map subtracted. The cost is a 1/n damping --
+    // a channel seen twice shows half the move it made -- and that is stated in
+    // the key rather than corrected for, because the three maps subtracting
+    // cell by cell is the property that makes a stack of three readable at all.
+    r.diff = r.n > 1 ? r.newest - r.avg : null;
+  });
+  return by;
+}
+
+/**
+ * Noise RMS as the target: the window average, the freshest value, and the move.
+ *
+ * The scatter this replaces put RMS against the *global channel* -- so two
+ * columns side by side on the plot were two channels sharing a cable, not two
+ * strips sharing a neighbourhood. Its own comment said as much, and said that
+ * until there was a channel map they were "not even neighbouring strips". The
+ * map exists now, so the tile can be drawn against the detector: a cell per
+ * channel, placed where its strip actually sits in its layer.
+ *
+ * **Three maps, because one number cannot answer the question.** "Which strips
+ * are noisy" and "has anything got noisier just now" are different questions
+ * and a single picture answers whichever one the reader assumed. The average
+ * over the window is the standing state, the freshest value on each channel is
+ * where it is now, and the difference is what changed. Stacked rather than side
+ * by side so a column is one strip read three ways, top to bottom.
+ *
+ * **The freshest is not one event.** A demonstrator event is ~35 hits of 256
+ * channels, so a literal per-event map would be a seventh full and the
+ * difference meaningful only there. What is drawn instead is each channel's
+ * most recent value whenever it arrived -- denser, and the thing that actually
+ * answers "has this gone loud" -- at the price of being a mosaic of the last
+ * few seconds rather than a moment. The price is paid in public: every cell
+ * carries its age, and one older than NOISE_FRESH_S is dimmed.
+ *
+ * **Divs and not an mplot colormap**, which is the one structural choice here.
+ * A cell has three states no colour scale can carry -- no value in the window,
+ * a freshest value that is stale, and a channel seen once whose difference is
+ * zero by construction -- and a colormap paints all three as the bottom of the
+ * ramp, which is exactly the reading they must not get. 768 divs is also
+ * nothing next to the 26316 rectangles the colormaps here are toggled off to
+ * avoid, and it sidesteps every mplot trap this file has paid for once already.
+ */
+function noiseMaps(name) {
   return function (ctx) {
     const client = String(ctx.cfg["Analyzer Client"] || "").trim();
     if (!client) {
@@ -412,112 +545,421 @@ function seriesPanel(name) {
       return;
     }
 
-    const points = el("span", {}, "\u2014");
-    const depth = el("span", {}, "\u2014");
-    const oldest = el("span", { class: "dqm-chip" }, "");
-    const strip = el("div", { class: "dqm-strip" },
+    const covered = el("span", {}, "—");
+    const depth = el("span", {}, "—");
+    const staleChip = el("span", { class: "dqm-chip" }, "");
+    // Always written, and not only when it is unusual. The freshest map claims
+    // to be "now", and the honest size of that claim is the refresh interval
+    // plus the age of the point -- a reader comparing it against the average
+    // is entitled to both halves.
+    const cadence = el("span", { class: "dqm-chip" },
+      `every ${Math.round(REFRESH_MS / 1000)} s`);
+    cadence.title = `How often the maps are refetched. The freshest value on a `
+      + `channel can therefore be up to this old before its own age is counted.`;
+    ctx.body.appendChild(el("div", { class: "dqm-strip" },
       chip("series", el("code", {}, name)),
-      chip("points", points), chip("window", depth), oldest);
-    const note = el("div", { class: "dqm-note" }, "Asking the analyzer\u2026");
-    const plotDiv = el("div", { class: "dqm-plot" });
-    ctx.body.appendChild(strip);
+      chip("channels", covered), chip("window", depth), staleChip, cadence));
+
+    const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
+    const geoNote = el("div", { class: "dqm-note" }, "Reading the channel map…");
     ctx.body.appendChild(note);
-    ctx.body.appendChild(plotDiv);
+    ctx.body.appendChild(geoNote);
 
-    let graph = null;
+    // Its own readout, deliberately not the module-level one baselineTrend
+    // uses. That variable is module-level only because mplot resolves a tooltip
+    // by eval()ing a name from its own scope, so baselineTip cannot be a
+    // closure and needs a way back to the DOM. A div grid has no such
+    // constraint: a mouseenter handler closes over its own element. Sharing it
+    // would let whichever tile received its first reply first take the other's
+    // hover line -- a race, not an ordering.
+    const readout = el("div", { class: "dqm-readout", id: "noise-readout" },
+      "Hover a cell to identify its channel.");
+    ctx.body.appendChild(readout);
+
+    const maps = el("div", { class: "dqm-heat-maps", id: "noise-maps" });
+    ctx.body.appendChild(maps);
+
+    const rankBox = el("div", { class: "dqm-outliers", id: "noise-outliers" });
+    ctx.body.appendChild(rankBox);
+
+    //: The three maps, in the order they are read. `kind` is what paint()
+    //: switches on and what the tests name.
+    const KINDS = [
+      { kind: "avg", id: "noise-map-avg", head: "Average over the window" },
+      { kind: "now", id: "noise-map-now", head: "Freshest value on each channel" },
+      { kind: "diff", id: "noise-map-diff", head: "Freshest minus average" },
+    ];
+
+    let map = null;
+    let unit = "";
     let drawn = false;
+    //: kind -> { grid, byCh: Map(channel -> cell), legendHost }
+    let built = null;
 
-    function build(s) {
-      graph = new MPlotGraph(plotDiv, {
-        title: { text: s.title || name },
-        stats: { show: false },
-        legend: { show: false },
-        // Off for the reason every plot on these pages has it off: mplot
-        // cancels the wheel inside the axis window and the page cannot then be
-        // scrolled past the tile.
-        mouseWheelZoom: false,
-        xAxis: { title: { text: "channel" } },
-        yAxis: { title: { text: s.unit || "" } },
-        plot: [{
-          label: name,
-          type: "scatter",
-          // The whole point: markers and no line. A line through points
-          // ordered by channel would draw a shape across channels that has no
-          // meaning -- neighbouring channels are neighbouring *electronics*,
-          // and until there is a channel map they are not even neighbouring
-          // strips.
-          line: { draw: false },
-          marker: { draw: true, size: 2, style: "circle" },
-        }],
+    /**
+     * One map's grid, built once and then only repainted.
+     *
+     * Rebuilding 256 cells every ten seconds would throw away the cell the
+     * pointer is on halfway through a hover, and allocate 768 nodes to redraw a
+     * picture that mostly has not changed. So this runs on the first reply and
+     * never again; tick() writes background, className and title in place.
+     *
+     * Rows come from map.layers and columns from the map's own strip window,
+     * never from a literal 8 by 32. That is a fixture's geometry, and
+     * dqm-atar-geom.js exists precisely to refuse it: a pixel id decodes only
+     * under the base and stride it was made with, and assuming 48 where the
+     * file used 46 moves a fifth of the channels while looking plausible.
+     */
+    function buildGrid(spec, nChannels, withAxis) {
+      const box = el("div", {});
+      box.appendChild(el("div", { class: "dqm-subhead" }, spec.head));
+      const grid = el("div", { class: "dqm-heat", id: spec.id });
+      const byCh = new Map();
+
+      if (map) {
+        const lo = map.stripLo, hi = map.stripHi;
+        const cols = hi - lo + 1;
+        grid.style.gridTemplateColumns =
+          `max-content repeat(${cols}, minmax(0, 1fr))`;
+        // Reverse the map once: the grid is walked by position and needs to ask
+        // "which channel is here", where ATARGeom answers "where is this
+        // channel".
+        const atPos = new Map();
+        map.byChannel.forEach(function (layer, ch) {
+          atPos.set(`${layer}:${ATARGeom.stripOf(map, ch)}`, ch);
+        });
+        map.layers.forEach(function (layer) {
+          const orient = ATARGeom.orientationOf(map, layer);
+          grid.appendChild(el("div", { class: "dqm-heat-rowlab" },
+            orient ? `L${layer} ${orient.slice(0, 4)}` : `L${layer}`));
+          for (let strip = lo; strip <= hi; strip++) {
+            const ch = atPos.get(`${layer}:${strip}`);
+            if (ch === undefined) {
+              // No channel at this position: the layer is not instrumented
+              // here. Not the same as a channel with no data, and not painted
+              // like one.
+              const gap = el("div", { class: "dqm-heat-cell dqm-heat-empty" });
+              gap.title = `No channel at layer ${layer}, strip ${strip}.`;
+              grid.appendChild(gap);
+              continue;
+            }
+            grid.appendChild(cellFor(ch, layer, strip, byCh));
+          }
+        });
+        if (withAxis) appendAxis(grid, lo, hi);
+      } else {
+        // No geometry is not no map. Every channel in one ribbon still answers
+        // "is anything louder than the rest"; what it cannot answer is "where",
+        // and it says so rather than inventing a layer.
+        grid.classList.add("dqm-heat-ribbon");
+        grid.style.gridTemplateColumns =
+          `max-content repeat(${nChannels}, minmax(0, 1fr))`;
+        grid.appendChild(el("div", { class: "dqm-heat-rowlab" }, "all"));
+        for (let ch = 0; ch < nChannels; ch++) {
+          grid.appendChild(cellFor(ch, null, null, byCh));
+        }
+      }
+
+      box.appendChild(grid);
+      const legendHost = el("div", {});
+      box.appendChild(legendHost);
+      maps.appendChild(box);
+      return { grid: grid, byCh: byCh, legendHost: legendHost };
+    }
+
+    /** One channel's cell, with its identity on it and its hover wired. */
+    function cellFor(ch, layer, strip, byCh) {
+      const cell = el("div", { class: "dqm-heat-cell dqm-heat-nodata" });
+      // Assigned rather than set as a data- attribute: the node test's element
+      // stub populates dataset only on direct assignment, and a channel read
+      // back out of a display string would make the wording load-bearing.
+      cell.dataset.ch = String(ch);
+      if (layer !== null) cell.dataset.layer = String(layer);
+      if (strip !== null) cell.dataset.strip = String(strip);
+      // No event argument: the stub calls handlers with none, and a handler
+      // reaching for ev.target would work in the browser and throw under test,
+      // which is the worst asymmetry available.
+      cell.addEventListener("mouseenter", function () {
+        readout.textContent = cell.title || `ch ${ch}`;
       });
-      plotDiv.mpg = graph;
-      graph.resize();
+      byCh.set(ch, cell);
+      return cell;
+    }
+
+    /** The strip axis, labelled every NOISE_LABEL_EVERY columns. */
+    function appendAxis(grid, lo, hi) {
+      grid.appendChild(el("div", { class: "dqm-heat-rowlab" }, "strip"));
+      for (let strip = lo; strip <= hi; strip++) {
+        grid.appendChild(el("div", { class: "dqm-heat-collab" },
+          strip % NOISE_LABEL_EVERY === 0 ? String(strip) : ""));
+      }
+    }
+
+    /** Where a channel is, in words, for a title and a readout. */
+    function whereText(cell, ch) {
+      if (!map) return "unmapped";
+      const layer = cell.dataset.layer;
+      if (layer === undefined) return "unmapped";
+      return `layer ${layer}, strip ${cell.dataset.strip}`;
+    }
+
+    /**
+     * Paint one cell, which is the whole of what a tick does to the grid.
+     *
+     * The three absent states are set as classes and never as a colour, so
+     * that "no value in the window", "seen once" and "off the top of the
+     * scale" cannot be mistaken for measurements at the bottom of a ramp.
+     */
+    function paint(cell, r, kind, seq, div, windowS) {
+      const ch = cell.dataset.ch;
+      const where = whereText(cell, ch);
+      if (!r) {
+        cell.className = "dqm-heat-cell dqm-heat-nodata";
+        cell.style.background = "";
+        // Never "dead", and never "zero". The analyzer evicts on the way out,
+        // so a channel absent from the reply is one nobody hit inside the
+        // window -- which a quiet beam produces exactly as readily as a fault,
+        // and this tile cannot tell the two apart.
+        cell.title = `ch ${ch} — ${where} — no value in the last `
+          + `${Math.round(windowS)} s.`;
+        return;
+      }
+
+      const common = `ch ${ch} — ${where} — avg ${r.avg.toFixed(4)} V `
+        + `from ${r.n} value${r.n === 1 ? "" : "s"}, now ${r.newest.toFixed(4)} V `
+        + `(${Math.round(r.age)} s ago)`;
+
+      if (kind === "diff") {
+        if (r.diff === null) {
+          cell.className = "dqm-heat-cell dqm-heat-single";
+          cell.style.background = "";
+          cell.title = `${common} — seen once in the window, so there is no `
+            + `average to compare it against.`;
+          return;
+        }
+        const t = div.hi > 0 ? r.diff / div.hi : 0;
+        const over = Math.abs(r.diff) > div.hi;
+        cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "")
+          + (r.age > NOISE_FRESH_S ? " dqm-heat-stale" : "");
+        cell.style.background = ATARGeom.diffColour(t);
+        cell.title = `${common} — Δ ${r.diff >= 0 ? "+" : ""}`
+          + `${(r.diff * 1000).toFixed(2)} mV`;
+        return;
+      }
+
+      const v = kind === "now" ? r.newest : r.avg;
+      const t = seq.hi > seq.lo ? (v - seq.lo) / (seq.hi - seq.lo) : 0;
+      const over = v > seq.hi;
+      // Stale dims the freshest map only. On the average it would be saying
+      // something the average does not claim: a mean over the window is not a
+      // statement about now and does not go out of date the same way.
+      const stale = kind === "now" && r.age > NOISE_FRESH_S;
+      cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "")
+        + (stale ? " dqm-heat-stale" : "");
+      cell.style.background = ATARGeom.heatColour(t);
+      cell.title = common;
+    }
+
+    /**
+     * Name the channels a 19px cell cannot.
+     *
+     * The same gap fillOutliers() closes for the baselines, and the same
+     * argument: a map answers "is something out of family, and where", and
+     * stops one step short of "which channel" -- which is what the ODB, the
+     * frontend and the cable map all speak, and what goes in the elog. A cell
+     * carries no label at all, so a map needs this more than a plot does.
+     *
+     * Two rankings because there are two questions. Loudest answers "which
+     * strips are noisy"; moved answers "has anything changed", and a channel
+     * can be top of one and nowhere near the other -- which is the case worth
+     * seeing. Both rank and neither judges: there is no threshold here, and on
+     * a healthy run these are simply the least average five.
+     */
+    function fillRanks(rows, windowS) {
+      rankBox.textContent = "";
+      if (!rows.length) {
+        rankBox.appendChild(el("div", { class: "dqm-note" },
+          `No channel has been hit in the last ${Math.round(windowS)} s, so `
+          + `there is nothing to rank.`));
+        return;
+      }
+
+      function table(head, sorted, withDelta) {
+        rankBox.appendChild(el("div", { class: "dqm-subhead" }, head));
+        const t = el("table", { class: "dqm-table" });
+        t.appendChild(el("tr", {},
+          el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
+          el("th", {}, "average"), el("th", {}, "now"),
+          el("th", {}, "Δ")));
+        sorted.slice(0, NOISE_RANK).forEach(function (r) {
+          t.appendChild(el("tr", {},
+            el("td", { class: "label" }, `ch ${r.ch}`),
+            el("td", {}, r.layer === null ? "—" : String(r.layer)),
+            el("td", {}, r.strip === null ? "—" : String(r.strip)),
+            el("td", {}, `${r.avg.toFixed(4)} V`),
+            el("td", {}, `${r.newest.toFixed(4)} V`),
+            // Millivolts, for the reason the baseline table uses them: the
+            // moves worth reading are single mV and four decimals of a volt is
+            // a column of leading zeros to count.
+            el("td", {}, r.diff === null ? "seen once"
+              : `${r.diff >= 0 ? "+" : ""}${(r.diff * 1000).toFixed(2)} mV`)));
+        });
+        rankBox.appendChild(t);
+      }
+
+      const loudest = rows.slice().sort((a, b) => b.avg - a.avg);
+      table(`Loudest over the last ${Math.round(windowS)} s`, loudest);
+
+      const moved = rows.filter((r) => r.diff !== null)
+        .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+      if (moved.length) table("Moved most from their own average", moved);
+
+      rankBox.appendChild(el("div", { class: "dqm-footnote" },
+        `${NOISE_RANK} of ${rows.length} channels, ranked. A ranking, not a `
+        + `verdict: there is no threshold here, and on a healthy run these are `
+        + `simply the least average channels. Several rows sharing a layer is `
+        + `the shape a whole layer going together makes.`));
     }
 
     async function tick() {
       const s = await BRPC.json(client, "dqm::series", name);
       if (!s || !s.channel) throw new Error(`empty reply for ${name}`);
-      if (!graph) build(s);
+      const windowS = Number(s.window_s) || 0;
+      const nChannels = Number(s.channels) || 0;
+      unit = s.unit || "RMS (V)";
 
-      // xData/yData directly rather than through BRPC.display(), which is for
-      // the binned wire format and would have nothing to do here.
-      //
-      // And then the four bounds by hand, which is the whole reason this is
-      // more than two lines. mplot computes xMin/xMax/yMin/yMax in setData()
-      // and its ODB path and nowhere else, so a plot whose data was assigned
-      // directly has them undefined -- and draw() fills the background and
-      // returns early on exactly that, leaving a uniformly white canvas with
-      // no exception, graph.error still null and a clean console. The Scope
-      // page has been caught by this before; see the same dance there.
-      const plot = graph.param.plot[0];
-      plot.xData = s.channel;
-      plot.yData = s.value;
-
-      // The x axis is every channel the analyzer knows about, not the range
-      // the data happens to span. A channel nobody has hit is the thing this
-      // tile exists to show, and it can only show it as a gap if the axis
-      // holds still while channels come and go.
-      plot.xMin = 0;
-      plot.xMax = s.channels;
-
-      let lo = 0, hi = 1;
-      if (s.value.length) {
-        lo = hi = s.value[0];
-        // A loop rather than Math.min.apply: the point count now follows the
-        // event rate, and apply() on a long enough array throws rather than
-        // returning a wrong answer -- a fine bug to hit at 3am on a busy run.
-        for (let i = 1; i < s.value.length; i++) {
-          if (s.value[i] < lo) lo = s.value[i];
-          if (s.value[i] > hi) hi = s.value[i];
+      if (!built) {
+        built = {};
+        KINDS.forEach(function (spec, i) {
+          built[spec.kind] = buildGrid(spec, nChannels, i === KINDS.length - 1);
+        });
+        geoNote.textContent = map
+          ? `One cell per channel, placed by strip and layer from ${map.source}. `
+            + `The three maps share a grid, so a column is one strip read three `
+            + `ways.`
+          : "";
+        if (!map) {
+          // Yellow, not red: nothing is broken. The analyzer is answering and
+          // every channel is on the ribbon -- what is missing is the geometry
+          // to place them by, which is a caveat on the view and not a fault.
+          geoNote.className = "dqm-diagnosis yellow";
+          geoNote.textContent = `No ATAR geometry in ${ATARGeom.SETTINGS}, so `
+            + `these are one row of every channel rather than a map of the `
+            + `target. The layer and strip of a channel cannot be guessed: the `
+            + `pixel id decodes only under the base and the stride it was made `
+            + `with.`;
         }
-        // Padded so points do not sit on the frame, and never zero-height: a
-        // channel set that is perfectly flat is a real and good outcome here,
-        // and it must not collapse the axis onto itself.
-        const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.01 || 0.01;
-        lo -= pad;
-        hi += pad;
       }
-      plot.yMin = lo;
-      plot.yMax = hi;
 
-      // calcMinMax() turns the per-plot bounds into the graph-level ones that
-      // drawYAxis() reads. Without it the axis has nothing to label.
-      graph.calcMinMax();
-      graph.redraw();
+      const by = reduceByChannel(s);
+
+      // The sequential scale spans BOTH maps, because they are read against
+      // each other: the same colour has to mean the same RMS in the average and
+      // in the freshest, or the comparison the stack exists for is not
+      // available. So the quantile is over the union and not over either.
+      const seqVals = [];
+      const diffVals = [];
+      const rows = [];
+      by.forEach(function (r) {
+        seqVals.push(r.avg, r.newest);
+        if (r.diff !== null) diffVals.push(Math.abs(r.diff));
+        const cell = built.avg.byCh.get(r.ch);
+        rows.push({
+          ch: r.ch, n: r.n, avg: r.avg, newest: r.newest, diff: r.diff,
+          layer: cell && cell.dataset.layer !== undefined
+            ? Number(cell.dataset.layer) : null,
+          strip: cell && cell.dataset.strip !== undefined
+            ? Number(cell.dataset.strip) : null,
+        });
+      });
+
+      // Cut only when the cut earns itself. A fence above the largest value is
+      // not a clip, and pretending it was would mark cells that are simply the
+      // top of a healthy spread.
+      const full = span(seqVals);
+      const fence = fenceTop(seqVals);
+      const seq = full
+        ? { lo: full.lo,
+            // >= lo, not > lo: a population sitting at one value has a zero
+            // IQR and a fence exactly on it, which is still the right cut --
+            // the widening below keeps the scale from collapsing.
+            hi: (fence !== null && fence >= full.lo && fence < full.hi)
+              ? fence : full.hi,
+            clipped: false }
+        : { lo: 0, hi: 1, clipped: false };
+      seq.clipped = !!full && seq.hi < full.hi;
+      // A perfectly flat channel set is a real and good outcome and must not
+      // collapse the scale onto itself, which would divide by zero and paint
+      // every cell the bottom of the ramp.
+      if (!(seq.hi > seq.lo)) seq.hi = seq.lo + (Math.abs(seq.lo) * 0.01 || 1e-4);
+
+      // The same fence on the absolute move, so the diverging scale stays
+      // symmetric: one number used twice, and zero stays in the middle.
+      const dFull = span(diffVals);
+      const dFence = fenceTop(diffVals);
+      const div = dFull
+        ? { hi: (dFence !== null && dFence > 0 && dFence < dFull.hi)
+              ? dFence : dFull.hi,
+            clipped: false }
+        : { hi: 0, clipped: false };
+      div.clipped = !!dFull && div.hi < dFull.hi;
+      if (!(div.hi > 0)) div.hi = 1e-4;
+
+      // Reachable from the console and from the tests, the way a graph is hung
+      // off its div. The two sequential maps carry the SAME object, which is
+      // what "one scale" means when it is asserted rather than described.
+      built.avg.grid.dqmScale = seq;
+      built.now.grid.dqmScale = seq;
+      built.diff.grid.dqmDiffScale = div;
+
+      let stale = 0;
+      KINDS.forEach(function (spec) {
+        const b = built[spec.kind];
+        b.byCh.forEach(function (cell, ch) {
+          const r = by.get(ch) || null;
+          if (spec.kind === "avg" && r && r.age > NOISE_FRESH_S) stale += 1;
+          paint(cell, r, spec.kind, seq, div, windowS);
+        });
+      });
+
+      built.avg.legendHost.textContent = "";
+      built.now.legendHost.textContent = "";
+      built.diff.legendHost.textContent = "";
+      const seqNote = seq.clipped
+        ? `The scale stops at ${NOISE_FENCE} x IQR above the upper quartile so `
+          + `that one loud channel does not flatten the rest; the highest is `
+          + `${full.hi.toFixed(4)} V. Cells past the end are outlined, so they `
+          + `are not read as merely the maximum.`
+        : "";
+      built.now.legendHost.appendChild(
+        ATARGeom.heatLegend(seq.lo, seq.hi, { label: unit, note: seqNote }));
+      built.diff.legendHost.appendChild(ATARGeom.diffLegend(div.hi, {
+        label: "change (V)",
+        note: `Freshest minus the average of the same window, which includes `
+          + `it: a channel seen n times therefore shows (1 - 1/n) of the move it `
+          + `made, and one seen twice shows half. Kept that way so the three `
+          + `maps subtract cell by cell. A channel seen once has no comparison `
+          + `and is left blank.`
+          + (div.clipped ? ` Outlined cells are past the end of this scale.` : ""),
+      }));
+
+      fillRanks(rows, windowS);
 
       drawn = true;
-      points.textContent = String(s.channel.length);
-      depth.textContent = `${Math.round(s.window_s)} s`;
-      // The honest part. Channels are hit at very different rates, so a busy
-      // channel contributes many more markers to this column than a quiet one,
-      // and a tile that did not say so would be quietly claiming these are one
-      // moment.
-      const maxAge = s.age && s.age.length ? Math.max.apply(null, s.age) : 0;
-      oldest.textContent = `oldest ${Math.round(maxAge)} s`;
-      oldest.title = `Every value seen on each channel in the last `
-        + `${Math.round(s.window_s)} seconds, so a busy channel carries more `
-        + `points in its column than a quiet one. This is the age of the oldest `
-        + `point drawn.`;
+      covered.textContent = nChannels ? `${by.size} of ${nChannels}` : String(by.size);
+      depth.textContent = `${Math.round(windowS)} s`;
+      staleChip.textContent = stale
+        ? `${stale} older than ${NOISE_FRESH_S} s`
+        : `all within ${NOISE_FRESH_S} s`;
+      // Yellow, not red, for the reason the baseline tile gives: a quiet
+      // channel is a fact about the beam as often as it is a fault.
+      staleChip.className = stale ? "dqm-chip yellow" : "dqm-chip";
+      staleChip.title = stale
+        ? `The freshest value on ${stale} channel${stale === 1 ? " is" : "s is"} `
+          + `older than ${NOISE_FRESH_S} s, so ${stale === 1 ? "its cell is" : "those cells are"} `
+          + `dimmed on the freshest map. That is a quiet channel, which this `
+          + `tile cannot tell from a fault.`
+        : `Every channel with a value has been hit inside ${NOISE_FRESH_S} s.`;
       note.className = "dqm-note";
       note.textContent = s.channel.length
         ? ""
@@ -529,13 +971,19 @@ function seriesPanel(name) {
     updater.onError = function (e) {
       note.className = "dqm-diagnosis red";
       note.textContent = drawn
-        ? `"${client}" stopped answering for ${name} (${e.message}). The plot `
-          + "above is the last one it sent, and is no longer being updated."
+        ? `"${client}" stopped answering for ${name} (${e.message}). The maps `
+          + "above are the last ones it sent, and are no longer being updated."
         : `Nothing answered as "${client}" for ${name} (${e.message}). That is `
           + "the analyzer this panel is waiting for.";
     };
 
-    setTimeout(function () { updater.start(); }, 0);
+    // The map first, then the loop: buildGrid() needs to know whether it is
+    // drawing the target or a ribbon before the first reply arrives. A map that
+    // is not there resolves to null and the loop starts just the same.
+    ATARGeom.load().then(function (m) {
+      map = m;
+      updater.start();
+    });
   };
 }
 
@@ -777,7 +1225,7 @@ function baselineTrend(name) {
         // stripLo/stripHi the lines are coloured with, so it cannot describe a
         // ramp the plot is not using.
         ctx.body.insertBefore(ATARGeom.stripLegend(map), host);
-        readoutEl = el("div", { class: "dqm-readout" },
+        readoutEl = el("div", { class: "dqm-readout", id: "baseline-readout" },
           "Hover a point to identify its channel.");
         ctx.body.insertBefore(readoutEl, host);
         // Straight into a four-column grid in layer order, so eight layers
@@ -810,7 +1258,7 @@ function baselineTrend(name) {
           + `is one panel with every channel on it rather than eight by layer. `
           + `The layer of a channel cannot be guessed: the pixel id decodes only `
           + `under the base and the stride it was made with.`;
-        readoutEl = el("div", { class: "dqm-readout" },
+        readoutEl = el("div", { class: "dqm-readout", id: "baseline-readout" },
           "Hover a point to identify its channel.");
         ctx.body.insertBefore(readoutEl, host);
       }
@@ -1109,17 +1557,14 @@ Object.keys(PANELS).forEach(function (id) {
   DQMPage.register(id, histPanel(PANELS[id], TWO_D.has(id)));
 });
 
-Object.keys(SERIES).forEach(function (id) {
-  DQMPage.register(id, seriesPanel(SERIES[id]));
-});
-
+DQMPage.register("noise_by_channel", noiseMaps(NOISE));
 DQMPage.register("baseline_by_channel", baselineTrend(BASELINE));
 
 // Reachable for the tests, which assert this agrees with config_defaults.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PANELS, SERIES, BASELINE, TWO_D, refreshFor, cadenceText,
+  module.exports = { PANELS, NOISE, BASELINE, TWO_D, refreshFor, cadenceText,
                     REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS,
-                    BASELINE_WINDOW_S };
+                    BASELINE_WINDOW_S, NOISE_FRESH_S, NOISE_FENCE };
 }
 
 })();

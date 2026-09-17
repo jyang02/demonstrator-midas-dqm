@@ -35,7 +35,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy, hits per event, noise as a recent-value scatter, baseline as eight per-layer trends against time, and amplitude by channel behind a per-tile toggle |
+| **Channels** | Is every channel behaving? | analyzer | **all five draw** — occupancy, hits per event, noise as three strip-by-layer maps, baseline as eight per-layer trends against time, and amplitude by channel behind a per-tile toggle |
 | **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps, the charge-depth profile and the raw dump, all off one event; the layer hit rate waits on a counting equipment |
 | **Trends** | Is the detector's response holding still? | analyzer | persistence draws behind its toggle; the average waveform is proposed, and energy-against-amplitude and the two-track rate want a calibration and track finding |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
@@ -254,7 +254,10 @@ business.
 Four of the six draw when their tab opens. Occupancy and hits per event are 1D
 and a few hundred bins. Baseline and noise by channel are **recent-value
 series** rather than histograms -- every value each channel has produced in the
-last couple of minutes -- fetched over `dqm::series` and listed in `SERIES`.
+last couple of minutes -- fetched over `dqm::series`. Neither is listed in
+`/DQM/ATAR/Histograms`: the analyzer does not advertise them in `dqm::list`, so
+`probeAnalyzer` would report them missing, and each tile says instead whether
+its own series arrived.
 
 The cut is by **time, not by count**. It was the last ten values per channel,
 which is a different amount of history on every channel: ten values is eight
@@ -268,12 +271,32 @@ proportionally more if the rate rises, which `RecentByChannel` says out loud.
 That pair changed shape because of the question they answer, not only the cost.
 "Is this channel sitting where it should" is about *now*; a colormap summed
 since the run started cannot answer it, and actively hides a channel that has
-walked inside a column still carrying every value it ever had. The scatter also
-shows the spread within a channel, which separates a channel that has moved
-from one that is merely noisy. Depth is `/DQM/Analyzer/Binning/recent per
-channel`, default 10, and it is the whole cost of those tiles. Each point
-carries its age, and the tile reports the oldest one drawn, because channels are
-hit at very different rates and the points are not one moment.
+walked inside a column still carrying every value it ever had. The depth is
+`/DQM/Analyzer/Binning/recent seconds per channel`, default 120, and it is the
+whole cost of those tiles. Each point carries its age, which is what lets both
+tiles be honest that their points are not one moment: channels are hit at very
+different rates.
+
+Neither draws against the channel axis any more, and for different reasons.
+**Baseline goes against time**, eight panels by layer: a baseline that has
+walked is a walk, with a direction and a moment it started, and
+channel-against-value can only show it as a column that has grown taller --
+which is also what a channel that got noisier looks like.
+
+**Noise goes against the target**: three grids of one cell per channel, placed
+by strip and layer, showing the window average, the freshest value on each
+channel, and the difference. The old scatter's x axis was the *global channel*,
+so two columns side by side were two channels sharing a cable rather than two
+strips sharing a neighbourhood -- and "which strips are loud" is a question
+about where they are. The three maps stack so a column is one strip read three
+ways, and they are `div`s rather than an mplot colormap because a cell has three
+states no colour scale can carry: no value in the window, a freshest value that
+is stale, and a channel seen once whose difference is zero by construction
+rather than by measurement. A colormap paints all three as the bottom of the
+ramp, which is the one reading they must not get. Under the maps is a ranking
+that names the loudest channels and the ones that moved most, because a cell
+carries no label and the global channel number is what the ODB, the frontend
+and the cable map all speak.
 
 The remaining two -- amplitude by channel on Channels, persistence on Trends --
 are **colormaps and start off**, listed in `TWO_D` in that file, each with a
@@ -343,7 +366,7 @@ drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
 So Channels is its amplitude colormap and nothing else, and the count is for a
 freshly opened tab, before anything is toggled on -- each `Show plot` takes one
 off. What moves with the analyzer is whether the four tiles that draw on open --
-occupancy, hits per event, the noise scatter and the baseline trends -- show a
+occupancy, hits per event, the noise maps and the baseline trends -- show a
 plot or a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`
 is the one thing that would move these: with no name to try, a drawing tile
 falls back to an empty-why and `$W` goes up.)

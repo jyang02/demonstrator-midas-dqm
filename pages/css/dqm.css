@@ -147,6 +147,103 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-strip label.dqm-chip { cursor: pointer; }
 .dqm-strip label.dqm-chip input { margin-right: 5px; }
 
+/* The noise maps: one cell per channel, placed by strip and layer, three maps
+   stacked so a column is one strip read three ways.
+
+   Hand-built divs and not an mplot colormap, for one reason that is not
+   performance. A cell here has three states no colour scale can express -- no
+   value in the window, a freshest value that is old, and a channel seen once
+   whose difference is zero by construction rather than by measurement -- and a
+   colormap would paint all three as the bottom of the ramp, which is the one
+   thing they must not look like. A ramp says "low"; these say "absent",
+   "stale" and "no comparison", and the distinction is the tile's whole job.
+
+   Capped rather than stretched. An l tile is the full width of #mmain, so 32
+   columns at 1fr land near 31px a cell and three maps stack ~900px tall --
+   two screens for a tile whose entire argument is that the three are compared
+   at a glance. At 640 a map is 135px, near enough the 180px of a baseline
+   panel that the two blocks share a rhythm down the page.
+
+   The column template is set from JS, not here: the strip range comes from the
+   channel map, and a number typed into this file would be a geometry invented
+   in a stylesheet. */
+.dqm-heat-maps { margin: 4px 0 8px 0; }
+.dqm-heat {
+  display: grid; gap: 1px; grid-auto-rows: 16px;
+  max-width: 640px; margin: 2px 0 6px 0;
+}
+.dqm-heat-rowlab {
+  font-size: 0.72em; color: #555; white-space: nowrap; text-align: right;
+  padding-right: 6px; line-height: 16px; font-variant-numeric: tabular-nums;
+}
+.dqm-heat-collab {
+  font-size: 0.65em; color: #666; text-align: center; line-height: 12px;
+  font-variant-numeric: tabular-nums; overflow: visible;
+}
+.dqm-heat-cell { min-width: 6px; border-radius: 1px; cursor: default; }
+
+/* Nothing on this channel in the window. Deliberately NOT the bottom of the
+   ramp: a channel nobody has hit is not a channel sitting quietly at zero, and
+   the analyzer cannot tell an uninstrumented channel from one that went two
+   minutes without a hit. A hatch reads as "absent" where any fill reads as a
+   measurement. */
+.dqm-heat-nodata {
+  background: repeating-linear-gradient(45deg, #fff, #fff 2px, #ddd 2px, #ddd 4px);
+  outline: 1px solid #ddd; outline-offset: -1px;
+}
+/* The freshest value on this channel is old. Still drawn -- the last reading is
+   worth having -- but it must not read as live. */
+.dqm-heat-stale { opacity: 0.55; }
+/* One value in the window, so its difference from its own average is zero by
+   construction and means nothing. Marked rather than painted as a zero, which
+   would read as "this channel has not moved". */
+.dqm-heat-single {
+  background: #fff; outline: 1px dotted #999; outline-offset: -1px;
+}
+/* A grid position with no channel on it: the layer is simply not instrumented
+   there. Distinct from a channel with no data -- one is a fact about the
+   detector and the other about the last two minutes -- so it is flat and quiet
+   rather than hatched. */
+.dqm-heat-empty { background: #fafafa; }
+
+/* The no-geometry fallback: every channel in one row. It gives up the 640px cap
+   because 256 cells at the map's minimum width is far wider than that, and a
+   ribbon that overflowed its tile would take the page's horizontal scroll with
+   it. */
+.dqm-heat-ribbon { max-width: 100%; }
+.dqm-heat-ribbon .dqm-heat-cell { min-width: 2px; }
+
+/* Past the top of a clipped scale. A mark and not merely the ramp's last
+   colour, or the clipping is invisible and the key is the only one who knows
+   the cell is off the end. */
+.dqm-heat-over { outline: 1px solid #000; outline-offset: -1px; }
+
+/* The key. Its own class vocabulary rather than dqm-ramp-*, because the two are
+   different ramps: the strip ramp encodes position in a line on a white plot
+   and stops short of the pale end, where this one fills a cell and uses the
+   whole of viridis. Two ramps under one class name is a key describing the
+   wrong plot. */
+.dqm-heat-key {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 0 0 10px 0; font-size: 0.85em; color: #333; max-width: 640px;
+}
+.dqm-heat-label { font-weight: 600; }
+.dqm-heat-end { font-variant-numeric: tabular-nums; color: #666; }
+.dqm-heat-bar {
+  display: flex; flex: 0 1 320px; height: 12px;
+  border: 1px solid #bbb; border-radius: 2px; overflow: hidden;
+}
+.dqm-heat-swatch { flex: 1 1 auto; min-width: 2px; }
+.dqm-heat-note { color: var(--mgray, #666); font-size: 90%; }
+
+/* Below this the cells stop being cells and the strip numbers stop fitting.
+   Taken from the map's own 640px plus the label gutter, not from a phone. */
+@media (max-width: 760px) {
+  .dqm-heat { grid-auto-rows: 10px; }
+  .dqm-heat-rowlab { line-height: 10px; font-size: 0.65em; }
+  .dqm-heat-collab { display: none; }
+}
+
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
 

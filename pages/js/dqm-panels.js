@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       acf9896664be852ab5f76d444672164ca62eb19bc533c0bf679973d9b666bb56
+// sha256:       8782ef18e1a8078464aaa3280e982e52d777dca3bdbba78a4adeb7a658a87a04
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "acf9896664be852ab5f76d444672164ca62eb19bc533c0bf679973d9b666bb56";
+const SPEC_SHA256 = "8782ef18e1a8078464aaa3280e982e52d777dca3bdbba78a4adeb7a658a87a04";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -46,9 +46,9 @@ const PAGES = [
           {
             "id": "noise_by_channel",
             "kind": "panel",
-            "label": "Noise (RMS of the leading samples) vs. channel (last N events)",
-            "question": "Which channels are noisier than their neighbours?",
-            "why": "noise is what separates a dead channel from a loud one",
+            "label": "Noise RMS by strip and layer: the window average, the freshest value, and the difference",
+            "question": "Which strips are noisier than their neighbours, and has any of them got louder just now?",
+            "why": "a map by strip and layer puts a loud channel beside its physical neighbours rather than beside the channel that happens to share its cable, and showing the average against the freshest value separates a channel that has always been noisy from one that has changed in the last minute",
             "status": "ready",
             "size": "l",
             "sketch": "hist2d"
