@@ -1185,7 +1185,7 @@ test("the ranking states a fact and passes no verdict", async () => {
       `the ranking colours a row (${e.className}), which asserts a threshold`);
   });
   const text = [...box.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, /A ranking, not a verdict/);
+  assert.match(text, /a ranking, not a verdict/);
 });
 
 test("a channel outside the window is not ranked, because it has no line", async () => {

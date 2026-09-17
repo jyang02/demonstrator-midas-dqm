@@ -1441,10 +1441,15 @@ function baselineTrend(name) {
           host.appendChild(cell);
           panels.push({ layer: layer, graph: graphIn(div, ""), div: div, used: false });
         });
-        geoNote.textContent = `One panel per ATAR layer, from ${map.source}. `
-          + `The axis is the last ${BASELINE_WINDOW_S} seconds on every panel, `
-          + `and the ramp below is the one the waveforms on the Scope tab use, `
-          + `so a channel is the same colour in both views.`;
+        // Nothing visible: the panels are titled by layer, the axis is
+        // labelled, and the ramp has a key of its own directly below. Saying
+        // so as well is telling a reader what they are looking at.
+        geoNote.textContent = "";
+        geoNote.hidden = true;
+        geoNote.title = `One panel per ATAR layer, from ${map.source}. The `
+          + `axis is the last ${BASELINE_WINDOW_S} seconds on every panel, and `
+          + `the ramp is the one the waveforms on the Scope tab use, so a `
+          + `channel is the same colour in both views.`;
       } else {
         // No geometry is not no plot. Every channel on one panel still answers
         // "has anything walked", and it says why it cannot answer "which
@@ -1533,12 +1538,14 @@ function baselineTrend(name) {
           el("td", {}, `${mv >= 0 ? "+" : ""}${mv.toFixed(1)} mV`)));
       });
       outlierBox.appendChild(table);
-      outlierBox.appendChild(el("div", { class: "dqm-footnote" },
-        `The ${top.length} channels of ${rows.length} sitting furthest from the `
-        + `median of every channel, over the last ${BASELINE_WINDOW_S} seconds. `
-        + `A ranking, not a verdict: there is no threshold here, and on a `
-        + `healthy run these are simply the five least average channels. `
-        + `Several rows sharing one layer is the shape a sagging layer makes.`));
+      const foot = el("div", { class: "dqm-footnote" },
+        `${top.length} of ${rows.length} \u2014 a ranking, not a verdict`);
+      foot.title = `The channels sitting furthest from the median of every `
+        + `channel, over the last ${BASELINE_WINDOW_S} seconds. There is no `
+        + `threshold here, and on a healthy run these are simply the least `
+        + `average channels. Several rows sharing one layer is the shape a `
+        + `sagging layer makes.`;
+      outlierBox.appendChild(foot);
     }
 
     /**
