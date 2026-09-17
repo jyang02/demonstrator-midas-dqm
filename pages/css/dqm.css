@@ -90,14 +90,23 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    So the layers run in their own order, 0-3 then 4-7, and a reader counts
    rather than decoding a parity.
 
-   Four across, then two, then one: a time axis squeezed into a quarter of a
-   narrow window is worse than a taller page. */
+   Four across, then two, then one. The breakpoints are set from what a panel
+   needs rather than from round numbers for a screen: mplot spends about 60px
+   on the y axis and its labels and another 25 on the button strip, so a 270px
+   column still leaves ~185px of plot, which carries a 60 s axis at 20 s ticks.
+   Four of those plus the gaps is about 1150px, and the sidebar takes ~110 of
+   the window, hence 1150 rather than something wider.
+
+   This was 1700 and was wrong: on any normal laptop it fell straight through
+   to two columns, which is the layout it replaced, so the change looked like
+   it had not happened. A breakpoint written from a guess at the developer's
+   own window is a layout nobody else sees. */
 .dqm-layer-quad {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px;
 }
-@media (max-width: 1700px) { .dqm-layer-quad { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 900px)  { .dqm-layer-quad { grid-template-columns: 1fr; } }
-.dqm-layer-quad .dqm-plot    { height: 190px; width: auto; margin-top: 2px; min-width: 0; }
+@media (max-width: 1150px) { .dqm-layer-quad { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .dqm-layer-quad { grid-template-columns: 1fr; } }
+.dqm-layer-quad .dqm-plot    { height: 180px; width: auto; margin-top: 2px; min-width: 0; }
 .dqm-layer-quad .dqm-subhead { margin-top: 8px; font-weight: 600; }
 /* min-width:0 on the cell too, or a grid item refuses to shrink below the
    content's intrinsic width and the four columns overflow the page. */
