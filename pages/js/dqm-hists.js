@@ -661,10 +661,8 @@ function noiseMaps(name) {
       }
 
       box.appendChild(grid);
-      const legendHost = el("div", {});
-      box.appendChild(legendHost);
       maps.appendChild(box);
-      return { grid: grid, byCh: byCh, legendHost: legendHost };
+      return { grid: grid, byCh: byCh };
     }
 
     /** One channel's cell, with its identity on it and its hover wired. */
@@ -829,10 +827,21 @@ function noiseMaps(name) {
       unit = s.unit || "RMS (V)";
 
       if (!built) {
+        // Each key above what it explains, which is where this page set puts a
+        // colour key -- see stripLegend, above the layer block rather than
+        // under it. It also settles an ambiguity the first live render walked
+        // into: a shared key sitting between the second and third maps reads as
+        // belonging to the third, which is the one map it does not describe.
         built = {};
-        KINDS.forEach(function (spec, i) {
-          built[spec.kind] = buildGrid(spec, nChannels, i === KINDS.length - 1);
-        });
+        built.seqKey = el("div", {});
+        maps.appendChild(built.seqKey);
+        built.avg = buildGrid(KINDS[0], nChannels, false);
+        built.now = buildGrid(KINDS[1], nChannels, false);
+        built.diffKey = el("div", {});
+        maps.appendChild(built.diffKey);
+        // The strip axis goes under the last grid only: three identical axes
+        // stacked is three times the ink for one fact.
+        built.diff = buildGrid(KINDS[2], nChannels, true);
         geoNote.textContent = map
           ? `One cell per channel, placed by strip and layer from ${map.source}. `
             + `The three maps share a grid, so a column is one strip read three `
@@ -940,18 +949,21 @@ function noiseMaps(name) {
         });
       });
 
-      built.avg.legendHost.textContent = "";
-      built.now.legendHost.textContent = "";
-      built.diff.legendHost.textContent = "";
+      built.seqKey.textContent = "";
+      built.diffKey.textContent = "";
       const seqNote = seq.clipped
         ? `The scale stops at ${NOISE_FENCE} x IQR above the upper quartile so `
           + `that one loud channel does not flatten the rest; the highest is `
           + `${full.hi.toFixed(4)} V. Cells past the end are outlined, so they `
           + `are not read as merely the maximum.`
         : "";
-      built.now.legendHost.appendChild(
-        ATARGeom.heatLegend(seq.lo, seq.hi, { label: unit, note: seqNote }));
-      built.diff.legendHost.appendChild(ATARGeom.diffLegend(div.hi, {
+      built.seqKey.appendChild(ATARGeom.heatLegend(seq.lo, seq.hi, {
+        // Says outright that it is one scale, because that is the claim the
+        // two maps are read on and it is not visible from the picture.
+        label: `${unit}, one scale for both maps below`,
+        note: seqNote,
+      }));
+      built.diffKey.appendChild(ATARGeom.diffLegend(div.hi, {
         label: "change (V)",
         note: `Freshest minus the average of the same window, which includes `
           + `it: a channel seen n times therefore shows (1 - 1/n) of the move it `

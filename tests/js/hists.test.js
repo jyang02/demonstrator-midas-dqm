@@ -617,6 +617,25 @@ test("with no geometry the maps say which key they wanted, rather than inventing
     "the maps were drawn with no key at all");
 });
 
+test("each key sits above what it explains, and says the scale is shared", async () => {
+  // The first live render put the shared key between the second and third maps,
+  // where it reads as belonging to the third -- the one map it does not
+  // describe. Keys go above, which is where this page set already puts them.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  const maps = page.doc.getElementById("noise-maps");
+  const order = [...maps.walk()].filter((e) =>
+    e.classList.contains("dqm-heat-key") || e.id === "noise-map-avg"
+    || e.id === "noise-map-now" || e.id === "noise-map-diff");
+  const names = order.map((e) => e.id || "key");
+  assert.deepStrictEqual(names,
+    ["key", "noise-map-avg", "noise-map-now", "key", "noise-map-diff"],
+    `keys and maps came out in the order ${names.join(", ")}`);
+
+  // And the sharing is stated, not left to be inferred from two identical ramps.
+  assert.match(textOf(maps), /one scale for both maps below/);
+});
+
 test("hovering a cell names the channel, its layer and its strip", async () => {
   // A 19px cell carries no label, so the identity has to be reachable. The
   // global channel number is what the ODB, the frontend and the cable map all
