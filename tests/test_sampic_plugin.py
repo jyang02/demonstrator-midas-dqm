@@ -16,7 +16,8 @@ import pytest
 
 from mdqm.dqm import sampic
 from mdqm.dqm.hist import HistStore
-from mdqm.dqm.sampic_plugin import PREFIX, PRESAMPLES, SampicPlugin
+from mdqm.dqm.sampic_plugin import (PREFIX, PRESAMPLES, RecentByChannel,
+                                    SampicPlugin)
 
 
 class _Bank:
@@ -103,18 +104,63 @@ def test_baseline_and_noise_are_series_and_not_histograms(plugin):
         f"{PREFIX}/baseline_by_channel", f"{PREFIX}/noise_by_channel"]
 
 
-def test_a_series_keeps_only_the_last_n_on_each_channel(plugin):
-    depth = int(SampicPlugin.DEFAULT_BINNING["recent per channel"])
-    for i in range(depth + 5):
-        plugin.process(_event([_hit(channel=2, baseline=0.5 + 0.01 * i)]))
+def test_a_series_keeps_every_value_inside_its_window(plugin):
+    """No count cap. The cut is by time, and the page makes it on the axis.
+
+    This used to keep the last ten per channel, which is a different amount of
+    history on every channel -- ten values is seconds on a busy channel and
+    minutes on a quiet one -- so the two ends of one plot were showing windows
+    that differed by a factor of thirty.
+    """
+    n = 40
+    for i in range(n):
+        plugin.process(_event([_hit(channel=2, baseline=0.5 + 0.001 * i)]))
 
     pts = plugin.series(f"{PREFIX}/baseline_by_channel")
     on2 = [v for c, v in zip(pts["channel"], pts["value"]) if c == 2]
-    assert len(on2) == depth, "the ring must not grow past its depth"
-    # Oldest first, and the five earliest values are gone rather than the five
-    # latest -- the failure a ring written backwards would give.
-    assert on2[-1] == round(0.5 + 0.01 * (depth + 4), 4)
-    assert on2[0] == round(0.5 + 0.01 * 5, 4)
+    assert len(on2) == n, "values were dropped inside the window"
+    # Oldest first, which is what lets the page draw a polyline without sorting.
+    assert on2[0] == round(0.5, 4)
+    assert on2[-1] == round(0.5 + 0.001 * (n - 1), 4)
+
+
+def test_a_series_drops_what_has_aged_out_of_its_window():
+    """The cut itself, driven on an explicit clock rather than the wall."""
+    r = RecentByChannel(8, horizon_s=60.0)
+    r.add([3], [0.70], now=1000.0)
+    r.add([3], [0.71], now=1030.0)
+    r.add([3], [0.72], now=1080.0)      # this evicts the 1000.0 point
+
+    pts = r.points(now=1080.0)
+    assert pts["value"] == [0.71, 0.72], "the window did not slide"
+    assert pts["age"] == [50.0, 0.0]
+
+
+def test_a_series_ages_out_on_read_as_well_as_on_write():
+    """A run that stops must not leave the page drawing a stale picture.
+
+    Evicting only on add() would have a stopped run serving the same points
+    forever, ageing but never leaving -- and the page would draw a minute-old
+    picture on an axis labelled "seconds ago".
+    """
+    r = RecentByChannel(8, horizon_s=60.0)
+    r.add([3], [0.70], now=1000.0)
+    assert r.points(now=1030.0)["value"] == [0.70]
+    assert r.points(now=1100.0)["value"] == [], "a stale point outlived its window"
+    assert r.entries == 0
+
+
+def test_a_series_reports_the_window_it_is_keeping():
+    """The page says "the analyzer keeps N s", so N has to be on the wire."""
+    r = RecentByChannel(8, horizon_s=90.0)
+    assert r.points(now=0.0)["window_s"] == 90.0
+
+
+def test_a_nonsense_window_does_not_throw_every_value_away():
+    """A mistyped ODB key must not present as "the analyzer is not filling"."""
+    r = RecentByChannel(8, horizon_s=0.0)
+    r.add([1], [0.74], now=1000.0)
+    assert r.points(now=1000.0)["value"] == [0.74]
 
 
 def test_a_series_omits_a_channel_nothing_has_hit(plugin):

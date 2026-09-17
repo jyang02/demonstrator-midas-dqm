@@ -19,8 +19,8 @@ What it publishes, all from fields the converter actually writes:
 and two *series*, which are not histograms and are served over ``dqm::series``
 rather than ``dqm::histogram``:
 
-    sampic/baseline_by_channel  the last N baselines on each channel
-    sampic/noise_by_channel     the last N pre-pulse RMS values on each channel
+    sampic/baseline_by_channel  each channel's baselines over the last N seconds
+    sampic/noise_by_channel     each channel's pre-pulse RMS over the last N seconds
 
 Those two are recent values rather than an accumulation on purpose, and
 ``RecentByChannel`` gives the argument: what the tile is asked is where a
@@ -64,6 +64,7 @@ is testable on a machine with no MIDAS installed, which is where its tests run.
 
 from __future__ import annotations
 
+import collections
 import time
 
 import numpy as np
@@ -134,7 +135,7 @@ def _edge_fraction(hist) -> float:
 
 
 class RecentByChannel:
-    """The last N values seen on each channel, with when each arrived.
+    """Every value seen on each channel in the last N seconds, with its age.
 
     A baseline or a noise figure is not a distribution anybody wants summed
     over a run: what a shifter is asking is "where is this channel sitting
@@ -143,53 +144,72 @@ class RecentByChannel:
     the tile exists to catch -- a channel that has walked -- inside a column
     that still carries every value it ever had.
 
-    So this keeps a short ring per channel instead. It is also what makes the
-    tile cheap to draw: a few thousand scatter points rather than a colormap of
+    So this keeps a recent window per channel instead. It is also what makes
+    the tile cheap to draw: a few thousand points rather than a colormap of
     26316 rectangles repainted on every arrival, which is what made the
     Channels page unusable.
 
-    Timestamps are kept per value, and that is not decoration. Channels hit at
-    very different rates, so "the last ten" on a busy channel is a second old
-    and on a quiet one can be minutes old. A tile that drew both the same way
-    would be quietly claiming they are contemporaneous; ``points()`` reports the
-    age so the page can say otherwise.
+    **Cut by time, not by count.** This kept the last ten values per channel,
+    which is a different amount of history on every channel: channels are hit
+    at very different rates, so ten values is eight seconds on a busy channel
+    and four minutes on a quiet one. The page draws these against time, so a
+    count-based ring meant the two ends of one plot were showing windows that
+    differed by a factor of thirty, and the number ten was doing a job the x
+    axis does better and says out loud. One cut, on the axis the reader can
+    see.
+
+    The cost now scales with the *event rate* rather than with the channel
+    count, which is worth stating because it is the one way this can get
+    expensive. At the demonstrator's ~1 Hz a channel is hit every few seconds,
+    so a two-minute horizon is a few tens of values per channel and the series
+    is about twice the size the ring of ten was. At 100 Hz it would be a
+    hundred times that, and this class would need a decimation rather than a
+    longer list. There is deliberately no count cap standing by to save it: a
+    cap that binds only under load is a cap that silently changes what the plot
+    means exactly when somebody is looking at it hardest.
+
+    Timestamps are kept per value, and that is not decoration. A channel that
+    has not been hit inside the horizon has nothing here at all, and the page
+    counts those and says so rather than letting them go missing.
     """
 
-    __slots__ = ("nch", "depth", "values", "when", "pos", "count", "title", "unit")
+    __slots__ = ("nch", "horizon", "points_by_channel", "title", "unit")
 
-    def __init__(self, nch: int, depth: int, title: str = "", unit: str = ""):
+    def __init__(self, nch: int, horizon_s: float, title: str = "", unit: str = ""):
         self.nch = int(nch)
-        self.depth = max(1, int(depth))
+        #: Seconds of history to keep per channel. Floored rather than trusted:
+        #: a zero or negative horizon from a mistyped ODB key would throw every
+        #: value away on arrival and present as "the analyzer is not filling".
+        self.horizon = max(1.0, float(horizon_s))
         self.title = title
         self.unit = unit
-        self.values = np.zeros((self.nch, self.depth), dtype=np.float64)
-        self.when = np.zeros((self.nch, self.depth), dtype=np.float64)
-        # Next slot to write, and how many of the ring are real. Kept apart so
-        # a half-full ring reports the values it has rather than padding with
-        # a zero that would plot as a channel sitting at 0 V.
-        self.pos = np.zeros(self.nch, dtype=np.int64)
-        self.count = np.zeros(self.nch, dtype=np.int64)
+        #: (when, value) per channel, oldest first. A deque because eviction is
+        #: always from the old end and events arrive in time order, so the
+        #: sequence stays sorted without ever being sorted.
+        self.points_by_channel = [collections.deque() for _ in range(self.nch)]
+
+    def _evict(self, i: int, cutoff: float) -> None:
+        q = self.points_by_channel[i]
+        while q and q[0][0] < cutoff:
+            q.popleft()
 
     def add(self, channels, values, now: float) -> None:
         """Record one event's worth. Out-of-range channels are dropped."""
+        cutoff = now - self.horizon
         for ch, v in zip(channels, values):
             i = int(ch)
             if i < 0 or i >= self.nch:
                 continue
-            p = int(self.pos[i])
-            self.values[i, p] = float(v)
-            self.when[i, p] = now
-            self.pos[i] = (p + 1) % self.depth
-            if self.count[i] < self.depth:
-                self.count[i] += 1
+            self.points_by_channel[i].append((now, float(v)))
+            self._evict(i, cutoff)
 
     def clear(self) -> None:
-        self.pos[:] = 0
-        self.count[:] = 0
+        for q in self.points_by_channel:
+            q.clear()
 
     @property
     def entries(self) -> int:
-        return int(self.count.sum())
+        return sum(len(q) for q in self.points_by_channel)
 
     def points(self, now: float | None = None) -> dict:
         """Parallel arrays for the page: channel, value, and age in seconds.
@@ -202,28 +222,30 @@ class RecentByChannel:
         Channels with nothing in them are omitted rather than sent as an empty
         column: a channel nobody has hit is not a channel sitting at zero, and
         the distinction is the whole point of an occupancy plot next door.
+
+        Evicts on the way out as well as on the way in. A run that stops leaves
+        every ring full of values that go on ageing, and a series that kept
+        serving them would have the page drawing a minute-old picture labelled
+        as now.
         """
         now = time.time() if now is None else now
+        cutoff = now - self.horizon
         chans: list[int] = []
         vals: list[float] = []
         ages: list[float] = []
         for i in range(self.nch):
-            n = int(self.count[i])
-            if not n:
-                continue
-            # Oldest first, so the page can fade or order by age if it wants.
-            start = (int(self.pos[i]) - n) % self.depth
-            for k in range(n):
-                s = (start + k) % self.depth
+            self._evict(i, cutoff)
+            # Oldest first, so the page can draw a polyline without sorting.
+            for when, value in self.points_by_channel[i]:
                 chans.append(i)
-                vals.append(round(float(self.values[i, s]), 4))
-                ages.append(round(max(0.0, now - float(self.when[i, s])), 1))
+                vals.append(round(value, 4))
+                ages.append(round(max(0.0, now - when), 1))
         return {
             "title": self.title,
             "unit": self.unit,
-            "depth": self.depth,
+            "window_s": self.horizon,
             "channels": self.nch,
-            "entries": self.entries,
+            "entries": len(chans),
             "channel": chans,
             "value": vals,
             "age": ages,
@@ -262,13 +284,22 @@ class SampicPlugin:
         "channels": 256,
         # Demonstrator events reach 35 hits; 16 sent the rest to the overflow.
         "max hits per event": 40,
-        # How many recent values per channel the baseline and noise series
-        # keep. Ten is what a shifter asked for and is enough to see a channel
-        # scattering rather than sitting: one point says where it is, ten say
-        # whether it is steady. It is also the whole cost of those two tiles --
-        # depth x channels points on the wire and on the screen -- so raising
-        # it is the knob to reach for last, not first.
-        "recent per channel": 10,
+        # How many seconds of history the baseline and noise series keep per
+        # channel. A time cut, not a count: see RecentByChannel. The page draws
+        # these against time and makes its own cut on that axis, so the only
+        # job left for this number is to cover the widest window any page asks
+        # for, with enough headroom that a slow fetch does not arrive to find
+        # the left-hand end already evicted.
+        #
+        # 120 against the page's 60 is that headroom, doubled rather than
+        # shaved: the page refetches every ten seconds and nobody should have
+        # to reason about the race. Widening the page's window up to two
+        # minutes then needs no analyzer change at all.
+        #
+        # This is the whole cost of those two tiles, and it now scales with the
+        # event rate rather than the channel count -- at ~1 Hz about twice what
+        # the ring of ten cost, and proportionally more if the rate rises.
+        "recent seconds per channel": 120.0,
     }
 
     #: Event caps for the two rolling plots. Overridden from /DQM/Analyzer/Window
@@ -360,12 +391,12 @@ class SampicPlugin:
         # binning dict and unused rather than deleted, because an operator who
         # has set them in the ODB should not have them silently disappear; the
         # axis is now whatever the data spans.
-        depth = int(b["recent per channel"])
+        horizon = float(b["recent seconds per channel"])
         self.recent = {
             f"{PREFIX}/baseline_by_channel": RecentByChannel(
-                nch, depth, "Baseline by channel, most recent", "baseline (V)"),
+                nch, horizon, "Baseline by channel, most recent", "baseline (V)"),
             f"{PREFIX}/noise_by_channel": RecentByChannel(
-                nch, depth, f"Noise by channel, most recent "
+                nch, horizon, f"Noise by channel, most recent "
                 f"(RMS of the first {PRESAMPLES} samples)", "RMS (V)"),
         }
 
@@ -385,9 +416,9 @@ class SampicPlugin:
         # positional to a protocol every plugin has to implement.
         for name in self._names():
             self.store.remove(name)
-        # The rings go the same way and for the same reason: a ring of a
-        # different depth is a different ring, and keeping the old values under
-        # a new depth would mix two settings in one plot without saying so.
+        # The windows go the same way and for the same reason: a window of a
+        # different width is a different window, and keeping the old values
+        # under a new one would mix two settings in one plot without saying so.
         self.recent = {}
         self._build()
 

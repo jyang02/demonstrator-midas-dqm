@@ -68,7 +68,10 @@ function series(nch, depth, valueAt) {
       age.push((depth - 1 - k) * 2.0);
     }
   }
-  return { title: "baseline", unit: "V", depth: depth, channels: nch,
+  // window_s is what the analyzer now reports: it keeps a time window per
+  // channel, not a fixed count. Deliberately wider than the page's own window,
+  // which is the relationship the tile's chip explains.
+  return { title: "baseline", unit: "V", window_s: 120, channels: nch,
            entries: channel.length, channel, value, age };
 }
 
@@ -268,6 +271,20 @@ test("one stale channel is one channel, not 1 channels", async () => {
   assert.doesNotMatch(text, /1 channels/);
 });
 
+test("the chip reads the drawn window, and names the analyzer's separately", async () => {
+  // Two different numbers on purpose: the analyzer keeps headroom so a slow
+  // fetch never arrives to find the left-hand end already evicted. The one
+  // worth reading beside a plot is the one the plot is drawn to.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const tile = page.doc.getElementById("baseline_by_channel");
+  const chips = [...tile.walk()].filter((e) => (e.className || "").includes("dqm-chip"));
+  const drawn = chips.find((c) => c.textContent.includes("drawn"));
+  assert.ok(drawn, "no chip names the drawn window");
+  assert.match(drawn.textContent, new RegExp(`${WINDOW_S} s`));
+  assert.match(drawn.title || "", /analyzer keeps 120 s/,
+    "the chip does not distinguish the analyzer's window from the axis");
+});
+
 test("with every channel inside the window the tile says so plainly", async () => {
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
   const tile = page.doc.getElementById("baseline_by_channel");
@@ -460,4 +477,173 @@ test("noise is still a scatter against channel, which is its own question", asyn
   // One trace for every channel, not one per channel: this tile's x axis is
   // the channel, which is what the baseline block gave up to get a time axis.
   assert.strictEqual(div.mpg.param.plot.length, 1);
+});
+
+// --- naming the outlier -----------------------------------------------------
+//
+// The gap these two close: the plot says "something is out of family, in layer
+// 5, somewhere in the green middle" and stops there. What a shifter acts on is
+// the global channel number, because that is what the ODB, the frontend and the
+// cable map speak.
+
+test("each trace carries its channel as data, not only inside its label", async () => {
+  // The hover readout reads the channel back off the trace it is pointing at.
+  // Parsing it out of the label would make the wording of a display string
+  // load-bearing, and a label reworded for humans would break the readout.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const g = graphAt(page, "baseline-plot-L4");
+  g.param.plot.forEach(function (p) {
+    assert.strictEqual(typeof p.dqmChannel, "number", "a trace has no channel on it");
+    assert.strictEqual(p.dqmLayer, 4, "a trace is on the wrong layer's panel");
+    assert.strictEqual(ATARGeom.layerOf(null, 0), null);   // map-less call is safe
+    assert.ok(p.label.includes(`ch ${p.dqmChannel}`), "label and data disagree");
+  });
+});
+
+test("the hover hook names a function that exists", async () => {
+  // mplot resolves this by eval()ing the name from its own scope, so a typo is
+  // a tooltip that never appears and never errors -- the exact class of silent
+  // failure this page set keeps getting caught by.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const div = page.doc.getElementById("baseline-plot-L4");
+  const name = div.dataset.tooltip;
+  assert.ok(name, "no tooltip hook on the plot div");
+  assert.strictEqual(typeof globalThis.window[name], "function",
+    `the div names ${name} and no such function is on the global`);
+});
+
+test("hovering a point names the channel, its layer and its strip", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const g = graphAt(page, "baseline-plot-L4");
+  const tip = globalThis.window[
+    page.doc.getElementById("baseline-plot-L4").dataset.tooltip];
+
+  // What mplot hands the function: the trace it found and the point on it.
+  const idx = 9;
+  g.marker = { graphIndex: idx, x: -12, y: 0.7382 };
+  const text = tip(g);
+
+  const plot = g.param.plot[idx];
+  assert.match(text, new RegExp(`ch ${plot.dqmChannel}\\b`), "no channel named");
+  assert.match(text, /layer 4/, "no layer named");
+  assert.match(text, new RegExp(`strip ${plot.dqmStrip}\\b`), "no strip named");
+  assert.match(text, /0\.7382 V/, "no value");
+  assert.match(text, /12 s ago/, "no age");
+});
+
+test("hovering a placeholder does not print ch undefined", async () => {
+  // A layer with nothing in it carries a trace with no channel on it.
+  const page = await boot(series(7 * PER_LAYER, DEPTH), sampicSettings());
+  const g = graphAt(page, "baseline-plot-L7");
+  const tip = globalThis.window.dqmBaselineTip;
+  g.marker = { graphIndex: 0, x: -3, y: 0.74 };
+  const text = tip(g);
+  assert.doesNotMatch(text, /undefined/, `printed "${text}"`);
+  assert.match(text, /0\.7400 V/);
+});
+
+// --- the ranking ------------------------------------------------------------
+
+function outlierRows(page) {
+  const box = page.doc.getElementById("baseline-outliers");
+  assert.ok(box, "no outlier readout");
+  const rows = box.byTag ? box.byTag("TR") : [...box.walk()].filter((e) => e.tagName === "TR");
+  return rows.slice(1).map((tr) => [...tr.walk()]
+    .filter((e) => e.tagName === "TD").map((td) => td.textContent.trim()));
+}
+
+test("the channel furthest from the median is named outright, at the top", async () => {
+  // ch 137 is layer 4, strip 9 under this fixture's 32-per-layer map.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH,
+                   (ch) => (ch === 137 ? 0.80 : 0.74));
+  const page = await boot(s, sampicSettings());
+
+  const rows = outlierRows(page);
+  assert.ok(rows.length > 0, "the ranking is empty");
+  assert.deepStrictEqual(rows[0].slice(0, 3), ["ch 137", "4", "9"],
+    `top row was ${JSON.stringify(rows[0])}`);
+  assert.match(rows[0][3], /0\.8000 V/);
+  // +60 mV above a median of 0.74, and signed: which way it went is half the
+  // diagnosis.
+  assert.match(rows[0][4], /^\+60\.0 mV$/, `delta read "${rows[0][4]}"`);
+});
+
+test("one dead channel does not drag the median and indict everybody else", async () => {
+  // The median, not the mean, on both axes of the ranking. A single channel
+  // stuck at 0 V moves a mean of 256 by 3 mV -- enough to make a page of
+  // healthy channels all look slightly out.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH,
+                   (ch) => (ch === 200 ? 0.0 : 0.74));
+  const page = await boot(s, sampicSettings());
+
+  const box = page.doc.getElementById("baseline-outliers");
+  const head = [...box.walk()].map((e) => e._text || "").join(" ");
+  assert.match(head, /Furthest from the median \(0\.7400 V\)/,
+    "the dead channel moved the reference");
+
+  const rows = outlierRows(page);
+  assert.deepStrictEqual(rows[0].slice(0, 1), ["ch 200"]);
+  // Everyone else is exactly on the median, so their delta is zero.
+  rows.slice(1).forEach(function (r) {
+    assert.match(r[4], /^[+-]?0\.0 mV$/, `a healthy channel reads ${r[4]}`);
+  });
+});
+
+test("a whole layer sagging shows as rows sharing one layer number", async () => {
+  // Ranked against the median of every channel rather than of its own layer,
+  // precisely so this case survives. Against a per-layer median it would
+  // cancel out and the table would show nothing at all.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH,
+                   (ch) => (ch >= 6 * PER_LAYER && ch < 7 * PER_LAYER ? 0.70 : 0.74));
+  const page = await boot(s, sampicSettings());
+
+  const rows = outlierRows(page);
+  const layers = new Set(rows.map((r) => r[1]));
+  assert.deepStrictEqual([...layers], ["6"],
+    `the sagging layer did not fill the table: ${JSON.stringify(rows)}`);
+  rows.forEach((r) => assert.match(r[4], /^-40\.0 mV$/));
+});
+
+test("the ranking states a fact and passes no verdict", async () => {
+  // This page set refused to build channel_health because "dead, noisy or
+  // drifting" is a verdict, not a histogram, and synthesising one would mean
+  // inventing thresholds nobody specified. A ranking stays the right side of
+  // that line only for as long as it stays uncoloured: the moment a row goes
+  // yellow, the tile has asserted a threshold.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH,
+                   (ch) => (ch === 137 ? 0.80 : 0.74));
+  const page = await boot(s, sampicSettings());
+  const box = page.doc.getElementById("baseline-outliers");
+
+  [...box.walk()].forEach(function (e) {
+    assert.ok(!/\b(warn|alarm|red|yellow)\b/.test(e.className || ""),
+      `the ranking colours a row (${e.className}), which asserts a threshold`);
+  });
+  const text = [...box.walk()].map((e) => e._text || "").join(" ");
+  assert.match(text, /A ranking, not a verdict/);
+});
+
+test("a channel outside the window is not ranked, because it has no line", async () => {
+  // Ranking it on values nobody can see would put a channel in the table that
+  // is not in the picture.
+  const s = series(N_LAYERS * PER_LAYER, DEPTH,
+                   (ch) => (ch === 137 ? 0.80 : 0.74));
+  for (let i = 0; i < s.channel.length; i++) {
+    if (s.channel[i] === 137) s.age[i] += WINDOW_S * 2;
+  }
+  const page = await boot(s, sampicSettings());
+
+  const rows = outlierRows(page);
+  rows.forEach((r) => assert.notStrictEqual(r[0], "ch 137",
+    "a channel with no line on any panel was ranked"));
+});
+
+test("with nothing in the window the ranking says so rather than inventing one", async () => {
+  const s = series(N_LAYERS * PER_LAYER, DEPTH);
+  s.age = s.age.map((a) => a + WINDOW_S * 4);
+  const page = await boot(s, sampicSettings());
+
+  const box = page.doc.getElementById("baseline-outliers");
+  const text = [...box.walk()].map((e) => e._text || "").join(" ");
+  assert.match(text, /nothing to rank/);
 });

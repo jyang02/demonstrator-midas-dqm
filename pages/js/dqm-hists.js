@@ -390,9 +390,9 @@ function histPanel(name, twoD) {
 /**
  * Baseline or noise: the last N values on each channel, channel against value.
  *
- * Always on, unlike the colormaps. depth x channels is a few thousand markers
- * at the default depth of 10, which is the size the tiles above are toggled
- * off to avoid.
+ * Always on, unlike the colormaps. A channel's values over the analyzer's
+ * recent window is a few thousand markers at the demonstrator's rate, which is
+ * the size the tiles above are toggled off to avoid.
  *
  * What a reader is looking for here is a column out of line with its
  * neighbours -- every channel saw the same beam, so a channel whose baseline
@@ -417,7 +417,7 @@ function seriesPanel(name) {
     const oldest = el("span", { class: "dqm-chip" }, "");
     const strip = el("div", { class: "dqm-strip" },
       chip("series", el("code", {}, name)),
-      chip("points", points), chip("per channel", depth), oldest);
+      chip("points", points), chip("window", depth), oldest);
     const note = el("div", { class: "dqm-note" }, "Asking the analyzer\u2026");
     const plotDiv = el("div", { class: "dqm-plot" });
     ctx.body.appendChild(strip);
@@ -483,9 +483,9 @@ function seriesPanel(name) {
       let lo = 0, hi = 1;
       if (s.value.length) {
         lo = hi = s.value[0];
-        // A loop rather than Math.min.apply: depth is an ODB setting, and
-        // apply() on a long enough array throws rather than returning a wrong
-        // answer, which would be a fine bug to hit at 3am on a raised depth.
+        // A loop rather than Math.min.apply: the point count now follows the
+        // event rate, and apply() on a long enough array throws rather than
+        // returning a wrong answer -- a fine bug to hit at 3am on a busy run.
         for (let i = 1; i < s.value.length; i++) {
           if (s.value[i] < lo) lo = s.value[i];
           if (s.value[i] > hi) hi = s.value[i];
@@ -507,15 +507,17 @@ function seriesPanel(name) {
 
       drawn = true;
       points.textContent = String(s.channel.length);
-      depth.textContent = String(s.depth);
-      // The honest part. Channels are hit at very different rates, so the
-      // oldest point on the plot can be far older than the newest, and a tile
-      // that did not say so would be quietly claiming these are one moment.
+      depth.textContent = `${Math.round(s.window_s)} s`;
+      // The honest part. Channels are hit at very different rates, so a busy
+      // channel contributes many more markers to this column than a quiet one,
+      // and a tile that did not say so would be quietly claiming these are one
+      // moment.
       const maxAge = s.age && s.age.length ? Math.max.apply(null, s.age) : 0;
       oldest.textContent = `oldest ${Math.round(maxAge)} s`;
-      oldest.title = `Every channel's last ${s.depth} values, so a channel that `
-        + `is rarely hit carries older points than a busy one. This is the age `
-        + `of the oldest point drawn.`;
+      oldest.title = `Every value seen on each channel in the last `
+        + `${Math.round(s.window_s)} seconds, so a busy channel carries more `
+        + `points in its column than a quiet one. This is the age of the oldest `
+        + `point drawn.`;
       note.className = "dqm-note";
       note.textContent = s.channel.length
         ? ""
@@ -561,6 +563,53 @@ function seriesPanel(name) {
 const BASELINE_WINDOW_S = 60;
 
 /**
+ * What mplot prints beside the crosshair when a baseline point is hovered.
+ *
+ * On the global because that is the only place mplot will look: it builds the
+ * label with eval(<the dataset.tooltip name> + "(this)"), so a function inside
+ * this file's closure is unreachable however it is registered. The page set
+ * already puts dqmTempCell there for the same class of reason.
+ *
+ * This is the answer to "the shifter can see an outlier but cannot name it".
+ * The colour says roughly where across the layer a line sits and deliberately
+ * no more -- viridis makes neighbouring strips look like neighbours, which is
+ * the same property that makes strip 14 and strip 17 indistinguishable. What a
+ * shifter has to act on is the global channel number, because that is what the
+ * ODB, the frontend and the cable map all speak, and this puts it under the
+ * pointer.
+ *
+ * Falls back to mplot's own x/y wording for a trace with no channel on it --
+ * the placeholder a layer with nothing in it carries -- rather than printing
+ * "ch undefined".
+ */
+function baselineTip(graph) {
+  const plot = graph && graph.marker
+    ? graph.param.plot[graph.marker.graphIndex] : null;
+  const volts = `${graph.marker.y.toFixed(4)} V`;
+  // Age is the negated x, back the way it went in.
+  const age = `${Math.round(-graph.marker.x)} s ago`;
+  if (!plot || plot.dqmChannel === undefined) return `${volts}, ${age}`;
+  const where = plot.dqmLayer === null || plot.dqmLayer === undefined
+    ? "unmapped"
+    : `layer ${plot.dqmLayer}` + (plot.dqmStrip === null ? "" : `, strip ${plot.dqmStrip}`);
+  return `ch ${plot.dqmChannel} — ${where} — ${volts}, ${age}`;
+}
+if (typeof window !== "undefined") window.dqmBaselineTip = baselineTip;
+
+//: How many channels the outlier table names. Five fits under the block
+//: without scrolling and is enough to show a whole layer beginning to sag as
+//: several rows sharing a layer number.
+const BASELINE_OUTLIERS = 5;
+
+//: The middle value, on a copy: the caller's array is the plot's own data.
+function median(values) {
+  if (!values.length) return null;
+  const v = values.slice().sort((a, b) => a - b);
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+/**
  * Baseline against time: one line per channel, one panel per ATAR layer.
  *
  * Two changes from the scatter this used to be, and they are the same change.
@@ -587,11 +636,12 @@ const BASELINE_WINDOW_S = 60;
  * viridis ramp the waveforms use, so a line's place across its layer is
  * readable without one and a channel is the same colour in both views.
  *
- * The window is short and the tile says so. This is the analyzer's ring --
- * the last `depth` values on each channel, ten by default -- so the axis
- * reaches back as far as those go and no further, which on a quiet channel is
- * minutes and on a busy one is seconds. Trending a baseline across a whole run
- * is a different tile and wants MIDAS history, not this ring.
+ * The window is short and the tile says so. The axis is a fixed
+ * BASELINE_WINDOW_S seconds and the analyzer keeps a little more than that, so
+ * what is drawn is every value every channel has produced in the last minute
+ * -- not a fixed number of values per channel, which used to mean the two ends
+ * of one plot were showing windows differing by a factor of thirty. Trending a
+ * baseline across a whole run is a different tile and wants MIDAS history.
  */
 function baselineTrend(name) {
   return function (ctx) {
@@ -607,9 +657,13 @@ function baselineTrend(name) {
     const points = el("span", {}, "—");
     const depth = el("span", {}, "—");
     const oldest = el("span", { class: "dqm-chip" }, "");
+    // Held rather than inlined: the hover text is written on the whole chip in
+    // tick(), so that pointing at the word "drawn" explains it and not only
+    // pointing at the number.
+    const drawnChip = chip("drawn", depth);
     ctx.body.appendChild(el("div", { class: "dqm-strip" },
       chip("series", el("code", {}, name)),
-      chip("points", points), chip("per channel", depth), oldest));
+      chip("points", points), drawnChip, oldest));
 
     const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
     const geoNote = el("div", { class: "dqm-note" }, "Reading the channel map…");
@@ -628,6 +682,11 @@ function baselineTrend(name) {
     ctx.body.appendChild(host);
     ctx.body.appendChild(soloHead);
     ctx.body.appendChild(solo);
+
+    // The outlier readout, under the block. See fillOutliers() for why it
+    // ranks rather than judges.
+    const outlierBox = el("div", { class: "dqm-outliers", id: "baseline-outliers" });
+    ctx.body.appendChild(outlierBox);
     // Both hidden until there is something to say: before the first reply the
     // page does not yet know whether there is any geometry, and an empty
     // "channels the map does not place" heading under a tile that has not
@@ -660,6 +719,16 @@ function baselineTrend(name) {
         plot: [],
       });
       div.mpg = g;
+      // mplot's own hover: mouseEvent() finds the nearest point within 10 px,
+      // records which trace it belongs to in marker.graphIndex, and then builds
+      // its label by eval()ing the function this dataset key names. So the
+      // readout costs a function and an attribute rather than a mousemove
+      // handler and a hit test of our own.
+      //
+      // It has to be reachable by name from mplot's scope, which means the
+      // global -- the same reason this page set already hangs dqmTempCell
+      // there. Assigned once, below, not per graph.
+      div.dataset.tooltip = "dqmBaselineTip";
       g.resize();
       return g;
     }
@@ -710,6 +779,78 @@ function baselineTrend(name) {
     }
 
     /**
+     * Name the channels sitting furthest from the pack.
+     *
+     * The plot answers "is something out of family, and roughly where"; it
+     * stops one step short of "which channel", because the only thing naming a
+     * line is its colour and the ramp is deliberately smooth. This closes that
+     * step without a mouse: the channels are named outright, so the answer
+     * survives being read over a shoulder or pasted into the elog.
+     *
+     * **It ranks, it does not judge.** This page set refused to build
+     * `channel_health` on the grounds that "dead, noisy or drifting" is a
+     * verdict rather than a histogram, and that synthesising one would mean
+     * inventing thresholds nobody has specified. That reasoning applies here
+     * exactly: "the five furthest from the median, and by how much" is a fact
+     * about this minute, where "channel 137 is bad" is a threshold no one has
+     * set. So there is no colour, no alarm and no verdict -- a run where the
+     * five furthest are all 2 mV out is a healthy run, and the table looks the
+     * same as it does on a sick one. Reading it is the shifter's job.
+     *
+     * Ranked against the median of *every* channel rather than of its own
+     * layer, with the layer in the table. A whole layer sagging then appears
+     * as several rows sharing a layer number, which is the "one channel or one
+     * layer" question the eight panels exist to ask, answered in the readout
+     * as well as in the picture. Against a per-layer median that case would
+     * cancel out and show nothing.
+     *
+     * The median, not the mean, on both axes of this: one channel stuck at 0 V
+     * would drag a mean far enough to make every healthy channel look like an
+     * outlier, which is the failure that matters most here.
+     */
+    function fillOutliers(rows, allValues) {
+      outlierBox.textContent = "";
+      const mid = median(allValues);
+      if (mid === null || !rows.length) {
+        outlierBox.appendChild(el("div", { class: "dqm-note" },
+          `No channel has been hit in the last ${BASELINE_WINDOW_S} seconds, so `
+          + `there is nothing to rank.`));
+        return;
+      }
+
+      rows.forEach(function (r) { r.delta = r.v - mid; });
+      rows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      const top = rows.slice(0, BASELINE_OUTLIERS);
+
+      outlierBox.appendChild(el("div", { class: "dqm-subhead" },
+        `Furthest from the median (${mid.toFixed(4)} V)`));
+
+      const table = el("table", { class: "dqm-table" });
+      table.appendChild(el("tr", {},
+        el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
+        el("th", {}, "baseline"), el("th", {}, "\u0394 from median")));
+      top.forEach(function (r) {
+        // Millivolts for the delta and volts for the value: the deltas worth
+        // reading here are single mV, and four decimal places of a volt is a
+        // column of leading zeros to count.
+        const mv = r.delta * 1000;
+        table.appendChild(el("tr", {},
+          el("td", { class: "label" }, `ch ${r.ch}`),
+          el("td", {}, r.layer === null || r.layer === undefined ? "\u2014" : String(r.layer)),
+          el("td", {}, r.strip === null ? "\u2014" : String(r.strip)),
+          el("td", {}, `${r.v.toFixed(4)} V`),
+          el("td", {}, `${mv >= 0 ? "+" : ""}${mv.toFixed(1)} mV`)));
+      });
+      outlierBox.appendChild(table);
+      outlierBox.appendChild(el("div", { class: "dqm-footnote" },
+        `The ${top.length} channels of ${rows.length} sitting furthest from the `
+        + `median of every channel, over the last ${BASELINE_WINDOW_S} seconds. `
+        + `A ranking, not a verdict: there is no threshold here, and on a `
+        + `healthy run these are simply the five least average channels. `
+        + `Several rows sharing one layer is the shape a sagging layer makes.`));
+    }
+
+    /**
      * The series as one polyline per channel, oldest point first.
      *
      * x is the *negative* age, so now is 0 at the right and the past runs off
@@ -748,6 +889,11 @@ function baselineTrend(name) {
       //: Channels whose every point is older than the window, and so are drawn
       //: nowhere. Counted rather than dropped quietly.
       let outside = 0;
+      //: One entry per channel that has a line, and every in-window value
+      //: behind the median the ranking is against. Gathered in the same pass
+      //: that builds the traces rather than in a second walk of the series.
+      const ranked = [];
+      const allValues = [];
       lines.forEach(function (pts, ch) {
         // Its layer's panel, or the unmapped one. Never dropped.
         const panel = byLayer.get(ATARGeom.layerOf(map, ch)) || fallback;
@@ -758,6 +904,11 @@ function baselineTrend(name) {
         const ys = pts.map((q) => q[1]);
         panel.graph.param.plot.push({
           label: strip === null ? `ch ${ch}` : `ch ${ch} (strip ${strip})`,
+          // The identity as fields, not only inside the label. The hover
+          // readout below needs the channel back out of the trace it is
+          // pointing at, and parsing it out of a display string would make the
+          // wording of a label load-bearing.
+          dqmChannel: ch, dqmStrip: strip, dqmLayer: panel.layer,
           type: "scatter",
           line: { draw: true, width: 1, color: colour },
           // Markers as well as the line, which the waveform traces do not do.
@@ -782,15 +933,26 @@ function baselineTrend(name) {
         // would stretch all eight around a line nobody can see -- the axis
         // would say something had moved and the plot would show nothing that
         // had.
-        let shown = 0;
+        const inWindow = [];
         for (let i = 0; i < ys.length; i++) {
           if (xs[i] < -BASELINE_WINDOW_S) continue;
-          shown++;
+          inWindow.push(ys[i]);
           if (!any) { yLo = yHi = ys[i]; any = true; }
           if (ys[i] < yLo) yLo = ys[i];
           if (ys[i] > yHi) yHi = ys[i];
         }
-        if (!shown) outside++;
+        if (!inWindow.length) {
+          // Outside the window entirely: it has no line to be an outlier of,
+          // and ranking it on values nobody can see would put a channel in the
+          // table that is not in the picture.
+          outside++;
+        } else {
+          // The channel's own median, so one glitched reading does not promote
+          // a healthy channel into the table.
+          ranked.push({ ch: ch, layer: panel.layer, strip: strip,
+                        v: median(inWindow) });
+          for (let i = 0; i < inWindow.length; i++) allValues.push(inWindow[i]);
+        }
       });
 
       // Nothing inside the window at all: keep an axis rather than collapsing
@@ -837,6 +999,8 @@ function baselineTrend(name) {
         p.graph.redraw();
       });
 
+      fillOutliers(ranked, allValues);
+
       // The unmapped panel appears only when something needs it, and is the
       // only panel when there is no geometry at all.
       const showSolo = !map || fallback.used;
@@ -845,7 +1009,14 @@ function baselineTrend(name) {
 
       drawn = true;
       points.textContent = String(s.channel.length);
-      depth.textContent = String(s.depth);
+      // What is on the axis, not what the analyzer holds: the two differ on
+      // purpose -- the analyzer keeps headroom so a slow fetch never arrives to
+      // find the left-hand end already evicted -- and the number worth reading
+      // beside a plot is the one the plot is drawn to.
+      depth.textContent = `${BASELINE_WINDOW_S} s`;
+      drawnChip.title = `The axis. The analyzer keeps `
+        + `${Math.round(s.window_s || 0)} s per channel, deliberately more, so `
+        + `the drawn window is always fully covered.`;
       // The honest part, and the price of a fixed axis. Channels are hit at
       // very different rates, so a quiet one's last ten values can all predate
       // the window and it is then drawn nowhere at all. A tile that let those
@@ -859,9 +1030,8 @@ function baselineTrend(name) {
       oldest.title = outside
         ? `The axis is the last ${BASELINE_WINDOW_S} seconds. ${outside === 1
             ? "This channel has" : "These channels have"} not been hit inside `
-          + `it -- their last ${s.depth} values are all older -- so they have no `
-          + `line on any panel. That is the plot being honest about a quiet `
-          + `channel, not a channel that has gone.`
+          + `it, so they have no line on any panel. That is the plot being `
+          + `honest about a quiet channel, not a channel that has gone.`
         : `The axis is the last ${BASELINE_WINDOW_S} seconds, and every channel `
           + `the analyzer knows about has been hit inside it.`;
       note.className = "dqm-note";

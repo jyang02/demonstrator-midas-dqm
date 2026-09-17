@@ -251,9 +251,17 @@ business.
 
 Four of the six draw when their tab opens. Occupancy and hits per event are 1D
 and a few hundred bins. Baseline and noise by channel are **recent-value
-series** rather than histograms -- the last N values on each channel, drawn as
-a scatter of channel against value -- fetched over `dqm::series` and listed in
-`SERIES`.
+series** rather than histograms -- every value each channel has produced in the
+last couple of minutes -- fetched over `dqm::series` and listed in `SERIES`.
+
+The cut is by **time, not by count**. It was the last ten values per channel,
+which is a different amount of history on every channel: ten values is eight
+seconds on a busy channel and four minutes on a quiet one, so the two ends of
+one plot were showing windows differing by a factor of thirty. `recent seconds
+per channel` replaces it, and the page makes its own cut on the axis the reader
+can actually see. The cost now follows the event rate rather than the channel
+count -- about twice the old size at the demonstrator's ~1 Hz, and
+proportionally more if the rate rises, which `RecentByChannel` says out loud.
 
 That pair changed shape because of the question they answer, not only the cost.
 "Is this channel sitting where it should" is about *now*; a colormap summed
