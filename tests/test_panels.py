@@ -141,9 +141,9 @@ def test_every_blocked_element_gives_a_reason():
 def test_every_dropped_element_carries_its_note():
     """A dropped panel has no blocked_by and no data -- the note is all it has.
 
-    Vacuous while the spec keeps every dropped panel in the generic group, which
-    has no page here. It guards the field a dropped panel on a kept page would
-    depend on.
+    Vacuous while the spec keeps every dropped panel in the retired group, which
+    has no page here -- and that is now twenty-five of them. It guards the field
+    a dropped panel on a kept tab would depend on.
     """
     silent = [e["id"] for e in _elements() if e["status"] == "dropped" and not e.get("note")]
     assert not silent, f"dropped with no note: {silent}"
