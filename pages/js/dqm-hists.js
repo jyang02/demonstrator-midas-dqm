@@ -958,10 +958,13 @@ function noiseMaps(name) {
           + `are not read as merely the maximum.`
         : "";
       built.seqKey.appendChild(ATARGeom.heatLegend(seq.lo, seq.hi, {
-        // Says outright that it is one scale, because that is the claim the
-        // two maps are read on and it is not visible from the picture.
-        label: `${unit}, one scale for both maps below`,
-        note: seqNote,
+        label: unit,
+        // The sharing goes in the note rather than the label: it is a sentence
+        // and not a name, and in the label it pushed the upper bound onto its
+        // own line, which reads as a broken key. Said outright either way,
+        // because it is the claim the two maps are read on and two ramps drawn
+        // separately look identical whether or not they were fitted together.
+        note: `One scale for both maps below.${seqNote ? " " + seqNote : ""}`,
       }));
       built.diffKey.appendChild(ATARGeom.diffLegend(div.hi, {
         label: "change (V)",
