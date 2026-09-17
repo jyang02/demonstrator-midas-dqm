@@ -214,6 +214,108 @@ test("a channel that fires only in a later event still draws", async () => {
   assert.strictEqual(boxes.length, 5);
 });
 
+// --- the channel picker, folded away ----------------------------------------
+//
+// 256 checkboxes is most of a screen spent on a control almost nobody touches.
+// What these pin is the thing that makes folding them away safe rather than
+// merely tidy: the closed line still says what is not being drawn.
+
+function summary(page) {
+  return page.doc.getElementById("scope-picker-summary");
+}
+
+//: Written out rather than imported: a test that reads the number it is
+//: asserting asserts nothing. Tied to the module's own value below.
+const PICKER_NAMED = 6;
+
+test("the picker is one closed line, not a wall of boxes", async () => {
+  const page = await boot([REAL.events[3]]);
+  await pump(page, 2);
+
+  const picker = page.doc.getElementById("scope-picker");
+  assert.ok(picker, "the picker is not a disclosure");
+  assert.strictEqual(picker.tagName, "DETAILS");
+  assert.ok(!picker.open, "the picker opens expanded, which is the wall again");
+  // The boxes are still there, one per channel seen -- just behind the click.
+  assert.strictEqual(page.doc.getElementById("scope-picker-grid").byTag("input").length,
+    REAL.events[3].decoded.nhits);
+});
+
+test("the closed line says everything is drawn when it is", async () => {
+  const page = await boot([REAL.events[3]]);
+  await pump(page, 2);
+  assert.match(summary(page).textContent, /all 5 drawn/);
+  assert.strictEqual(summary(page).className, "",
+    "a picker hiding nothing marked itself as hiding something");
+});
+
+test("a hidden channel is named on the closed line, and the line marks itself", async () => {
+  // The point of the whole change. This page already shipped the failure where
+  // an event draws in part with no sign anything is missing, and the opt-out
+  // set exists because of it -- so folding the boxes away is only safe while
+  // the fold itself reports what it is hiding.
+  const page = await boot([REAL.events[3], REAL.events[3]]);
+  await pump(page, 2);
+
+  const boxes = page.doc.getElementById("scope-channels").byTag("input");
+  const ch = Number(boxes[0].parentNode.textContent.replace(/\D+/g, ""));
+  boxes[0].checked = false;
+  boxes[0].dispatch("change");
+
+  const said = summary(page).textContent;
+  assert.match(said, /4 of 5 drawn/, `the count did not follow the tick: "${said}"`);
+  assert.match(said, new RegExp(`ch ${ch}`), `the hidden channel is not named: "${said}"`);
+  assert.strictEqual(summary(page).className, "dqm-picker-hiding",
+    "the closed line does not mark itself when it is hiding a trace");
+
+  // And back again: ticking it returns the line to saying so.
+  boxes[0].checked = true;
+  boxes[0].dispatch("change");
+  assert.match(summary(page).textContent, /all 5 drawn/);
+  assert.strictEqual(summary(page).className, "");
+});
+
+test("past a handful the hidden channels are counted rather than listed", async () => {
+  // Otherwise the summary wraps and the picker is taking back the space that
+  // collapsing it was supposed to save.
+  // No single event has that many hits; the picker accumulates, which is the
+  // whole reason it grew big enough to be a problem.
+  const page = await boot(DEMO.events.slice());
+  await pump(page, DEMO.events.length + 1);
+
+  const boxes = page.doc.getElementById("scope-channels").byTag("input");
+  assert.ok(boxes.length > PICKER_NAMED,
+    `only ${boxes.length} channels accumulated, too few to need counting`);
+  boxes.forEach(function (b) { b.checked = false; b.dispatch("change"); });
+
+  const said = summary(page).textContent;
+  assert.match(said, /and \d+ more/, `every hidden channel was listed: "${said}"`);
+  assert.ok(said.length < 120, `the closed line is ${said.length} characters long`);
+});
+
+test("the number of channels these tests name is the number the page names", async () => {
+  const page = await boot([REAL.events[3]]);
+  await pump(page, 2);
+  assert.strictEqual(require(path.join(JS, "dqm-scope.js")).PICKER_NAMED, PICKER_NAMED,
+    "dqm-scope.js moved the cut and these tests still assume the old one");
+});
+
+test("growing the channel set does not shut the picker under the hand", async () => {
+  const first = REAL.events[0];          // channels 5, 6
+  const later = REAL.events[3];          // channels 3, 4, 5, 6, 7
+  const page = await boot([first]);
+  await pump(page, 2);
+
+  page.doc.getElementById("scope-picker").open = true;
+  page.queue.push(later);
+  await pump(page, 2);
+
+  const picker = page.doc.getElementById("scope-picker");
+  assert.ok(picker.open, "a new channel closed the picker somebody was using");
+  assert.strictEqual(page.doc.getElementById("scope-picker-grid").byTag("input").length, 5,
+    "the rebuilt picker lost the channels it had");
+});
+
 test("the empty buffer says nothing is writing the bank, and names it", async () => {
   const page = await boot([]);
   await pump(page, 3);

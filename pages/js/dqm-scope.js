@@ -96,7 +96,7 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
     chip("seen", el("span", { id: "scope-seen" }, "0")),
     chip("banks", el("span", { id: "scope-banks" }, "—"))));
 
-  ctx.body.appendChild(el("div", { class: "dqm-strip", id: "scope-channels" }));
+  ctx.body.appendChild(el("div", { id: "scope-channels" }));
   ctx.body.appendChild(el("div", { class: "dqm-note", id: "scope-status" },
     "Waiting for an event…"));
 
@@ -344,6 +344,33 @@ function excluded() {
   return state.excluded;
 }
 
+//: How many hidden channels the closed picker names before it counts the rest.
+//:
+//: Six fits the summary line at the width the tile actually has. Past that the
+//: line wraps and the picker is taking the space back that collapsing it was
+//: supposed to save.
+const PICKER_NAMED = 6;
+
+/**
+ * The channel picker: a disclosure, not a wall of boxes.
+ *
+ * One checkbox per channel ever seen was fine at run 108's thirty-two and is
+ * not fine at the demonstrator's 256 -- a block of 256 chips above the plot,
+ * which is most of a screen spent on a control almost nobody touches. Closed,
+ * this is one line.
+ *
+ * **The summary has to say what is hidden, and that is not decoration.** The
+ * whole argument for an opt-out set, two functions up, is that a partly drawn
+ * event with no sign that anything is missing is the failure this page already
+ * made once. Folding the boxes away would recreate it exactly -- the traces
+ * would be missing and the only evidence would be behind a click -- so the
+ * closed line names the excluded channels and marks itself when there are any.
+ * A picker that collapsed silently would be worse than the wall it replaced.
+ *
+ * Open state is deliberately not remembered. It defaults closed, which is the
+ * point of the change, and a remembered "open" would bring the wall back on
+ * some other day with nothing to say why.
+ */
 function renderChannelPicker() {
   const host = document.getElementById("scope-channels");
   if (!host || !state.event) return;
@@ -351,22 +378,55 @@ function renderChannelPicker() {
   // its channel happens not to fire is a box nobody can untick.
   state.event.channels.forEach((c) => known.add(c));
   const key = Array.from(known).sort((a, b) => a - b).join(",");
-  // Rebuilt only when the set grows, so it does not fight the operator's clicks.
-  if (host.dataset.channels === key) return;
-  host.dataset.channels = key;
-  host.innerHTML = "";
+  // Rebuilt only when the set grows, so it does not fight the operator's
+  // clicks -- and the summary is refreshed either way, because a box ticked
+  // inside it changes the line without changing the set.
+  if (host.dataset.channels !== key) {
+    host.dataset.channels = key;
+    const previous = document.getElementById("scope-picker");
+    const wasOpen = !!(previous && previous.open);
+    host.innerHTML = "";
 
-  key.split(",").filter((x) => x !== "").map(Number).forEach(function (ch) {
-    const box = el("input", { type: "checkbox" });
-    box.checked = !excluded().has(ch);
-    box.addEventListener("change", function () {
-      if (this.checked) excluded().delete(ch); else excluded().add(ch);
-      save();
-      draw();
+    const box = el("details", { class: "dqm-picker", id: "scope-picker" });
+    // Growing the channel set must not shut the picker under the hand of
+    // somebody in the middle of using it.
+    if (wasOpen) box.open = true;
+    box.appendChild(el("summary", { id: "scope-picker-summary" }, ""));
+
+    const grid = el("div", { class: "dqm-picker-grid", id: "scope-picker-grid" });
+    key.split(",").filter((x) => x !== "").map(Number).forEach(function (ch) {
+      const tick = el("input", { type: "checkbox" });
+      tick.checked = !excluded().has(ch);
+      tick.addEventListener("change", function () {
+        if (this.checked) excluded().delete(ch); else excluded().add(ch);
+        save();
+        summarisePicker();
+        draw();
+      });
+      grid.appendChild(el("label", { class: "dqm-chip" },
+        tick, el("span", {}, `ch ${ch}`)));
     });
-    const label = el("label", { class: "dqm-chip" }, box, el("span", {}, `ch ${ch}`));
-    host.appendChild(label);
-  });
+    box.appendChild(grid);
+    host.appendChild(box);
+  }
+  summarisePicker();
+}
+
+/** The closed picker's one line: how many draw, and which do not. */
+function summarisePicker() {
+  const line = document.getElementById("scope-picker-summary");
+  if (!line) return;
+  const all = Array.from(known).sort((a, b) => a - b);
+  const off = all.filter((ch) => excluded().has(ch));
+  line.className = off.length ? "dqm-picker-hiding" : "";
+  if (!off.length) {
+    line.textContent = `Channels: all ${all.length} drawn`;
+    return;
+  }
+  const named = off.slice(0, PICKER_NAMED).map((ch) => `ch ${ch}`).join(", ");
+  const rest = off.length - PICKER_NAMED;
+  line.textContent = `Channels: ${all.length - off.length} of ${all.length} drawn `
+    + `\u2014 hiding ${named}${rest > 0 ? ` and ${rest} more` : ""}`;
 }
 
 //: Channels seen since the page loaded, so the picker only ever grows.
@@ -948,7 +1008,7 @@ function save() {
 // coloured by strip position, and it should keep failing if this file stops
 // reaching for it.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { stripColour, colourFor,
+  module.exports = { stripColour, colourFor, PICKER_NAMED,
                      VIRIDIS: ATARGeom.VIRIDIS, RAMP_TOP: ATARGeom.RAMP_TOP,
                      PALETTE: ATARGeom.PALETTE };
 }

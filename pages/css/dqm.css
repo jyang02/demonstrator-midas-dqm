@@ -144,6 +144,34 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    is much further out than the rest. */
 .dqm-outliers { margin-top: 10px; }
 .dqm-outliers table.dqm-table td { font-variant-numeric: tabular-nums; }
+/* The Scope tab's channel picker, folded away.
+
+   One checkbox per channel ever seen was fine at run 108's thirty-two and is
+   most of a screen at the demonstrator's 256, spent on a control almost nobody
+   touches. Closed it is one line; the summary names what is hidden, which is
+   what keeps folding it away from recreating the failure the opt-out set exists
+   to prevent -- traces missing with no sign that anything is.
+
+   The grid scrolls rather than growing: opened, 256 chips would push the plot
+   off the screen, which is the same complaint in the other direction. */
+.dqm-picker { margin: 4px 0 8px 0; }
+.dqm-picker > summary {
+  cursor: pointer; padding: 2px 0; font-size: 0.9em; color: #333;
+  font-variant-numeric: tabular-nums;
+}
+.dqm-picker > summary:hover { color: #000; }
+/* Marked when anything is hidden, so the closed line carries it at a glance
+   and not only in the words. */
+.dqm-picker > summary.dqm-picker-hiding { color: #8a6d00; font-weight: 600; }
+.dqm-picker-grid {
+  display: flex; flex-wrap: wrap; gap: 4px 6px;
+  margin: 6px 0 2px 0; padding: 4px;
+  max-height: 190px; overflow-y: auto;
+  border: 1px solid #e0e0e0; border-radius: 3px;
+}
+.dqm-picker-grid label.dqm-chip { cursor: pointer; }
+.dqm-picker-grid label.dqm-chip input { margin-right: 5px; }
+
 .dqm-strip label.dqm-chip { cursor: pointer; }
 .dqm-strip label.dqm-chip input { margin-right: 5px; }
 
