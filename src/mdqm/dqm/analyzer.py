@@ -63,6 +63,22 @@ DROPPED_PATH = "/Equipment/WDWaveforms/Variables/Thread/DroppedPackets"
 HISTORY_PATH = "/DQM/Analyzer/History"
 HISTORY_EVENT = "DQM"
 
+#: One history event per array, and one shared by the scalars.
+#:
+#: Not cosmetic. A /History/Links event is ONE record containing every tag in
+#: it, and mlogger rewrites the whole record on every ODB write to any of them
+#: -- there is no per-event minimum period the way ``Common/Log history``
+#: throttles an equipment. With the scalars in the same event as the two
+#: 512-channel arrays, each scalar write dragged 8 kB of arrays onto disk with
+#: it: measured at 816 MB/day before this split, and ~11 MB/day after it at the
+#: 60 s period.
+#:
+#: It also reads better in mhttpd's History tab, where picking "DQMBaseline"
+#: gives the 512 channels on their own rather than mixed in with the summary.
+def _history_event(name: str, value) -> str:
+    return f"{HISTORY_EVENT}{name.replace(' ', '')}" if isinstance(value, list) \
+        else HISTORY_EVENT
+
 _stop = False
 
 
@@ -338,7 +354,8 @@ class Analyzer:
         if names == self._history_linked:
             return
         for name in names:
-            link = f"/History/Links/{HISTORY_EVENT}/{name}"
+            event = _history_event(name, values[name])
+            link = f"/History/Links/{event}/{name}"
             try:
                 client.odb_link(link, f"{HISTORY_PATH}/{name}")
             except Exception:                          # noqa: BLE001

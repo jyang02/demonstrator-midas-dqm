@@ -101,11 +101,18 @@ SAMPLING: dict[str, object] = {
     #: something a monitoring client should do to an experiment that did not
     #: ask for it. An experiment that wants the trends turns it on.
     "publish history": False,
-    #: Seconds between writes. mlogger has its own logging period on top of
-    #: this, so the trend is no finer than the slower of the two; 10 s is well
-    #: under any history period anyone would set and costs one ODB write of a
-    #: few hundred floats.
-    "history period s": 10.0,
+    #: Seconds between writes, and the whole of what this costs on disk.
+    #:
+    #: mlogger writes a history record on EVERY ODB write to a linked value,
+    #: with no minimum period of its own -- ``Common/Log history`` throttles an
+    #: equipment, and there is no equivalent for /History/Links. So the file
+    #: grows by one record per published value per period, and the period is
+    #: the only knob.
+    #:
+    #: 60 s measured at ~11 MB/day for 512 channels of baseline and noise. 10 s
+    #: is six times that. A baseline walks over minutes, so a finer period buys
+    #: resolution nothing is asking for and fills a disk to get it.
+    "history period s": 60.0,
 }
 
 SECTIONS = {
