@@ -50,6 +50,19 @@ DEFAULT_CLIENT = "mdqm_analyzer"
 #: exist, and --dropped-path overrides it without a rebuild.
 DROPPED_PATH = "/Equipment/WDWaveforms/Variables/Thread/DroppedPackets"
 
+#: Where the plugin's history values are written, and the /History/Links event
+#: they are linked into.
+#:
+#: Links rather than an equipment record: mlogger histories either
+#: /Equipment/<eq>/Variables under a Common/Log history period, or anything
+#: linked under /History/Links/<event>. The analyzer is not a frontend and has
+#: no business fabricating an equipment -- an equipment record claims a
+#: readout that does not exist, and /Equipment is where an operator looks to
+#: find out what is actually running. The values live under our own settings
+#: tree and are linked from there.
+HISTORY_PATH = "/DQM/Analyzer/History"
+HISTORY_EVENT = "DQM"
+
 _stop = False
 
 
@@ -118,6 +131,10 @@ class Analyzer:
         self.run_number = None
         self.run_state = None
         self.started_at = time.time()
+        #: The names last linked under /History/Links, so the links are only
+        #: rewritten when the plugin's payload changes shape.
+        self._history_linked: tuple = ()
+        self._history_at = 0.0
         self.connected_since = None
         self.reconnects = 0
         self.throttle_events = []
@@ -287,6 +304,46 @@ class Analyzer:
                 f"{DEFAULT_CLIENT}: DAQ dropped {delta} packets; halving my sampling "
                 f"rate to {new_rate}/s. I may not be the cause, but monitoring must "
                 f"never be. Restart me to restore the configured rate.", is_error=True)
+
+    def publish_history(self, client) -> None:
+        """Write the plugin's history values and link them for mlogger.
+
+        Off unless ``publish history`` is set: see that setting for why the
+        default is not to touch another experiment's /History.
+
+        The links are (re)made whenever the set of names changes, which is what
+        a plugin swap or a channel-count change looks like. Making them every
+        time would be a write per name per period for no gain; making them only
+        once would leave a link pointing at a name the plugin has stopped
+        publishing.
+        """
+        sampling = self.settings.get("Sampling", {}) if self.settings else {}
+        if not sampling.get("publish history"):
+            return
+        history = getattr(self.plugin, "history", None)
+        if history is None:
+            return
+        try:
+            values = history()
+        except Exception as exc:                       # noqa: BLE001
+            # A monitoring client must never take the experiment down with it,
+            # and a broken history payload is not a reason to stop analysing.
+            print(f"{DEFAULT_CLIENT}: history payload failed: {exc}", flush=True)
+            return
+
+        for name, value in values.items():
+            client.odb_set(f"{HISTORY_PATH}/{name}", value)
+
+        names = tuple(sorted(values))
+        if names == self._history_linked:
+            return
+        for name in names:
+            link = f"/History/Links/{HISTORY_EVENT}/{name}"
+            try:
+                client.odb_link(link, f"{HISTORY_PATH}/{name}")
+            except Exception:                          # noqa: BLE001
+                pass                                   # already there
+        self._history_linked = names
 
     # -- the loop ------------------------------------------------------------
 
@@ -470,6 +527,11 @@ def main(argv=None) -> int:
                     if now - last_health > 10.0:
                         analyzer.check_daq_health(client)
                         last_health = now
+                    period = float((analyzer.settings.get("Sampling", {}) or {})
+                                   .get("history period s", 10.0) or 10.0)
+                    if now - analyzer._history_at >= period:
+                        analyzer.publish_history(client)
+                        analyzer._history_at = now
                     client.communicate(args.cycle_ms)
 
         except KeyboardInterrupt:

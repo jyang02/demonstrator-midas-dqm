@@ -522,3 +522,83 @@ def test_the_metadata_reports_the_real_count_and_the_cap(plugin):
     assert meta["rolling"] is True
     assert meta["cap"] == 100
     assert meta["window"] == 10
+
+
+# --- history: what the maps cannot answer -----------------------------------
+#
+# The tiles show a long window and a short one, so they can say a channel has
+# moved but never WHEN it started. That was traded away when the baseline block
+# became maps, and MIDAS history is where it comes back.
+
+
+def test_means_are_none_for_a_channel_with_nothing():
+    # None and not 0.0: a channel nobody hit is not a channel sitting at zero,
+    # and the ring must not be the place that decides what an absent value
+    # looks like in a plot.
+    r = RecentByChannel(4, horizon_s=60.0)
+    r.add([0, 0, 2], [0.70, 0.80, 0.50], now=1000.0)
+
+    means = r.means(now=1000.0)
+    assert means[0] == pytest.approx(0.75)
+    assert means[1] is None
+    assert means[2] == pytest.approx(0.50)
+    assert means[3] is None
+
+
+def test_means_only_average_what_is_inside_the_window():
+    r = RecentByChannel(2, horizon_s=10.0)
+    r.add([0], [0.10], now=1000.0)          # ages out
+    r.add([0], [0.90], now=1015.0)
+
+    assert r.means(now=1015.0)[0] == pytest.approx(0.90)
+
+
+def test_history_carries_both_the_arrays_and_the_scalars(plugin):
+    for _ in range(3):
+        plugin.process(_event([_hit(channel=1), _hit(channel=2)]))
+
+    h = plugin.history()
+    nch = len(h["Baseline"])
+    assert nch == len(h["Noise"])
+    # The arrays are one entry per channel, whether or not it was hit -- a
+    # history array whose length moved with occupancy could not be plotted.
+    assert nch == plugin.recent[f"{PREFIX}/baseline_by_channel"].nch
+    for key in ("Baseline median", "Baseline spread", "Baseline channels",
+                "Baseline quiet", "Noise median", "Noise spread",
+                "Hits per event", "Events"):
+        assert key in h, f"{key} is not in the history payload"
+    assert h["Baseline channels"] == 2
+    assert h["Baseline quiet"] == nch - 2
+    assert h["Events"] == 3
+    assert h["Hits per event"] == pytest.approx(2.0)
+
+
+def test_history_writes_an_unhit_channel_as_the_absent_marker(plugin):
+    plugin.process(_event([_hit(channel=1)]))
+
+    h = plugin.history()
+    assert h["Baseline"][1] != 0.0, "the channel that was hit lost its value"
+    # Exactly zero, which no real baseline or RMS can be, so it reads as
+    # "nothing here" rather than as a measurement.
+    assert h["Baseline"][0] == 0.0
+    assert h["Noise"][0] == 0.0
+
+
+def test_history_median_ignores_the_channels_with_nothing(plugin):
+    # The failure this rules out: folding 500 absent channels in as zeroes and
+    # reporting a median of 0 V for a detector sitting at 0.75.
+    for ch in (1, 2, 3):
+        plugin.process(_event([_hit(channel=ch, baseline=0.75)]))
+
+    h = plugin.history()
+    assert h["Baseline median"] == pytest.approx(0.75, abs=0.02)
+
+
+def test_history_publishes_no_histogram(plugin):
+    # A distribution is not a time series: 512 numbers that only mean something
+    # together would be 512 history tags saying nothing on their own.
+    plugin.process(_event([_hit(channel=1)]))
+
+    h = plugin.history()
+    assert not any("occupancy" in k.lower() or "persistence" in k.lower()
+                   or "amplitude" in k.lower() for k in h)

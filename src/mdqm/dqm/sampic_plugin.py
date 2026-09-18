@@ -101,6 +101,20 @@ def _global_channels(hits) -> np.ndarray:
                        count=len(hits))
 
 
+def _quantile(values, q: float) -> float:
+    """The q-th quantile of a list, 0.0 when it is empty.
+
+    Nearest-rank on a sorted copy -- the same definition dqm-hists.js uses for
+    its fence, so a median quoted in history and a median quoted on the page
+    are the same statistic rather than two that nearly agree.
+    """
+    if not values:
+        return 0.0
+    v = sorted(values)
+    i = min(len(v) - 1, max(0, int(round(q * (len(v) - 1)))))
+    return round(float(v[i]), 6)
+
+
 def _payload(bank) -> bytes:
     """Bank data as bytes, whatever shape the bindings handed over.
 
@@ -210,6 +224,28 @@ class RecentByChannel:
     @property
     def entries(self) -> int:
         return sum(len(q) for q in self.points_by_channel)
+
+    def means(self, now: float | None = None) -> list:
+        """Each channel's mean over the whole window, or None where it is empty.
+
+        The same number the tile's long-window map draws, computed here so the
+        value that goes into MIDAS history and the value on the page cannot be
+        two different definitions of "this channel's baseline".
+
+        ``None`` and not 0.0 for a channel with nothing: a channel nobody hit
+        is not a channel sitting at zero, which is the distinction this whole
+        class exists to keep. The caller decides what to write for it, because
+        what an absent value should look like in a history plot is a question
+        about that plot and not about this ring.
+        """
+        now = time.time() if now is None else now
+        cutoff = now - self.horizon
+        out: list = []
+        for i in range(self.nch):
+            self._evict(i, cutoff)
+            q = self.points_by_channel[i]
+            out.append(sum(v for _, v in q) / len(q) if q else None)
+        return out
 
     def points(self, now: float | None = None) -> dict:
         """Parallel arrays for the page: channel, value, and age in seconds.
@@ -629,6 +665,64 @@ class SampicPlugin:
             r = self.recent.get(name)
             return r.points() if r is not None else {}
         return {"names": list(self.recent)}
+
+    #: What a channel with nothing in the window is written as. 0.0 rather than
+    #: a NaN, because MIDAS history stores floats and mhttpd plots a NaN as a
+    #: gap that is indistinguishable from the logger having been down. A real
+    #: ATAR baseline sits near 0.74 V and a real RMS is a few mV, so an exact
+    #: zero is not a value either can take -- it reads as "nothing here", which
+    #: is what it means, and the channel counts below say how many there are.
+    HISTORY_ABSENT = 0.0
+
+    def history(self) -> dict:
+        """Values worth trending in MIDAS history, as name -> float or list.
+
+        What belongs here is what a *map* cannot answer: the tiles show a long
+        window and a short one, so they can say a channel has moved but never
+        when it started moving. That was traded away deliberately when the
+        baseline block became maps, and history is where it comes back -- for
+        free, in mhttpd's own trend plots, rather than as another tile.
+
+        Both halves are here on purpose. The per-channel arrays are the detail:
+        with them, "which channel walked, and at what time" is a plot anyone
+        can pull up hours later. The scalars are the at-a-glance version, and
+        they are the ones worth an alarm -- a channel count that steps down
+        overnight is a channel that dropped out, and no per-channel plot makes
+        that obvious at a glance.
+
+        Deliberately NOT here: the histograms. Occupancy, amplitude and
+        persistence are distributions, and a distribution is not a time series
+        -- history would store 512 numbers that only mean something together.
+        Occupancy's raw counts are also monotonic, so trending them draws a
+        ramp whose slope is the only real content.
+        """
+        out: dict = {}
+        stats: dict = {}
+        for key, label in ((f"{PREFIX}/baseline_by_channel", "Baseline"),
+                           (f"{PREFIX}/noise_by_channel", "Noise")):
+            recent = self.recent.get(key)
+            if recent is None:
+                continue
+            means = recent.means()
+            live = [v for v in means if v is not None]
+            out[label] = [self.HISTORY_ABSENT if v is None else round(v, 6)
+                          for v in means]
+            out[f"{label} channels"] = len(live)
+            # Median and inter-quartile spread rather than mean and sigma: one
+            # channel stuck at rail moves a mean and a sigma and leaves the
+            # median where the detector actually is, which is the number worth
+            # trending. Same robustness argument the tiles' own fence makes.
+            out[f"{label} median"] = _quantile(live, 0.5)
+            out[f"{label} spread"] = (_quantile(live, 0.75)
+                                      - _quantile(live, 0.25))
+            stats[label] = len(means) - len(live)
+
+        for label, quiet in stats.items():
+            out[f"{label} quiet"] = quiet
+        out["Hits per event"] = (round(self.hits / self.events, 4)
+                                 if self.events else 0.0)
+        out["Events"] = int(self.events)
+        return out
 
     def status(self) -> dict:
         return {

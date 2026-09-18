@@ -95,7 +95,17 @@ WINDOW: dict[str, object] = {
 #: How hard the analyzer works. One knob rather than three interacting ones.
 SAMPLING: dict[str, object] = {
     "max events per s": 20.0,
+    #: Whether to write the plugin's history values into the ODB for mlogger to
+    #: trend. Off by default, and deliberately: it writes to a tree outside our
+    #: own on every period and creates links under /History, which is not
+    #: something a monitoring client should do to an experiment that did not
+    #: ask for it. An experiment that wants the trends turns it on.
     "publish history": False,
+    #: Seconds between writes. mlogger has its own logging period on top of
+    #: this, so the trend is no finer than the slower of the two; 10 s is well
+    #: under any history period anyone would set and costs one ODB write of a
+    #: few hundred floats.
+    "history period s": 10.0,
 }
 
 SECTIONS = {
