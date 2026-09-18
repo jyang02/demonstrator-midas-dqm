@@ -255,6 +255,21 @@ colormap because a cell has states a colour scale cannot carry -- a measured
 zero is not the bottom of a ramp -- and because 256 of them is nothing beside
 the 26316 rectangles the colormaps here are toggled off to avoid.
 
+Under the occupancy map are **two rankings side by side, quietest and
+busiest**, because a cell carries no label and the channel number is what the
+ODB, the frontend, the cable map and the elog all speak. The two ends fail
+differently, which is why both are there: the quiet end is a field of dark
+cells in which the channel that took nothing looks like its neighbours that
+took three, and nothing but a ranking finds it, while the busy end is an
+obvious shape whose top channel a colour ramp still cannot name -- least of all
+when the scale is clipped and several cells are drawn at the fence. Level with
+each other, five rows against five, the gap between the two hits columns is
+also the spread of the run. Neither judges, for the reason the noise ranking
+does not. When too few channels carry distinct counts the two ends are the same
+channels picked by a tie-break, and the footnote says so rather than letting
+five arbitrary rows read as a finding -- which is what a run with the beam off
+looks like.
+
 Baseline is the third exception: it reads its series and draws it as *eight* plots, baseline against time
 over a fixed 60 s window with a line per channel, one panel per ATAR layer
 flowing four to a row, under a key to the strip colour. Hovering a point names

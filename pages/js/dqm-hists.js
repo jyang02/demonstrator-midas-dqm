@@ -566,7 +566,7 @@ function occupancyMap(name) {
         decimals: 0,
       }));
 
-      fillQuietest(rows, withHits.length, counts.length);
+      fillRanks(rows, withHits.length, counts.length);
 
       drawn = true;
       entries.textContent = String(total);
@@ -579,43 +579,88 @@ function occupancyMap(name) {
     }
 
     /**
-     * The quietest channels, named.
+     * Both ends of the map, named: the quietest channels and the busiest.
      *
-     * Quietest rather than busiest, and that asymmetry is the point. The busy
-     * end of this map is legible already -- a beam spot is bright and its
-     * middle is obvious -- while the quiet end is a field of dark cells in
-     * which the one that took nothing looks like its neighbours that took
-     * three. That is the end with a fault in it.
+     * A cell carries no label, and the channel number is what the ODB, the
+     * frontend, the cable map and the elog all speak. So the map stops one
+     * step short of the thing a shifter has to type, and these two tables are
+     * that step -- which is why they are worth the width even where the map is
+     * already legible.
      *
-     * It ranks and does not judge, for the reason the noise ranking does: a
+     * The two ends fail differently, and that is the argument for showing them
+     * together rather than picking one. The quiet end is a field of dark cells
+     * in which the channel that took nothing looks like its neighbours that
+     * took three, so nothing but a ranking finds it. The busy end is obvious
+     * as a shape -- a beam spot is bright, and its middle is where you expect
+     * -- but "which channel is at the top and by how much" is not something a
+     * colour ramp answers, least of all when the scale is clipped and several
+     * cells are drawn at the fence. Side by side they also read as one
+     * distribution: five and five out of the same set, so how far apart the
+     * hits columns are is the spread of the run.
+     *
+     * Neither ranks a verdict, for the reason the noise ranking does not: a
      * channel outside the beam spot is quiet because the beam is not there,
-     * which is a fact about the run rather than about the channel, and no
-     * threshold here could tell the two apart. Where the cell sits on the map
-     * is what settles it, and that is the reader's to read.
+     * and a channel at the top is busy because the beam is on it, both of
+     * which are facts about the run rather than about the channel. No
+     * threshold here could tell those from a fault. Where the cell sits on the
+     * map is what settles it, and that is the reader's to read.
      */
-    function fillQuietest(rows, hit, all) {
+    function fillRanks(rows, hit, all) {
       rankBox.textContent = "";
       if (!rows.length) return;
-      const quiet = rows.slice().sort((a, b) => a.v - b.v).slice(0, MAP_RANK);
-      rankBox.appendChild(el("div", { class: "dqm-subhead" }, "Quietest channels"));
-      const t = el("table", { class: "dqm-table" });
-      t.appendChild(el("tr", {},
-        el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
-        el("th", {}, "hits")));
-      quiet.forEach(function (r) {
+
+      // One flex row of two columns rather than two stacked tables: they have
+      // the same columns and are five rows each, so side by side they compare
+      // in one look and cost no scrolling. The noise tile stacks its two
+      // because they answer different questions with different columns.
+      const pair = el("div", { class: "dqm-rank-row" });
+
+      function column(head, sorted) {
+        const box = el("div", { class: "dqm-rank-col" });
+        box.appendChild(el("div", { class: "dqm-subhead" }, head));
+        const t = el("table", { class: "dqm-table" });
         t.appendChild(el("tr", {},
-          el("td", { class: "label" }, `ch ${r.ch}`),
-          el("td", {}, r.layer === null ? "—" : String(r.layer)),
-          el("td", {}, r.strip === null ? "—" : String(r.strip)),
-          el("td", {}, String(r.v))));
-      });
-      rankBox.appendChild(t);
+          el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
+          el("th", {}, "hits")));
+        sorted.forEach(function (r) {
+          t.appendChild(el("tr", {},
+            el("td", { class: "label" }, `ch ${r.ch}`),
+            el("td", {}, r.layer === null ? "—" : String(r.layer)),
+            el("td", {}, r.strip === null ? "—" : String(r.strip)),
+            el("td", {}, String(r.v))));
+        });
+        box.appendChild(t);
+        return box;
+      }
+
+      // Sorted copies, not the caller's array: `rows` is what the map was just
+      // drawn from and is read again on the next tick.
+      const quiet = rows.slice().sort((a, b) => a.v - b.v).slice(0, MAP_RANK);
+      const busy = rows.slice().sort((a, b) => b.v - a.v).slice(0, MAP_RANK);
+      pair.appendChild(column("Quietest channels", quiet));
+      pair.appendChild(column("Busiest channels", busy));
+      rankBox.appendChild(pair);
+
+      // Measured rather than asserted, and worth measuring: the two ends meet
+      // whenever fewer than ten channels carry distinct counts, which a bench
+      // setup does by having ten channels and a flat run does by having them
+      // all on the same number. Then the tie-break decides the rows and the
+      // tie-break is document order, which means nothing. The footnote says so
+      // rather than letting five arbitrary channels read as a finding.
+      const shared = quiet.filter((r) => busy.indexOf(r) >= 0).length;
       const foot = el("div", { class: "dqm-footnote" },
-        `${quiet.length} of ${all}, ${all - hit} took nothing at all `
+        `${quiet.length} at each end of ${all}, ${all - hit} took nothing at all `
         + `\u2014 a ranking, not a verdict`);
       foot.title = `A channel outside the beam spot is quiet because the beam `
-        + `is not there, and where its cell sits on the map above is what tells `
-        + `that from a channel that has gone.`;
+        + `is not there, and one at the top is busy because it is; where a cell `
+        + `sits on the map above is what tells either from a channel that has `
+        + `gone.`
+        + (shared
+          ? ` ${shared} of these rows appear in both tables: too few channels `
+            + `carry distinct counts for the two ends to be different channels, `
+            + `so which ones are listed is the order they are stored in and not `
+            + `a measurement.`
+          : "");
       rankBox.appendChild(foot);
     }
 

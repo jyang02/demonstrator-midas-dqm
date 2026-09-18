@@ -144,6 +144,15 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    is much further out than the rest. */
 .dqm-outliers { margin-top: 10px; }
 .dqm-outliers table.dqm-table td { font-variant-numeric: tabular-nums; }
+
+/* Two rankings of the same shape, side by side: the occupancy map names both
+   ends of its distribution, and five rows against five compare in one look
+   only if they are level with each other. flex-wrap rather than a media query,
+   the same choice the tile row above makes -- on a narrow window they stack and
+   nothing is lost but the comparison. align-items: flex-start so a short table
+   does not stretch to match a tall one and grow its row height. */
+.dqm-rank-row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.dqm-rank-col { min-width: 0; }
 /* The Scope tab's channel picker, folded away.
 
    One checkbox per channel ever seen was fine at run 108's thirty-two and is

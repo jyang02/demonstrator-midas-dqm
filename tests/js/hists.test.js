@@ -607,6 +607,77 @@ test("the quietest channels are named, and the count of silent ones is said", as
   });
 });
 
+test("the busiest channels are named beside the quietest", async () => {
+  // Both ends, because they fail differently: the quiet end needs a ranking to
+  // be found at all, and the busy end is an obvious shape whose top channel is
+  // still not something a colour ramp names -- least of all when the scale is
+  // clipped and several cells are drawn at the fence.
+  // Distinct counts, so the two ends are genuinely different channels: ch 0 is
+  // silent, ch 255 is the busiest, and nothing ties.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => ch * 10));
+
+  const box = page.doc.getElementById("occupancy-outliers");
+  const cols = box.byClass("dqm-rank-col");
+  assert.strictEqual(cols.length, 2, "the two rankings are not two columns");
+
+  // Side by side, not stacked: one flex row holding both.
+  const row = box.byClass("dqm-rank-row");
+  assert.strictEqual(row.length, 1);
+  assert.strictEqual(row[0].byClass("dqm-rank-col").length, 2);
+
+  // Quietest stays where it was; busiest is the one that was added next to it.
+  assert.match(textOf(cols[0]), /Quietest channels/);
+  assert.match(textOf(cols[1]), /Busiest channels/);
+  assert.match(textOf(cols[0]), /ch 0\b/, "the silent channel left the quiet table");
+  assert.match(textOf(cols[1]), /ch 255\b/, "the busiest channel is not named");
+  assert.match(textOf(cols[1]), /2550/, "the busiest channel's count is not shown");
+  // The busy table must not be the quiet one over again.
+  assert.doesNotMatch(textOf(cols[1]), /ch 0\b/);
+
+  // Same columns on both, which is what makes them comparable at a glance.
+  const heads = cols.map((c) => c.byTag("th").map((h) => h.textContent).join(","));
+  assert.strictEqual(heads[0], heads[1]);
+
+  // Descending, so the top of the run is the first row a reader lands on.
+  const counts = cols[1].byTag("tr").slice(1)
+    .map((r) => Number(r.byTag("td")[3].textContent));
+  assert.deepStrictEqual(counts, counts.slice().sort((a, b) => b - a));
+});
+
+test("neither occupancy ranking grows a verdict", async () => {
+  // No threshold here: a channel at the top is busy because the beam is on it,
+  // and one at the bottom is quiet because it is not. Both are facts about the
+  // run rather than about the channel.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, (ch) => ch * 10));
+
+  const box = page.doc.getElementById("occupancy-outliers");
+  box.byTag("tr").forEach(function (row) {
+    assert.doesNotMatch(row.className, /warn|alarm|red|yellow/,
+      "the ranking grew a verdict");
+  });
+  assert.match(textOf(box), /ranking, not a verdict/);
+  // Distinct counts, so the two ends are different channels and the footnote
+  // says nothing about rows appearing in both.
+  const foot = box.byClass("dqm-footnote")[0];
+  assert.doesNotMatch(foot.title || "", /appear in both/);
+});
+
+test("a flat run says its two ends are the same channels, not a finding", async () => {
+  // The case the previous test rules out, which a real run reaches whenever
+  // the beam is off: every channel on the same count, so the two ends are
+  // decided by the tie-break -- document order -- and five arbitrary channels
+  // would otherwise read as five quiet ones and five busy ones.
+  const page = await boot(series(NCH, DEPTH), sampicSettings(),
+    occupancy(NCH, () => 500));
+
+  const box = page.doc.getElementById("occupancy-outliers");
+  const foot = box.byClass("dqm-footnote")[0];
+  assert.match(foot.title || "", /appear in both tables/);
+  assert.match(foot.title || "", /not\s+a measurement/);
+});
+
 test("hovering an occupancy cell names the channel and does not touch the other readouts", async () => {
   const page = await boot(series(NCH, DEPTH), sampicSettings(),
     occupancy(NCH, (ch) => 100 + ch));
