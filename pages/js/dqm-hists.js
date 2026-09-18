@@ -1469,7 +1469,13 @@ function channelMaps(spec) {
           mouseWheelZoom: false,
           xAxis: { title: { text: unit || spec.unit } },
           yAxis: { title: { text: "channels" } },
-          plot: [{ label: "channels", type: "histogram" }],
+          // line and marker are not optional decoration: mplot's draw path
+          // reads plot.line.color for a histogram and throws
+          // "can't access property color, g.line is undefined" without them.
+          // The stub these tests run against does not model that, so this is
+          // pinned by shape in hists.test.js and was found in a real browser.
+          plot: [{ label: "channels", type: "histogram",
+                   line: { draw: true, width: 1 }, marker: { draw: false } }],
         });
         div.mpg = graph;
         built.dist = { graph: graph, head: head, div: div };

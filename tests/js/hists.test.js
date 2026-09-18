@@ -1444,3 +1444,20 @@ test("a channel past the fenced end is in the overflow bin, not off the plot", a
   assert.strictEqual(counts.reduce((a, b) => a + b, 0), N_LAYERS * PER_LAYER,
     "a channel went missing rather than overflowing");
 });
+
+test("every histogram plot carries the line mplot's draw path reads", async () => {
+  // mplot reads plot.line.color when it draws a histogram and throws
+  // "can't access property color, g.line is undefined" without it. The stub
+  // here does not model the draw path, so this pins the SHAPE of the param
+  // instead -- which is what the real browser found missing on the
+  // distribution plot after the node suite had gone green.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  ["noise", "baseline"].forEach(function (slug) {
+    distOf(page, slug).param.plot.forEach(function (p) {
+      assert.ok(p.line && typeof p.line.draw === "boolean",
+        `${slug}: a histogram plot has no line, which mplot dereferences`);
+      assert.ok(p.marker, `${slug}: a histogram plot has no marker`);
+    });
+  });
+});
