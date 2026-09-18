@@ -150,6 +150,10 @@ class Analyzer:
         #: The names last linked under /History/Links, so the links are only
         #: rewritten when the plugin's payload changes shape.
         self._history_linked: tuple = ()
+        #: The /History/Links events this analyzer has created, so ones it stops
+        #: publishing into can be removed rather than left for mlogger to keep
+        #: writing.
+        self._history_events: set = set()
         self._history_at = 0.0
         self.connected_since = None
         self.reconnects = 0
@@ -353,14 +357,31 @@ class Analyzer:
         names = tuple(sorted(values))
         if names == self._history_linked:
             return
+
+        # Rebuild rather than add to. Creating links without removing the ones
+        # that are no longer wanted leaves a stale event that mlogger goes on
+        # writing: splitting the arrays into their own events left the old flat
+        # DQM event still holding a link to Baseline, and it kept writing 8 kB
+        # records for a value nothing was publishing there any more. Adding is
+        # not enough; the set has to be made to match.
+        wanted: dict = {}
         for name in names:
-            event = _history_event(name, values[name])
-            link = f"/History/Links/{event}/{name}"
-            try:
-                client.odb_link(link, f"{HISTORY_PATH}/{name}")
-            except Exception:                          # noqa: BLE001
-                pass                                   # already there
+            wanted.setdefault(_history_event(name, values[name]), []).append(name)
+        for event in self._history_events:
+            if event not in wanted:
+                try:
+                    client.odb_delete(f"/History/Links/{event}")
+                except Exception:                      # noqa: BLE001
+                    pass
+        for event, in_event in wanted.items():
+            for name in in_event:
+                link = f"/History/Links/{event}/{name}"
+                try:
+                    client.odb_link(link, f"{HISTORY_PATH}/{name}")
+                except Exception:                      # noqa: BLE001
+                    pass                               # already there
         self._history_linked = names
+        self._history_events = set(wanted)
 
     # -- the loop ------------------------------------------------------------
 
