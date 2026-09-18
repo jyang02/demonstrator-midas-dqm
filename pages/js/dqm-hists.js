@@ -1103,13 +1103,8 @@ function channelMaps(spec) {
         return;
       }
 
-      function table(head, sorted, extra, why) {
-        // Same rule as the map headings above: the heading is a label, and what
-        // window it is over is already on the column heads directly beneath it.
-        // Anything longer goes on the hover.
-        const h = el("div", { class: "dqm-subhead" }, head);
-        if (why) h.title = why;
-        rankBox.appendChild(h);
+      function table(head, sorted, extra) {
+        rankBox.appendChild(el("div", { class: "dqm-subhead" }, head));
         const t = el("table", { class: "dqm-table" });
         t.appendChild(el("tr", {},
           el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
@@ -1145,17 +1140,14 @@ function channelMaps(spec) {
       // question to ask omits it.
       if (spec.rank) {
         const primary = spec.rank(rows, win);
-        table(primary.head, primary.sorted, primary.extra, primary.why);
+        table(primary.head, primary.sorted, primary.extra);
       }
 
       const moved = rows.filter((r) => r.diff !== null)
         .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
       if (moved.length) {
-        table("Moved most", moved, null,
-          `The channels whose last ${Math.round(win.shortS)} s sit furthest `
-          + `from their own ${Math.round(win.longS)} s average, either way. A `
-          + `channel can top this and be nowhere near the table above, which is `
-          + `the case worth seeing.`);
+        table(`Moved most: last ${Math.round(win.shortS)} s against the `
+              + `${Math.round(win.longS)} s average`, moved);
       }
 
       const foot = el("div", { class: "dqm-footnote" },
@@ -1248,22 +1240,9 @@ function channelMaps(spec) {
 
       // Each map says the window it is drawing, every tick, because both are
       // settable and one of them may have just been clamped.
-      //
-      // Three words at most. A heading sits directly above the grid it names
-      // and is read once on the way past; the number is the whole of what
-      // distinguishes the first two maps, and a sentence wrapped around it made
-      // three headings that looked alike at a glance and had to be read to be
-      // told apart. The sentence moves to the hover, where it costs nothing.
-      built.avg.head.textContent = `${Math.round(longS)} s average`;
-      built.avg.head.title = `Each channel's mean over the last `
-        + `${Math.round(longS)} s: the standing state it is in.`;
-      built.now.head.textContent = `${Math.round(shortS)} s average`;
-      built.now.head.title = `Each channel's mean over the last `
-        + `${Math.round(shortS)} s: where it is now. Drawn against the same `
-        + `scale as the map above, so one colour is one value on both.`;
-      built.diff.head.textContent = `${Math.round(shortS)} s \u2212 ${Math.round(longS)} s`;
-      built.diff.head.title = `The short average minus the long one: what has `
-        + `changed. Its own diverging scale, with zero in the middle.`;
+      built.avg.head.textContent = `Average over the last ${Math.round(longS)} s`;
+      built.now.head.textContent = `Average over the last ${Math.round(shortS)} s`;
+      built.diff.head.textContent = `Recent minus average`;
 
       // The sequential scale spans BOTH maps, because they are read against
       // each other: the same colour has to mean the same RMS in the average and
@@ -1475,10 +1454,7 @@ const NOISE_MAPS = {
   //: Loud is high, and only high. The top of the distribution is the answer.
   rank: function (rows, win) {
     return {
-      head: "Loudest",
-      why: `The highest RMS over the last ${Math.round(win.longS)} s. There is `
-        + `no threshold here: on a healthy run these are simply the five least `
-        + `average channels.`,
+      head: `Loudest over the last ${Math.round(win.longS)} s`,
       sorted: rows.slice().sort((a, b) => b.avg - a.avg),
     };
   },

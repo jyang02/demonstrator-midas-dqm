@@ -183,13 +183,13 @@ for (const tile of MAP_TILES) {
       undefined, { [tile.longKey]: 16.0, [tile.shortKey]: 4.0 });
 
     const mine = textOf(page.doc.getElementById(tile.panel));
-    assert.match(mine, /16 s average/);
-    assert.match(mine, /4 s average/);
+    assert.match(mine, /Average over the last 16 s/);
+    assert.match(mine, /Average over the last 4 s/);
 
     const theirs = textOf(page.doc.getElementById(other.panel));
-    assert.match(theirs, /120 s average/,
+    assert.match(theirs, /Average over the last 120 s/,
       `setting the ${tile.slug} windows moved the ${other.slug} tile's`);
-    assert.match(theirs, /10 s average/);
+    assert.match(theirs, /Average over the last 10 s/);
   });
 
   test(`${tile.slug}: each window offers the ODB path that sets it`, async () => {
@@ -303,9 +303,7 @@ test("noise ranks by the highest RMS, because loud is high and only high", async
     (ch, k) => (ch === 200 ? 0.9 : 0.1)), sampicSettings());
 
   const box = page.doc.getElementById("noise-outliers");
-  assert.match(textOf(box), /Loudest/);
-  // The window it is over is on the column head below, and the rest on hover.
-  assert.match(box.byClass("dqm-subhead")[0].title, /last 120 s/);
+  assert.match(textOf(box), /Loudest over the last 120 s/);
   // The first table. The box holds two, and the second one's header row has no
   // td cells to index.
   const first = firstRanked(box)[0];
@@ -325,7 +323,7 @@ test("the baseline maps carry one ranking, and it is the shared one", async () =
   assert.strictEqual(box.byClass("dqm-subhead").length, 1,
     "the baseline tile has more than one ranking");
   assert.strictEqual(box.byTag("table").length, 1);
-  assert.strictEqual(box.byClass("dqm-subhead")[0].textContent, "Moved most");
+  assert.match(box.byClass("dqm-subhead")[0].textContent, /^Moved most/);
 
   const text = textOf(box);
   assert.doesNotMatch(text, /median/i, "the median ranking is still in the tile");
@@ -343,9 +341,10 @@ test("noise keeps both of its rankings", async () => {
     (ch, k) => (ch === 200 ? 0.9 : 0.1)), sampicSettings());
 
   const box = page.doc.getElementById("noise-outliers");
-  assert.deepStrictEqual(
-    box.byClass("dqm-subhead").map((h) => h.textContent),
-    ["Loudest", "Moved most"]);
+  const heads = box.byClass("dqm-subhead").map((h) => h.textContent);
+  assert.strictEqual(heads.length, 2);
+  assert.match(heads[0], /^Loudest/);
+  assert.match(heads[1], /^Moved most/);
 });
 
 
@@ -769,25 +768,9 @@ test("both windows come from the config, and every heading says the one it drew"
 
   const tile = page.doc.getElementById("noise_by_channel");
   const text = textOf(tile);
-  // The map headings, which are what a reader actually reads. Three words at
-  // most: the number is the whole of what tells the first two maps apart, and
-  // the sentence around it lives on the hover.
-  assert.match(text, /16 s average/);
-  assert.match(text, /4 s average/);
-  // And the difference map names both, so which-minus-which is on the heading.
-  assert.match(text, /4 s \u2212 16 s/);
-  // Measured in characters, not words: "4 s \u2212 16 s" is five tokens and is
-  // exactly the terse form wanted. The old wording ran to 27 characters, so
-  // this catches a sentence creeping back without pinning the phrasing.
-  // Every heading in the tile, the three maps and the two rankings alike.
-  // Measured in characters, not words: "4 s \u2212 16 s" is five tokens and is
-  // exactly the terse form wanted. The old wordings ran to 27 and 47
-  // characters, so this catches a sentence creeping back into any of them
-  // without pinning the phrasing of any one.
-  tile.byClass("dqm-subhead").forEach(function (h) {
-    assert.ok(h.textContent.length <= 20,
-      `a heading grew back into a sentence: "${h.textContent}"`);
-  });
+  // The map headings, which are what a reader actually reads.
+  assert.match(text, /Average over the last 16 s/);
+  assert.match(text, /Average over the last 4 s/);
   // And the chips, which are where the Edit buttons are.
   assert.match(text, /average over\s+16 s/);
   assert.match(text, /recent over\s+4 s/);
@@ -837,8 +820,8 @@ test("an average window past the analyzer's horizon is clamped, and said", async
   assert.match(text, /recent seconds per channel/,
     "the caveat does not say which key would make the longer window available");
   // Drawn at what it actually has, not at what it was asked for.
-  assert.match(text, /120 s average/);
-  assert.doesNotMatch(text, /300 s average/);
+  assert.match(text, /Average over the last 120 s/);
+  assert.doesNotMatch(text, /Average over the last 300 s/);
   // A caveat on the view, not a fault: both maps are drawing.
   assert.ok(tile.byClass("yellow").length > 0, "the clamp was reported silently");
   assert.strictEqual(tile.byClass("red").length, 0,
@@ -877,8 +860,8 @@ test("a blank or zero window falls back rather than drawing nothing", async () =
     undefined, { "Noise Window Seconds": 0, "Noise Recent Seconds": -5 });
 
   const text = textOf(page.doc.getElementById("noise_by_channel"));
-  assert.match(text, /120 s average/);
-  assert.match(text, /10 s average/);
+  assert.match(text, /Average over the last 120 s/);
+  assert.match(text, /Average over the last 10 s/);
   assert.ok(cellFor(page, "noise-map-avg", 137).style.background,
     "a bad setting left the map unpainted");
 });

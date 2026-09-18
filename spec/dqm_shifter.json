@@ -103,7 +103,7 @@
         {
           "id": "baseline_by_channel",
           "kind": "panel",
-          "label": "Baseline vs. time, a line per channel and a panel per layer",
+          "label": "Baseline by strip and layer",
           "question": "Is every channel sitting where it should, and is it staying there?",
           "why": "against time a baseline that has walked is a slope, where against channel it is only a wider column and indistinguishable from one that got noisier",
           "status": "ready",
@@ -120,7 +120,7 @@
         {
           "id": "noise_by_channel",
           "kind": "panel",
-          "label": "Noise RMS by strip and layer: the window average, the freshest value, and the difference",
+          "label": "Noise RMS by strip and layer",
           "question": "Which strips are noisier than their neighbours, and has any of them got louder just now?",
           "why": "a strip-and-layer map puts a loud channel beside its physical neighbours, and average against freshest separates one that has always been noisy from one that just changed",
           "status": "ready",

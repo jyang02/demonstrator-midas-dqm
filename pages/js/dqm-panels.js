@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       71018d7934194224e131b46409c2b648ea45e9d740b059c4282b1d38491b9646
+// sha256:       2d39ae05f5d6243bc7e89ea50a2c036128cb586163546ab42bb3dc8db7f9a519
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "71018d7934194224e131b46409c2b648ea45e9d740b059c4282b1d38491b9646";
+const SPEC_SHA256 = "2d39ae05f5d6243bc7e89ea50a2c036128cb586163546ab42bb3dc8db7f9a519";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -60,7 +60,7 @@ const PAGES = [
           {
             "id": "baseline_by_channel",
             "kind": "panel",
-            "label": "Baseline vs. time, a line per channel and a panel per layer",
+            "label": "Baseline by strip and layer",
             "question": "Is every channel sitting where it should, and is it staying there?",
             "why": "against time a baseline that has walked is a slope, where against channel it is only a wider column and indistinguishable from one that got noisier",
             "status": "ready",
@@ -70,7 +70,7 @@ const PAGES = [
           {
             "id": "noise_by_channel",
             "kind": "panel",
-            "label": "Noise RMS by strip and layer: the window average, the freshest value, and the difference",
+            "label": "Noise RMS by strip and layer",
             "question": "Which strips are noisier than their neighbours, and has any of them got louder just now?",
             "why": "a strip-and-layer map puts a loud channel beside its physical neighbours, and average against freshest separates one that has always been noisy from one that just changed",
             "status": "ready",
