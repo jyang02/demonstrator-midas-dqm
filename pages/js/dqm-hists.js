@@ -913,21 +913,20 @@ function channelMaps(spec) {
       + `Capped by what the analyzer keeps, which is its own setting.`;
     const shortChip = chip("recent over", shortChipValue);
     shortChip.appendChild(editButton(SHORT_PATH, "Edit"));
+    // The refresh interval used to be a chip of its own. It is one sentence
+    // about a number nobody tunes, and it was sitting in the row a reader scans
+    // for the two that matter, so it moves here -- onto the chip whose claim it
+    // qualifies. The short map is the one that says "now", and the honest size
+    // of that claim is its own window plus however long since the last fetch.
     shortChip.title = `The short window: where each channel is now. Must be `
       + `under the long one, or there is nothing left for the difference map `
-      + `to subtract.`;
+      + `to subtract. The maps are refetched every `
+      + `${Math.round(REFRESH_MS / 1000)} s, so a recent average can be that `
+      + `much older than its own window.`;
 
-    // Always written, and not only when it is unusual. The recent map claims to
-    // be "now", and the honest size of that claim is its own window plus the
-    // refresh interval -- a reader comparing it against the average is entitled
-    // to both halves.
-    const cadence = el("span", { class: "dqm-chip" },
-      `every ${Math.round(REFRESH_MS / 1000)} s`);
-    cadence.title = `How often the maps are refetched. The recent average on a `
-      + `channel can therefore be up to this much older than its own window.`;
     ctx.body.appendChild(el("div", { class: "dqm-strip" },
       chip("series", el("code", {}, name)),
-      chip("channels", covered), longChip, shortChip, quietChip, cadence));
+      chip("channels", covered), longChip, shortChip, quietChip));
 
     // Empty on the happy path. It carries the one thing a pair of knobs can do
     // that a pair of constants could not: be set to something the data cannot
@@ -1104,8 +1103,13 @@ function channelMaps(spec) {
         return;
       }
 
-      function table(head, sorted, extra) {
-        rankBox.appendChild(el("div", { class: "dqm-subhead" }, head));
+      function table(head, sorted, extra, why) {
+        // Same rule as the map headings above: the heading is a label, and what
+        // window it is over is already on the column heads directly beneath it.
+        // Anything longer goes on the hover.
+        const h = el("div", { class: "dqm-subhead" }, head);
+        if (why) h.title = why;
+        rankBox.appendChild(h);
         const t = el("table", { class: "dqm-table" });
         t.appendChild(el("tr", {},
           el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
@@ -1142,13 +1146,16 @@ function channelMaps(spec) {
       // second is common, because "has this moved between the two windows" is
       // the same question whatever is being averaged.
       const primary = spec.rank(rows, win);
-      table(primary.head, primary.sorted, primary.extra);
+      table(primary.head, primary.sorted, primary.extra, primary.why);
 
       const moved = rows.filter((r) => r.diff !== null)
         .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
       if (moved.length) {
-        table(`Moved most: last ${Math.round(win.shortS)} s against the `
-              + `${Math.round(win.longS)} s average`, moved);
+        table("Moved most", moved, null,
+          `The channels whose last ${Math.round(win.shortS)} s sit furthest `
+          + `from their own ${Math.round(win.longS)} s average, either way. A `
+          + `channel can top this and be nowhere near the table above, which is `
+          + `the case worth seeing.`);
       }
 
       const foot = el("div", { class: "dqm-footnote" },
@@ -1241,9 +1248,22 @@ function channelMaps(spec) {
 
       // Each map says the window it is drawing, every tick, because both are
       // settable and one of them may have just been clamped.
-      built.avg.head.textContent = `Average over the last ${Math.round(longS)} s`;
-      built.now.head.textContent = `Average over the last ${Math.round(shortS)} s`;
-      built.diff.head.textContent = `Recent minus average`;
+      //
+      // Three words at most. A heading sits directly above the grid it names
+      // and is read once on the way past; the number is the whole of what
+      // distinguishes the first two maps, and a sentence wrapped around it made
+      // three headings that looked alike at a glance and had to be read to be
+      // told apart. The sentence moves to the hover, where it costs nothing.
+      built.avg.head.textContent = `${Math.round(longS)} s average`;
+      built.avg.head.title = `Each channel's mean over the last `
+        + `${Math.round(longS)} s: the standing state it is in.`;
+      built.now.head.textContent = `${Math.round(shortS)} s average`;
+      built.now.head.title = `Each channel's mean over the last `
+        + `${Math.round(shortS)} s: where it is now. Drawn against the same `
+        + `scale as the map above, so one colour is one value on both.`;
+      built.diff.head.textContent = `${Math.round(shortS)} s \u2212 ${Math.round(longS)} s`;
+      built.diff.head.title = `The short average minus the long one: what has `
+        + `changed. Its own diverging scale, with zero in the middle.`;
 
       // The sequential scale spans BOTH maps, because they are read against
       // each other: the same colour has to mean the same RMS in the average and
@@ -1462,7 +1482,10 @@ const NOISE_MAPS = {
   //: Loud is high, and only high. The top of the distribution is the answer.
   rank: function (rows, win) {
     return {
-      head: `Loudest over the last ${Math.round(win.longS)} s`,
+      head: "Loudest",
+      why: `The highest RMS over the last ${Math.round(win.longS)} s. There is `
+        + `no threshold here: on a healthy run these are simply the five least `
+        + `average channels.`,
       sorted: rows.slice().sort((a, b) => b.avg - a.avg),
     };
   },
@@ -1486,7 +1509,11 @@ const BASELINE_MAPS = {
   rank: function (rows, win) {
     const mid = median(rows.map((r) => r.avg));
     return {
-      head: `Furthest from the median (${mid.toFixed(4)} V)`,
+      head: "Furthest from median",
+      why: `The median of every channel is ${mid.toFixed(4)} V over the last `
+        + `${Math.round(win.longS)} s; these sit furthest from it, either side. `
+        + `The highest baseline would mean nothing -- a set of channels all on `
+        + `one voltage is a healthy detector.`,
       sorted: rows.slice()
         .sort((a, b) => Math.abs(b.avg - mid) - Math.abs(a.avg - mid)),
       extra: {
