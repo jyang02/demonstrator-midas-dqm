@@ -142,357 +142,226 @@ async function boot(reply, odbExtra, histReply, cfgExtra) {
   return page;
 }
 
-function graphAt(page, id) {
-  const div = page.doc.getElementById(id);
-  assert.ok(div, `no plot div ${id}`);
-  assert.ok(div.mpg, `${id} never got a graph`);
-  return div.mpg;
-}
+// --- both map tiles, which are one renderer ---------------------------------
+//
+// noise_by_channel and baseline_by_channel are the same function with a
+// different series, a different pair of window keys and a different idea of
+// what "out of family" means. Most of what follows is written against the noise
+// tile because that is where the design was worked out; this block is the part
+// that has to hold for BOTH, so it is parametrised over the two slugs. A
+// property asserted of only one of them is a property the shared renderer can
+// lose on the other without anything failing.
 
-function layerGraphs(page) {
-  const out = [];
-  for (let L = 0; L < N_LAYERS; L++) out.push(graphAt(page, `baseline-plot-L${L}`));
-  return out;
-}
+const MAP_TILES = [
+  { slug: "noise", panel: "noise_by_channel",
+    longKey: "Noise Window Seconds", shortKey: "Noise Recent Seconds" },
+  { slug: "baseline", panel: "baseline_by_channel",
+    longKey: "Baseline Window Seconds", shortKey: "Baseline Recent Seconds" },
+];
 
-// --- the block --------------------------------------------------------------
+for (const tile of MAP_TILES) {
+  test(`${tile.slug}: three maps of one cell per channel, placed by strip and layer`, async () => {
+    const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
 
-test("the baseline tile is eight panels flowing four to a row", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-
-  const host = page.doc.getElementById("baseline-layer-panels");
-  assert.ok(host, "the baseline tile built no layer block");
-  // The four-column grid is what makes eight panels two rows. Asserting the
-  // count alone would pass on a single stack of eight, which is what the
-  // narrow-viewport fallback deliberately is.
-  assert.ok(host.className.includes("dqm-layer-quad"),
-    `the block is not in the four-column grid: ${host.className}`);
-  assert.strictEqual(host.byClass("dqm-plot").length, N_LAYERS);
-
-  // In layer order, not grouped by parity. Which way a layer's strips run
-  // decides how a *track* is read, which is the Scope tab's question; a
-  // baseline is a baseline whichever way the strip lies, so grouping by it
-  // here would be a parity for the reader to decode before finding layer 5.
-  const order = host.byClass("dqm-plot").map((d) => d.id);
-  assert.deepStrictEqual(order,
-    Array.from({ length: N_LAYERS }, (_, L) => `baseline-plot-L${L}`),
-    "the panels are not in layer order");
-});
-
-test("the panel headings do not name a strip orientation", async () => {
-  // Dropped on purpose: it is not what this tile is asked, and a label nobody
-  // needs is a label that has to stay true.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const host = page.doc.getElementById("baseline-layer-panels");
-  const heads = host.byClass("dqm-subhead").map((e) => e.textContent.trim());
-  assert.deepStrictEqual(heads,
-    Array.from({ length: N_LAYERS }, (_, L) => `Layer ${L}`));
-
-  const text = [...host.walk()].map((e) => e._text || "").join(" ");
-  assert.doesNotMatch(text, /vertical|horizontal/i,
-    "an orientation label survived in the block");
-});
-
-test("each panel carries a line per channel of its layer, not a cloud of markers", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-
-  layerGraphs(page).forEach(function (g, L) {
-    assert.strictEqual(g.param.plot.length, PER_LAYER,
-      `layer ${L} drew ${g.param.plot.length} traces, not one per channel`);
-    g.param.plot.forEach(function (p) {
-      assert.strictEqual(p.line.draw, true, "a channel was drawn without its line");
-      assert.strictEqual(p.xData.length, DEPTH, "a channel lost points");
-      // Markers as well, so a channel hit once in the window is still visible.
-      assert.strictEqual(p.marker.draw, true, "a single-point channel would vanish");
-      // The line takes `color` and the marker takes lineColor/fillColor:
-      // mplot's drawMarker() reads those two and ignores anything else, so a
-      // marker given `color` draws in the default dark and the strip encoding
-      // goes missing with no error anywhere. Caught once already on the Scope
-      // tab's charge display; pinned here so it cannot come back.
-      assert.strictEqual(typeof p.line.color, "string", "a line has no colour");
-      assert.strictEqual(p.marker.fillColor, p.line.color,
-        "the marker does not carry the strip colour in the key mplot reads");
-      assert.strictEqual(p.marker.lineColor, p.line.color);
-      assert.strictEqual(p.marker.color, undefined,
-        "a marker colour set under the key mplot ignores");
+    ["avg", "now", "diff"].forEach(function (kind) {
+      const cells = cellsOf(page, `${tile.slug}-map-${kind}`);
+      assert.strictEqual(cells.length, N_LAYERS * PER_LAYER,
+        `${tile.slug}-map-${kind} is not a cell per channel`);
     });
+    // Placed by the map, not by the channel number: row 4 is layer 4.
+    const c = cellFor(page, `${tile.slug}-map-avg`, 137);
+    assert.strictEqual(c.dataset.layer, "4");
+    assert.strictEqual(c.dataset.strip, "9");
   });
-});
 
-test("the x axis is time running back from now, and each line is ordered along it", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  test(`${tile.slug}: both windows come from its own keys`, async () => {
+    // A pair per tile, so narrowing one to chase something does not silently
+    // move the other. The whole point of two pairs is that this test can set
+    // one tile's windows and assert the other's did not follow.
+    const other = MAP_TILES.find((t) => t.slug !== tile.slug);
+    const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings(),
+      undefined, { [tile.longKey]: 16.0, [tile.shortKey]: 4.0 });
 
-  const g = graphAt(page, "baseline-plot-L0");
-  g.param.plot.forEach(function (p) {
-    // Age is seconds *ago*, so the newest point sits at 0 and the past runs to
-    // the left. A positive x would draw the run backwards.
-    assert.ok(Math.max.apply(null, p.xData) <= 0, "a point is drawn in the future");
-    for (let i = 1; i < p.xData.length; i++) {
-      assert.ok(p.xData[i] > p.xData[i - 1],
-        "a polyline doubles back on itself and would draw as noise");
-    }
+    const mine = textOf(page.doc.getElementById(tile.panel));
+    assert.match(mine, /Average over the last 16 s/);
+    assert.match(mine, /Average over the last 4 s/);
+
+    const theirs = textOf(page.doc.getElementById(other.panel));
+    assert.match(theirs, /Average over the last 120 s/,
+      `setting the ${tile.slug} windows moved the ${other.slug} tile's`);
+    assert.match(theirs, /Average over the last 10 s/);
   });
-  assert.strictEqual(g.xMax, 0, "the right-hand end of the axis is not now");
-  assert.strictEqual(g.xMin, -WINDOW_S, "the axis is not the fixed window");
-});
 
-test("the window is fixed, whatever the ring happens to reach back to", async () => {
-  // Fitting the axis to the oldest point made it a different width on every
-  // refresh, and a wide one most of the time: channels are hit at very
-  // different rates, so one quiet channel dragged the axis out past three
-  // minutes and squeezed everything that mattered into the last centimetre.
-  // The same distance has to mean the same time on every panel and reload.
-  for (const spacing of [0.2, 2.0, 40.0]) {   // reaches back 1.8 s, 18 s, 360 s
+  test(`${tile.slug}: each window offers the ODB path that sets it`, async () => {
+    const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+    const buttons = page.doc.getElementById(tile.panel).byClass("mbutton");
+    assert.ok(buttons.length >= 2, "the two windows do not both offer an Edit");
+    buttons.slice(0, 2).forEach((b) => b.dispatch("click"));
+    // The stub records dlgOdbEdit's argument as `params`, a bare path string.
+    const asked = page.calls.filter((c) => c.method === "dlgOdbEdit")
+      .map((c) => c.params);
+    assert.deepStrictEqual(asked,
+      [`/DQM/ATAR/${tile.longKey}`, `/DQM/ATAR/${tile.shortKey}`]);
+  });
+
+  test(`${tile.slug}: a channel with nothing in the long window is absent, not zero`, async () => {
+    // The analyzer evicts on the way out, so a channel missing from the reply
+    // is one nobody hit -- which a quiet beam produces exactly as readily as a
+    // fault, and this tile cannot tell the two apart. Blank, hatched, and never
+    // the bottom of the ramp.
     const s = series(N_LAYERS * PER_LAYER, DEPTH);
-    s.age = s.age.map((a) => (a / 2.0) * spacing);
-    const page = await boot(s, sampicSettings());
-    layerGraphs(page).forEach(function (g, L) {
-      assert.strictEqual(g.xMin, -WINDOW_S,
-        `at ${spacing} s spacing layer ${L} fitted its axis to the data`);
-      assert.strictEqual(g.xMax, 0);
+    const drop = 42;
+    const keep = s.channel.map((c, i) => (c === drop ? -1 : i)).filter((i) => i >= 0);
+    const page = await boot(Object.assign({}, s, {
+      channel: keep.map((i) => s.channel[i]),
+      value: keep.map((i) => s.value[i]),
+      age: keep.map((i) => s.age[i]),
+    }), sampicSettings());
+
+    ["avg", "now", "diff"].forEach(function (kind) {
+      const c = cellFor(page, `${tile.slug}-map-${kind}`, drop);
+      assert.ok(c.classList.contains("dqm-heat-nodata"),
+        `${tile.slug}-map-${kind} painted an absent channel`);
+      assert.strictEqual(c.style.background, "");
+      assert.doesNotMatch(c.title, /dead/i);
     });
-  }
-});
-
-test("a point outside the window does not stretch the y axis around itself", async () => {
-  // A channel that walked three minutes ago is off the left of every panel.
-  // Letting it set the y range would stretch all eight around a line nobody
-  // can see: the axis would say something had moved and the plot would show
-  // nothing that had.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH, () => 0.74);
-  // One channel, one point, far out of the window and far off the baseline.
-  s.channel.push(3); s.value.push(0.2); s.age.push(WINDOW_S * 4);
-
-  const page = await boot(s, sampicSettings());
-  const g = graphAt(page, "baseline-plot-L0");
-  assert.ok(g.yMin > 0.5,
-    `a point ${WINDOW_S * 4} s old dragged the y floor to ${g.yMin}`);
-});
-
-test("channels with nothing inside the window are counted, not quietly dropped", async () => {
-  // The price of a fixed axis, and the tile has to say it: a quiet channel
-  // whose last ten values all predate the window is drawn nowhere at all.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH);
-  // Push layer 1's channels -- 32 of them -- entirely out of the window.
-  for (let i = 0; i < s.channel.length; i++) {
-    const ch = s.channel[i];
-    if (ch >= PER_LAYER && ch < 2 * PER_LAYER) s.age[i] += WINDOW_S * 2;
-  }
-  const page = await boot(s, sampicSettings());
-
-  const tile = page.doc.getElementById("baseline_by_channel");
-  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, new RegExp(`${PER_LAYER} channels older than the window`),
-    "the tile does not say how many channels it could not draw");
-
-  // And their panel keeps its axes rather than vanishing.
-  const g = graphAt(page, "baseline-plot-L1");
-  assert.strictEqual(g.xMin, -WINDOW_S);
-  assert.ok(g.yMax > g.yMin);
-});
-
-test("one stale channel is one channel, not 1 channels", async () => {
-  // Read off the real page on DEMODQM, where exactly one channel had gone
-  // quiet and the chip said "1 channels older than the window". A shift screen
-  // that cannot count to one is not one anybody trusts at 3am.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH);
-  for (let i = 0; i < s.channel.length; i++) {
-    if (s.channel[i] === 5) s.age[i] += WINDOW_S * 2;
-  }
-  const page = await boot(s, sampicSettings());
-  const tile = page.doc.getElementById("baseline_by_channel");
-  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, /1 channel older than the window/);
-  assert.doesNotMatch(text, /1 channels/);
-});
-
-test("the chip reads the drawn window, and names the analyzer's separately", async () => {
-  // Two different numbers on purpose: the analyzer keeps headroom so a slow
-  // fetch never arrives to find the left-hand end already evicted. The one
-  // worth reading beside a plot is the one the plot is drawn to.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const tile = page.doc.getElementById("baseline_by_channel");
-  const chips = [...tile.walk()].filter((e) => (e.className || "").includes("dqm-chip"));
-  const drawn = chips.find((c) => c.textContent.includes("drawn"));
-  assert.ok(drawn, "no chip names the drawn window");
-  assert.match(drawn.textContent, new RegExp(`${WINDOW_S} s`));
-  assert.match(drawn.title || "", /analyzer keeps 120 s/,
-    "the chip does not distinguish the analyzer's window from the axis");
-});
-
-test("with every channel inside the window the tile says so plainly", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const tile = page.doc.getElementById("baseline_by_channel");
-  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, new RegExp(`every channel within ${WINDOW_S} s`));
-});
-
-test("the window these tests assume is the window the page uses", async () => {
-  // Written out above rather than imported: a test that reads the number it is
-  // asserting asserts nothing. This is the one place the two are tied, and it
-  // needs a booted page first because dqm-hists.js destructures DQMPage at load.
-  await boot(series(1, DEPTH), sampicSettings());
-  const H = require(path.join(JS, "dqm-hists.js"));
-  assert.strictEqual(H.BASELINE_WINDOW_S, WINDOW_S,
-    "dqm-hists.js moved the window and these tests still assume the old one");
-});
-
-// --- the colour key ---------------------------------------------------------
-
-test("the strip ramp gets a key, built from the ramp the lines use", async () => {
-  // There is no legend on the panels and there cannot be one at 32 lines
-  // apiece, so the colour is the only thing naming a line and it needs a key.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-
-  const key = page.root.byClass("dqm-ramp-key")[0];
-  assert.ok(key, "the block has no colour key");
-  const swatches = key.byClass("dqm-ramp-swatch");
-  // One per strip that is *instrumented*, not per strip the stride allows.
-  // The fixture maps 32 channels per layer at a stride of 46, and the ramp
-  // spans 0..31 because those are the strips that exist -- spanning 0..45
-  // would spend a third of the ramp on colours no channel can have and make
-  // every real one darker than the plot draws it.
-  assert.strictEqual(swatches.length, PER_LAYER,
-    "the key does not have a swatch per instrumented strip");
-  assert.ok(PER_LAYER < STRIDE, "the fixture no longer distinguishes the two");
-
-  // The colours are the ramp's own, so the key cannot describe one the plot is
-  // not using -- which is the failure a hand-built legend has, and it is worse
-  // than no key at all because it is read as authority.
-  const geom = require(path.join(JS, "dqm-atar-geom.js"));
-  const lo = 0, hi = PER_LAYER - 1;
-  assert.strictEqual(swatches[0].style.background, geom.stripColour(lo, lo, hi));
-  assert.strictEqual(swatches[hi].style.background, geom.stripColour(hi, lo, hi));
-  // And the middle, so a key that only got its ends right still fails.
-  const mid = Math.floor(hi / 2);
-  assert.strictEqual(swatches[mid].style.background, geom.stripColour(mid, lo, hi));
-
-  // Labelled at both ends, so a colour can be turned back into a strip number.
-  const ends = key.byClass("dqm-ramp-end").map((e) => e.textContent);
-  assert.deepStrictEqual(ends, [String(lo), String(hi)]);
-});
-
-test("the key sits above the panels it explains", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const tile = page.doc.getElementById("baseline_by_channel");
-  const body = tile.byClass("dqm-tile-body")[0];
-  const kids = body.children;
-  const keyAt = kids.findIndex((e) => e.className.includes("dqm-ramp-key"));
-  const hostAt = kids.findIndex((e) => e.id === "baseline-layer-panels");
-  assert.ok(keyAt >= 0 && hostAt >= 0, "key or panel block missing");
-  assert.ok(keyAt < hostAt, "the key is below the block it is a key to");
-});
-
-test("with no geometry there is no key, because there are no strips to key", async () => {
-  const page = await boot(series(64, DEPTH));
-  assert.strictEqual(page.root.byClass("dqm-ramp-key").length, 0,
-    "a strip key was drawn for channels that have no strip");
-});
-
-test("a reply out of order is still drawn as a line, not a zigzag", async () => {
-  // points() emits oldest-first and this does not rely on it: a page that
-  // trusts another process's emission order draws a scribble the day it
-  // changes, and a scribble reads as a noisy channel.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH);
-  for (let i = 0; i + 1 < s.age.length; i += 2) {
-    const a = s.age[i]; s.age[i] = s.age[i + 1]; s.age[i + 1] = a;
-    const v = s.value[i]; s.value[i] = s.value[i + 1]; s.value[i + 1] = v;
-  }
-  const page = await boot(s, sampicSettings());
-
-  graphAt(page, "baseline-plot-L0").param.plot.forEach(function (p) {
-    for (let i = 1; i < p.xData.length; i++) {
-      assert.ok(p.xData[i] > p.xData[i - 1], "the reply's order leaked into the polyline");
-    }
   });
-});
 
-test("all eight panels are drawn against one ruler", async () => {
-  // A channel in layer 6 that has walked 40 mV must look different from a flat
-  // layer 0 beside it. Per-panel autoscaling gives both the same picture, each
-  // filling its own frame, and the comparison down the column -- the reason
-  // these are eight panels of one plot -- becomes two different rulers.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
-    return ch >= 6 * PER_LAYER && ch < 7 * PER_LAYER ? 0.78 + 0.004 * k : 0.74;
+  test(`${tile.slug}: hovering a cell names the channel, and only its own readout`, async () => {
+    // Two tiles run this renderer on one tab. A shared readout would let
+    // whichever answered first take the other's hover line -- a race, not an
+    // ordering -- so each closes over its own.
+    const other = MAP_TILES.find((t) => t.slug !== tile.slug);
+    const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+    cellFor(page, `${tile.slug}-map-avg`, 137).dispatch("mouseenter");
+    const said = page.doc.getElementById(`${tile.slug}-readout`).textContent;
+    assert.match(said, /ch 137/);
+    assert.match(said, /layer 4/);
+    assert.match(said, /strip 9/);
+    assert.doesNotMatch(said, /undefined/);
+
+    assert.match(page.doc.getElementById(`${other.slug}-readout`).textContent,
+      /Hover a cell/, `the ${tile.slug} tile wrote into the ${other.slug} readout`);
   });
-  const page = await boot(s, sampicSettings());
 
-  const gs = layerGraphs(page);
-  const first = gs[0];
-  gs.forEach(function (g, L) {
-    assert.strictEqual(g.yMin, first.yMin, `layer ${L} has its own y floor`);
-    assert.strictEqual(g.yMax, first.yMax, `layer ${L} has its own y ceiling`);
-    assert.strictEqual(g.xMin, first.xMin, `layer ${L} has its own x floor`);
-  });
-  // And the ruler actually spans the walk, rather than the flat majority.
-  assert.ok(first.yMax > 0.81, `the walked layer is off the top: yMax ${first.yMax}`);
-});
+  test(`${tile.slug}: the ranking names channels and passes no verdict`, async () => {
+    // A cell carries no label, and the channel number is what the ODB, the
+    // frontend, the cable map and the elog all speak. This page set refused to
+    // build channel_health on the grounds that "dead, noisy or drifting" is a
+    // verdict rather than a histogram, and the same reasoning holds here: there
+    // is no threshold, and on a healthy run these are simply the five least
+    // average channels.
+    const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
+      (ch, k) => 0.7 + ch * 0.001), sampicSettings());
 
-test("every plot carries bounds, including the panel with nothing in it", async () => {
-  // mplot fills xMin/xMax/yMin/yMax in setData() and its ODB path and nowhere
-  // else. draw() then paints the background and returns the moment plot[0].xMin
-  // is undefined -- a white panel, no axes, no exception, graph.error still
-  // null. A layer nobody has hit is exactly where that lands.
-  const s = series(7 * PER_LAYER, DEPTH);    // layer 7 never hit
-  const page = await boot(s, sampicSettings());
-
-  layerGraphs(page).forEach(function (g, L) {
-    assert.ok(g.param.plot.length > 0, `layer ${L} has no plot at all`);
-    g.param.plot.forEach(function (p) {
-      for (const k of ["xMin", "xMax", "yMin", "yMax"]) {
-        assert.strictEqual(typeof p[k], "number", `layer ${L} left ${k} undefined`);
-      }
+    const box = page.doc.getElementById(`${tile.slug}-outliers`);
+    const text = textOf(box);
+    assert.match(text, /ch \d+/, "the ranking names no channel");
+    assert.match(text, /ranking, not a verdict/);
+    box.byTag("tr").forEach(function (row) {
+      assert.doesNotMatch(row.className, /warn|alarm|red|yellow/,
+        "the ranking grew a verdict");
     });
-    assert.ok(g.calcs > 0, `layer ${L} never had calcMinMax() called`);
-    assert.ok(g.draws > 0, `layer ${L} was never drawn`);
+    // Both column heads name the window they are drawn over, because a table
+    // beside a map that named a different window would be worse than no head.
+    assert.match(text, /avg 120 s/);
+    assert.match(text, /recent 10 s/);
   });
 
-  // The empty one keeps its panel and says so, rather than disappearing and
-  // making the layers renumber themselves between refreshes.
-  const empty = graphAt(page, "baseline-plot-L7");
-  assert.strictEqual(empty.param.plot.length, 1);
-  assert.match(empty.param.plot[0].label, /layer 7/);
+  test(`${tile.slug}: with no geometry it is one row and says which key it wanted`, async () => {
+    // A pixel id decodes only under the base and stride it was made with, so a
+    // missing map is a caveat on the view and never a guess.
+    const page = await boot(series(64, DEPTH));
+
+    const panel = page.doc.getElementById(tile.panel);
+    assert.match(textOf(panel), /Equipment\/SAMPIC\/Settings/,
+      "the tile does not say which key it wanted");
+    assert.ok(panel.byClass("yellow").length > 0,
+      "a missing map was reported as a fault rather than a caveat");
+    // Nothing dropped for want of a place to put it.
+    assert.strictEqual(cellsOf(page, `${tile.slug}-map-avg`).length, 64);
+  });
+}
+
+/** The channel column of the first ranking table in a box, top row first.
+ *
+ *  The first, because a ranking box holds two tables and the second one's
+ *  header row carries th and no td -- indexing across both reads a header as a
+ *  row and comes back undefined.
+ */
+function firstRanked(box) {
+  return box.byTag("table")[0].byTag("tr").slice(1)
+    .map((r) => r.byTag("td")[0].textContent);
+}
+
+// --- what the two tiles do NOT share ----------------------------------------
+
+test("noise ranks by the highest RMS, because loud is high and only high", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
+    (ch, k) => (ch === 200 ? 0.9 : 0.1)), sampicSettings());
+
+  const box = page.doc.getElementById("noise-outliers");
+  assert.match(textOf(box), /Loudest over the last 120 s/);
+  // The first table. The box holds two, and the second one's header row has no
+  // td cells to index.
+  const first = firstRanked(box)[0];
+  assert.strictEqual(first, "ch 200", "the loudest channel is not at the top");
 });
 
-test("a flat set of channels does not collapse the y axis onto itself", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, () => 0.74),
-                          sampicSettings());
-  const g = graphAt(page, "baseline-plot-L0");
-  assert.ok(g.yMax > g.yMin, "every channel at one voltage flattened the axis to nothing");
+test("baseline ranks by distance from the median, in either direction", async () => {
+  // The highest baseline means nothing: a set of channels all sitting at 0.74 V
+  // is a healthy detector. The one worth naming sits away from where the others
+  // sit, whichever side of them it is on -- so a channel BELOW the median has to
+  // be able to reach the top of this table, which a "loudest" sort could never
+  // do.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
+    (ch, k) => (ch === 200 ? 0.70 : 0.74)), sampicSettings());
+
+  const box = page.doc.getElementById("baseline-outliers");
+  const text = textOf(box);
+  assert.match(text, /Furthest from the median \(0\.7400 V\)/);
+  const first = firstRanked(box)[0];
+  assert.strictEqual(first, "ch 200",
+    "a channel 40 mV below the median did not reach the top of the table");
+  // And the table says how far out, in mV and signed.
+  assert.match(text, /\u0394 from median/);
+  assert.match(text, /-40\.0 mV/);
 });
 
-test("a channel the map does not place gets its own panel rather than being dropped", async () => {
-  // 260 channels against a map that covers 256: the last four are on the
-  // digitiser and are not ATAR strips, and a page that dropped them would be
-  // hiding channels from the tile that exists to show channels.
-  const page = await boot(series(N_LAYERS * PER_LAYER + 4, DEPTH), sampicSettings());
+test("one dead channel does not drag the baseline median and indict everybody else", async () => {
+  // The median, not the mean: one channel stuck at 0 V would drag a mean far
+  // enough to make every healthy channel look like an outlier, which is the
+  // failure that matters most here.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
+    (ch, k) => (ch === 9 ? 0.0 : 0.74)), sampicSettings());
 
-  const solo = page.doc.getElementById("baseline-plot-all");
-  assert.strictEqual(solo.hidden, false, "the unmapped channels were drawn nowhere");
-  assert.strictEqual(solo.mpg.param.plot.length, 4);
-  assert.strictEqual(page.doc.getElementById("baseline-unmapped-head").hidden, false);
+  const box = page.doc.getElementById("baseline-outliers");
+  assert.match(textOf(box), /median \(0\.7400 V\)/,
+    "one dead channel moved the median");
+  assert.strictEqual(firstRanked(box)[0], "ch 9");
+  // The healthy ones are all at the median, so their deltas are zero. They are
+  // still listed -- it is a ranking of five, not a list of faults -- and they
+  // say +0.0 mV rather than anything that reads as a finding.
+  assert.match(textOf(box), /\+0\.0 mV/);
 });
 
-test("with every channel placed, the unmapped panel stays out of the way", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  assert.strictEqual(page.doc.getElementById("baseline-plot-all").hidden, true);
-  assert.strictEqual(page.doc.getElementById("baseline-unmapped-head").hidden, true);
+test("a whole baseline layer sagging shows as rows sharing one layer number", async () => {
+  // Ranked against the median of EVERY channel rather than of its own layer.
+  // Against a per-layer median a layer sagging together would cancel out and
+  // show nothing; against the global one it is the shape in the table.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
+    (ch, k) => (ch >= 4 * PER_LAYER && ch < 5 * PER_LAYER ? 0.70 : 0.74)),
+    sampicSettings());
+
+  const box = page.doc.getElementById("baseline-outliers");
+  const layers = box.byTag("table")[0].byTag("tr").slice(1)
+    .map((r) => r.byTag("td")[1].textContent);
+  assert.deepStrictEqual(layers, ["4", "4", "4", "4", "4"],
+    "a sagging layer did not come out as rows sharing a layer number");
 });
 
-test("with no geometry it is one panel and says why, rather than eight invented ones", async () => {
-  const page = await boot(series(64, DEPTH));      // no SAMPIC settings at all
-
-  assert.strictEqual(page.doc.getElementById("baseline-layer-panels").byClass("dqm-plot").length, 0,
-    "layers were invented out of a map that is not there");
-  const solo = page.doc.getElementById("baseline-plot-all");
-  assert.strictEqual(solo.hidden, false, "no geometry left the tile blank");
-  assert.strictEqual(solo.mpg.param.plot.length, 64, "a line per channel, on one panel");
-
-  const tile = page.doc.getElementById("baseline_by_channel");
-  const text = [...tile.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, /Equipment\/SAMPIC\/Settings/,
-    "the tile does not say which key it wanted");
-});
 
 // --- how much prose a tile carries ------------------------------------------
 
@@ -699,7 +568,7 @@ test("hovering an occupancy cell names the channel and does not touch the other 
   assert.match(page.doc.getElementById("noise-readout").textContent,
     /Hover a cell/, "the occupancy tile wrote into the noise readout");
   assert.match(page.doc.getElementById("baseline-readout").textContent,
-    /Hover a point/, "the occupancy tile wrote into the baseline readout");
+    /Hover a cell/, "the occupancy tile wrote into the baseline readout");
 });
 
 test("occupancy and hits per event come first, and are sized to share a row", async () => {
@@ -1083,7 +952,7 @@ test("the noise readout does not steal the baseline's", async () => {
   cellFor(page, "noise-map-avg", 137).dispatch("mouseenter");
   assert.match(page.doc.getElementById("noise-readout").textContent, /ch 137/);
   assert.match(page.doc.getElementById("baseline-readout").textContent,
-    /Hover a point/, "the noise tile wrote into the baseline's readout");
+    /Hover a cell/, "the noise tile wrote into the baseline's readout");
 });
 
 test("one loud channel does not flatten the other 255, and the key says it was clipped", async () => {
@@ -1262,211 +1131,4 @@ test("a healthy spread is not clipped, so the mark keeps meaning something", asy
     "the key claims a clip that did not happen");
   assert.doesNotMatch(key.title, /The top stops at/,
     "the key explains a clip that did not happen");
-});
-
-// --- naming the outlier -----------------------------------------------------
-//
-// The gap these two close: the plot says "something is out of family, in layer
-// 5, somewhere in the green middle" and stops there. What a shifter acts on is
-// the global channel number, because that is what the ODB, the frontend and the
-// cable map speak.
-
-test("each trace carries its channel as data, not only inside its label", async () => {
-  // The hover readout reads the channel back off the trace it is pointing at.
-  // Parsing it out of the label would make the wording of a display string
-  // load-bearing, and a label reworded for humans would break the readout.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const g = graphAt(page, "baseline-plot-L4");
-  g.param.plot.forEach(function (p) {
-    assert.strictEqual(typeof p.dqmChannel, "number", "a trace has no channel on it");
-    assert.strictEqual(p.dqmLayer, 4, "a trace is on the wrong layer's panel");
-    assert.strictEqual(ATARGeom.layerOf(null, 0), null);   // map-less call is safe
-    assert.ok(p.label.includes(`ch ${p.dqmChannel}`), "label and data disagree");
-  });
-});
-
-test("the hover hook names a function that exists", async () => {
-  // mplot resolves this by eval()ing the name from its own scope, so a typo is
-  // a tooltip that never appears and never errors -- the exact class of silent
-  // failure this page set keeps getting caught by.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const div = page.doc.getElementById("baseline-plot-L4");
-  const name = div.dataset.tooltip;
-  assert.ok(name, "no tooltip hook on the plot div");
-  assert.strictEqual(typeof globalThis.window[name], "function",
-    `the div names ${name} and no such function is on the global`);
-});
-
-test("hovering names the channel at the pointer and the rest in the readout", async () => {
-  // Split on purpose. mplot draws its label to the right of the cursor and
-  // flips it to sx - 10 - w if that would overflow the right edge, with no
-  // matching check against the LEFT edge -- so a label wider than the plot is
-  // clipped wherever it lands. Four panels to a row leaves about 185px of
-  // plot, and the full sentence is nearer 270.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const g = graphAt(page, "baseline-plot-L4");
-  const tip = globalThis.window[
-    page.doc.getElementById("baseline-plot-L4").dataset.tooltip];
-
-  // What mplot hands the function: the trace it found and the point on it.
-  const idx = 9;
-  g.marker = { graphIndex: idx, x: -12, y: 0.7382 };
-  const label = tip(g);
-  const plot = g.param.plot[idx];
-
-  // On the canvas: the channel and what it reads, and nothing else.
-  assert.match(label, new RegExp(`ch ${plot.dqmChannel}\\b`), "no channel at the pointer");
-  assert.match(label, /0\.7382 V/, "no value at the pointer");
-  // 12px sans-serif is a shade over 6px a character, and mplot adds 6px of
-  // padding. Pinned as a character budget because the failure it guards is a
-  // label silently running off the edge of a panel, with nothing in the
-  // console and the plot looking fine.
-  assert.ok(label.length <= 24,
-    `the pointer label is ${label.length} chars and will be clipped: "${label}"`);
-
-  // In the readout, which is ordinary DOM and cannot be clipped: the lot.
-  const readout = page.doc.getElementById("baseline-readout");
-  assert.ok(readout, "no readout line");
-  assert.match(readout.textContent, new RegExp(`ch ${plot.dqmChannel}\\b`));
-  assert.match(readout.textContent, /layer 4/, "no layer named");
-  assert.match(readout.textContent, new RegExp(`strip ${plot.dqmStrip}\\b`));
-  assert.match(readout.textContent, /0\.7382 V/);
-  assert.match(readout.textContent, /12 s ago/, "no age");
-});
-
-test("the readout keeps the last channel hovered rather than blanking", async () => {
-  // Reading a channel number and then looking down at the ranking should not
-  // blank the number you just went to get.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  const g = graphAt(page, "baseline-plot-L4");
-  const tip = globalThis.window.dqmBaselineTip;
-  g.marker = { graphIndex: 3, x: -5, y: 0.74 };
-  tip(g);
-  const after = page.doc.getElementById("baseline-readout").textContent;
-  assert.match(after, /ch \d+/);
-  // Nothing clears it; a later draw with no marker never calls the function.
-  assert.strictEqual(page.doc.getElementById("baseline-readout").textContent, after);
-});
-
-test("the readout says what to do before anything has been hovered", async () => {
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-  assert.match(page.doc.getElementById("baseline-readout").textContent, /Hover a point/);
-});
-
-test("hovering a placeholder does not print ch undefined", async () => {
-  // A layer with nothing in it carries a trace with no channel on it.
-  const page = await boot(series(7 * PER_LAYER, DEPTH), sampicSettings());
-  const g = graphAt(page, "baseline-plot-L7");
-  const tip = globalThis.window.dqmBaselineTip;
-  g.marker = { graphIndex: 0, x: -3, y: 0.74 };
-  const text = tip(g);
-  assert.doesNotMatch(text, /undefined/, `printed "${text}"`);
-  assert.match(text, /0\.7400 V/);
-  assert.doesNotMatch(page.doc.getElementById("baseline-readout").textContent, /undefined/);
-});
-
-// --- the ranking ------------------------------------------------------------
-
-function outlierRows(page) {
-  const box = page.doc.getElementById("baseline-outliers");
-  assert.ok(box, "no outlier readout");
-  const rows = box.byTag ? box.byTag("TR") : [...box.walk()].filter((e) => e.tagName === "TR");
-  return rows.slice(1).map((tr) => [...tr.walk()]
-    .filter((e) => e.tagName === "TD").map((td) => td.textContent.trim()));
-}
-
-test("the channel furthest from the median is named outright, at the top", async () => {
-  // ch 137 is layer 4, strip 9 under this fixture's 32-per-layer map.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH,
-                   (ch) => (ch === 137 ? 0.80 : 0.74));
-  const page = await boot(s, sampicSettings());
-
-  const rows = outlierRows(page);
-  assert.ok(rows.length > 0, "the ranking is empty");
-  assert.deepStrictEqual(rows[0].slice(0, 3), ["ch 137", "4", "9"],
-    `top row was ${JSON.stringify(rows[0])}`);
-  assert.match(rows[0][3], /0\.8000 V/);
-  // +60 mV above a median of 0.74, and signed: which way it went is half the
-  // diagnosis.
-  assert.match(rows[0][4], /^\+60\.0 mV$/, `delta read "${rows[0][4]}"`);
-});
-
-test("one dead channel does not drag the median and indict everybody else", async () => {
-  // The median, not the mean, on both axes of the ranking. A single channel
-  // stuck at 0 V moves a mean of 256 by 3 mV -- enough to make a page of
-  // healthy channels all look slightly out.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH,
-                   (ch) => (ch === 200 ? 0.0 : 0.74));
-  const page = await boot(s, sampicSettings());
-
-  const box = page.doc.getElementById("baseline-outliers");
-  const head = [...box.walk()].map((e) => e._text || "").join(" ");
-  assert.match(head, /Furthest from the median \(0\.7400 V\)/,
-    "the dead channel moved the reference");
-
-  const rows = outlierRows(page);
-  assert.deepStrictEqual(rows[0].slice(0, 1), ["ch 200"]);
-  // Everyone else is exactly on the median, so their delta is zero.
-  rows.slice(1).forEach(function (r) {
-    assert.match(r[4], /^[+-]?0\.0 mV$/, `a healthy channel reads ${r[4]}`);
-  });
-});
-
-test("a whole layer sagging shows as rows sharing one layer number", async () => {
-  // Ranked against the median of every channel rather than of its own layer,
-  // precisely so this case survives. Against a per-layer median it would
-  // cancel out and the table would show nothing at all.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH,
-                   (ch) => (ch >= 6 * PER_LAYER && ch < 7 * PER_LAYER ? 0.70 : 0.74));
-  const page = await boot(s, sampicSettings());
-
-  const rows = outlierRows(page);
-  const layers = new Set(rows.map((r) => r[1]));
-  assert.deepStrictEqual([...layers], ["6"],
-    `the sagging layer did not fill the table: ${JSON.stringify(rows)}`);
-  rows.forEach((r) => assert.match(r[4], /^-40\.0 mV$/));
-});
-
-test("the ranking states a fact and passes no verdict", async () => {
-  // This page set refused to build channel_health because "dead, noisy or
-  // drifting" is a verdict, not a histogram, and synthesising one would mean
-  // inventing thresholds nobody specified. A ranking stays the right side of
-  // that line only for as long as it stays uncoloured: the moment a row goes
-  // yellow, the tile has asserted a threshold.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH,
-                   (ch) => (ch === 137 ? 0.80 : 0.74));
-  const page = await boot(s, sampicSettings());
-  const box = page.doc.getElementById("baseline-outliers");
-
-  [...box.walk()].forEach(function (e) {
-    assert.ok(!/\b(warn|alarm|red|yellow)\b/.test(e.className || ""),
-      `the ranking colours a row (${e.className}), which asserts a threshold`);
-  });
-  const text = [...box.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, /a ranking, not a verdict/);
-});
-
-test("a channel outside the window is not ranked, because it has no line", async () => {
-  // Ranking it on values nobody can see would put a channel in the table that
-  // is not in the picture.
-  const s = series(N_LAYERS * PER_LAYER, DEPTH,
-                   (ch) => (ch === 137 ? 0.80 : 0.74));
-  for (let i = 0; i < s.channel.length; i++) {
-    if (s.channel[i] === 137) s.age[i] += WINDOW_S * 2;
-  }
-  const page = await boot(s, sampicSettings());
-
-  const rows = outlierRows(page);
-  rows.forEach((r) => assert.notStrictEqual(r[0], "ch 137",
-    "a channel with no line on any panel was ranked"));
-});
-
-test("with nothing in the window the ranking says so rather than inventing one", async () => {
-  const s = series(N_LAYERS * PER_LAYER, DEPTH);
-  s.age = s.age.map((a) => a + WINDOW_S * 4);
-  const page = await boot(s, sampicSettings());
-
-  const box = page.doc.getElementById("baseline-outliers");
-  const text = [...box.walk()].map((e) => e._text || "").join(" ");
-  assert.match(text, /nothing to rank/);
 });

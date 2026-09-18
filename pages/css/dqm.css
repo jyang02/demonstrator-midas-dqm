@@ -68,9 +68,11 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    their own id for the tests and for anything that wants one of them. */
 .dqm-layer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 @media (max-width: 1500px) { .dqm-layer-grid { grid-template-columns: 1fr; } }
-/* Both plot classes: the Scope tab's traces come in as .dqm-scope-plot and the
-   Channels tab's baselines as the ordinary .dqm-plot, and inside this block
-   what either of them is is a cell of the target. */
+/* Both plot classes: the Scope tab's traces come in as .dqm-scope-plot and an
+   ordinary .dqm-plot is the general case, and inside this block what either of
+   them is is a cell of the target. The Channels tab used to put its eight
+   baseline panels in a block like this one; it draws the target as a map now,
+   so .dqm-layer-quad and .dqm-layer-cell went with them. */
 .dqm-layer-grid .dqm-scope-plot,
 .dqm-layer-grid .dqm-plot { height: 170px; width: auto; margin-top: 2px; min-width: 0; }
 .dqm-layer-grid .dqm-col-head {
@@ -78,39 +80,6 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 }
 .dqm-layer-grid .dqm-subhead    { margin-top: 8px; font-weight: 600; }
 
-/* The baseline block: all eight layers flowing across four columns, so they
-   fall into two rows of four. Its panels carry a time axis and want the width
-   far more than the waveforms do, and unlike the waveforms they have no charge
-   display below them whose left and right they have to agree with -- so this
-   one is free to take the shape that reads best on its own.
-
-   No orientation grouping here, and that is the point rather than an omission.
-   Which way a layer's strips run decides how a *track* is read, which is the
-   Scope tab's question; a baseline is a baseline whichever way the strip lies.
-   So the layers run in their own order, 0-3 then 4-7, and a reader counts
-   rather than decoding a parity.
-
-   Four across, then two, then one. The breakpoints are set from what a panel
-   needs rather than from round numbers for a screen: mplot spends about 60px
-   on the y axis and its labels and another 25 on the button strip, so a 270px
-   column still leaves ~185px of plot, which carries a 60 s axis at 20 s ticks.
-   Four of those plus the gaps is about 1150px, and the sidebar takes ~110 of
-   the window, hence 1150 rather than something wider.
-
-   This was 1700 and was wrong: on any normal laptop it fell straight through
-   to two columns, which is the layout it replaced, so the change looked like
-   it had not happened. A breakpoint written from a guess at the developer's
-   own window is a layout nobody else sees. */
-.dqm-layer-quad {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px;
-}
-@media (max-width: 1150px) { .dqm-layer-quad { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 640px)  { .dqm-layer-quad { grid-template-columns: 1fr; } }
-.dqm-layer-quad .dqm-plot    { height: 180px; width: auto; margin-top: 2px; min-width: 0; }
-.dqm-layer-quad .dqm-subhead { margin-top: 8px; font-weight: 600; }
-/* min-width:0 on the cell too, or a grid item refuses to shrink below the
-   content's intrinsic width and the four columns overflow the page. */
-.dqm-layer-cell { min-width: 0; }
 
 /* The hover readout. Fixed height so the block below does not jump by a line
    the first time somebody points at a plot, and monospace digits so a channel

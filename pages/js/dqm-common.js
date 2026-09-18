@@ -50,6 +50,8 @@ const DEFAULTS = {
     "Buffer": "SYSTEM",
     "Noise Window Seconds": 120.0,
     "Noise Recent Seconds": 10.0,
+    "Baseline Window Seconds": 120.0,
+    "Baseline Recent Seconds": 10.0,
     "Histograms": [
       "sampic/occupancy",
       "sampic/hits_per_event",

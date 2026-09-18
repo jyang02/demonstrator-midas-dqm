@@ -79,13 +79,18 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "Sample Period ns": 0.625,
         "Buffer": "SYSTEM",
 
-        # -- the two windows the noise maps average over -----------------------
-        # The noise tile draws the same quantity twice, over a long window and a
-        # short one, and subtracts them. Both cuts are made by the page over the
-        # series the analyzer already sent, so changing either costs no analyzer
-        # work and loses no history -- which is exactly why they are knobs and
-        # not constants. What the right numbers are depends on the beam rate and
-        # on what a shift is chasing, and nobody can settle that from here.
+        # -- the windows the two map tiles average over ------------------------
+        # Noise and baseline are the same renderer: each draws its quantity
+        # twice, over a long window and a short one, and subtracts them. Both
+        # cuts are made by the page over the series the analyzer already sent,
+        # so changing either costs no analyzer work and loses no history --
+        # which is exactly why they are knobs and not constants. What the right
+        # numbers are depends on the beam rate and on what a shift is chasing,
+        # and nobody can settle that from here.
+        #
+        # A pair per tile rather than one pair for both: a baseline walk and a
+        # noise excursion happen on different timescales, and narrowing one
+        # window to chase something must not silently move the other.
         #
         # The long one is the standing state. 120 s is the analyzer's own
         # horizon (/DQM/Analyzer/Binning/recent seconds per channel), so the
@@ -99,6 +104,13 @@ DEFAULTS: dict[str, dict[str, object]] = {
         # Must be under the long window or the difference map has nothing to
         # subtract; the page clamps and says so.
         "Noise Recent Seconds": 10.0,
+        # The same pair for the baseline maps, and the same defaults -- which is
+        # a starting point rather than a claim that the two quantities want the
+        # same windows. A baseline walks over minutes where a noise excursion
+        # arrives in seconds, so if either pair moves first it is likely this
+        # one, and that is exactly what having two pairs is for.
+        "Baseline Window Seconds": 120.0,
+        "Baseline Recent Seconds": 10.0,
 
         # -- what the analyzer-backed tabs ask for -----------------------------
         # Kept in step with PANELS in pages/js/dqm-hists.js, which decides which

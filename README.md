@@ -35,7 +35,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise as three more strip-by-layer maps and baseline as eight per-layer trends against time |
+| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise and baseline as three strip-by-layer maps each: a long average, a short one, and the difference |
 | **Scope** | What does this event look like? | event buffer | **all three draw** — waveforms by layer, the hit-position maps and the charge-depth profile, every one of them off the one event on screen |
 | **Trends** | Is the detector's response holding still? | analyzer | **all three draw**, each behind its own toggle — persistence, charge against amplitude, and amplitude by channel. What they have in common is that they accumulate over the run rather than showing the event in front of you, which is what makes this a tab and not three tiles on Scope |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
@@ -57,7 +57,7 @@ told the state of the experiment. One who finds a blank page has not, and stops
 trusting the menu.
 
 Ten of the twenty panels are `ready` and draw real data against a replay
-today: four on Channels (the occupancy map, hits per event, the baseline trends,
+today: four on Channels (the occupancy map, hits per event, the baseline maps,
 the noise maps), three on Scope (waveforms, the hit-position maps, the
 charge-depth profile), and three on Trends (persistence, charge against
 amplitude, and amplitude by channel). Three of those ten are colormaps and open
@@ -270,22 +270,38 @@ channels picked by a tie-break, and the footnote says so rather than letting
 five arbitrary rows read as a finding -- which is what a run with the beam off
 looks like.
 
-Baseline is the third exception: it reads its series and draws it as *eight* plots, baseline against time
-over a fixed 60 s window with a line per channel, one panel per ATAR layer
-flowing four to a row, under a key to the strip colour. Hovering a point names
-the channel, and a short ranking under the block names the channels furthest
-from the median -- a ranking, not a verdict, for the same reason
-`channel_health` was never built. Against time a channel that has walked is a slope,
-where against channel it is only a wider column and indistinguishable from one
-that got noisier -- and eight panels answer the question underneath, which is
-nearly always "is it one channel or is it a layer". The map it lays them out by
-comes from `pages/js/dqm-atar-geom.js`, read once from
-`/Equipment/SAMPIC/Settings` and shared with the Scope tab; with no geometry
-there it is one panel with every channel on it and a line saying which key it
-wanted. The mapping from panel to histogram is the one
-page-shaped fact in that file; nothing there knows which tab it is on, and it
-must not: a renderer claims a panel id, and where that panel sits is the spec's
-business.
+**Baseline is the same renderer as noise**, `channelMaps`, with a different
+series, its own pair of window keys and its own idea of what "out of family"
+means. It was eight mplot panels of baseline against time until it was this, and
+the argument for that shape was real: a baseline that has walked is a walk, with
+a direction and a moment it started, and a map of one value per channel could
+only ever show it as a cell that had changed colour. Two windows answer most of
+that -- the difference map is signed, so which way and how far survive -- and
+what is genuinely gone is *when* it started, and the difference on sight between
+a slope and fattening noise. Traded for a Channels tab where all three tiles are
+the same grid read the same way, a strip is the same cell on every one of them,
+and there is one implementation to be right rather than two. Trending a baseline
+across a run was always a different tile wanting MIDAS history, and still is.
+
+What the two map tiles do not share is the first ranking under them, because
+"out of family" is not the same fact twice. Loud is high and only high, so noise
+ranks by the highest RMS. A baseline is out of family when it sits away from
+where the others sit, in either direction -- the highest baseline means nothing,
+a set of channels all at 0.74 V being a healthy detector -- so baseline ranks by
+distance from the median of every channel, with the signed gap in its own
+column. The median rather than the mean, because one channel stuck at 0 V would
+drag a mean far enough to indict everybody else; and of every channel rather
+than of its own layer, because against a per-layer median a whole layer sagging
+together would cancel out and show nothing, where against the global one it is
+several rows sharing a layer number.
+
+The map all three tiles lay their cells out by comes from
+`pages/js/dqm-atar-geom.js`, read once from `/Equipment/SAMPIC/Settings` and
+shared with the Scope tab; with no geometry there each is one row of every
+channel and a line saying which key it wanted. The mapping from panel to
+histogram is the one page-shaped fact in that file; nothing there knows which
+tab it is on, and it must not: a renderer claims a panel id, and where that
+panel sits is the spec's business.
 
 Four of the six draw when their tab opens. Occupancy and hits per event are 1D
 and a few hundred bins. Baseline and noise by channel are **recent-value
@@ -313,15 +329,10 @@ whole cost of those tiles. Each point carries its age, which is what lets both
 tiles be honest that their points are not one moment: channels are hit at very
 different rates.
 
-Neither draws against the channel axis any more, and for different reasons.
-**Baseline goes against time**, eight panels by layer: a baseline that has
-walked is a walk, with a direction and a moment it started, and
-channel-against-value can only show it as a column that has grown taller --
-which is also what a channel that got noisier looks like.
-
-**Noise goes against the target**: three grids of one cell per channel, placed
-by strip and layer, showing the same RMS averaged over a long window, over a
-short one, and the difference. The old scatter's x axis was the *global
+Neither draws against the channel axis any more, and both now draw **against
+the target**: three grids of one cell per channel each, placed by strip and
+layer, showing the quantity averaged over a long window, over a short one, and
+the difference. The old scatter's x axis was the *global
 channel*, so two columns side by side were two channels sharing a cable rather
 than two strips sharing a neighbourhood -- and "which strips are loud" is a
 question about where they are. The three maps stack so a column is one strip
@@ -330,16 +341,24 @@ cell has states no colour scale can carry: no value in the long window, no value
 in the short one, and no older values to compare the short one against, so the
 difference would be zero by construction rather than by measurement. A colormap
 paints them all as the bottom of the ramp, which is the one reading they must
-not get. Under the maps is a ranking that names the loudest channels and the
-ones that moved most, because a cell carries no label and the global channel
+not get. Under each pair of maps is a ranking that names the tile's own outliers and the
+channels that moved most, because a cell carries no label and the global channel
 number is what the ODB, the frontend and the cable map all speak.
 
-**Both windows are settings**, `/DQM/ATAR/Noise Window Seconds` and `Noise
-Recent Seconds`, defaulting to 120 s and 10 s, with an Edit button on each chip.
-They are knobs rather than constants because the right numbers follow the beam
-rate and what a shift is chasing, and because they cost nothing: both cuts are
-made by the page, by age, over the one `dqm::series` reply the analyzer already
-sent, so changing either resets no history and asks the analyzer for nothing.
+**Every window is a setting**: `Noise Window Seconds` and `Noise Recent
+Seconds` under `/DQM/ATAR`, and `Baseline Window Seconds` and `Baseline Recent
+Seconds` beside them, all four defaulting to 120 s and 10 s, with an Edit button
+on each chip. They are knobs rather than constants because the right numbers
+follow the beam rate and what a shift is chasing, and because they cost nothing:
+every cut is made by the page, by age, over the one `dqm::series` reply the
+analyzer already sent, so changing any of them resets no history and asks the
+analyzer for nothing.
+
+A pair per tile rather than one pair for both, and that is the one place these
+tiles are deliberately not shared. A baseline walks over minutes where a noise
+excursion arrives in seconds, so narrowing one window to chase something must
+not silently move the other. The defaults being equal is a starting point, not a
+claim that the two quantities want the same windows.
 The page clamps the long window to what the analyzer actually keeps, and the
 short one to under the long, and says so in the tile when it has to -- a window
 silently narrowed would be a map labelled with a number it is not drawing.
@@ -422,8 +441,8 @@ drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
 Every colormap is on Trends now, so Channels and Scope are zero, and the count
 is for a freshly opened tab, before anything is toggled on -- each `Show plot`
 takes one off. What moves with the analyzer is whether the four tiles that draw
-on open -- the occupancy map, hits per event, the noise maps and the baseline
-trends -- show a plot or a red line naming the client they tried. (Blanking
+on open -- the occupancy map, hits per event, and the noise and baseline maps
+-- show their cells or a red line naming the client they tried. (Blanking
 `/DQM/Common/Analyzer Client` is the one thing that would move these: with no
 name to try, a drawing tile falls back to an empty-why and `$W` goes up.)
 
@@ -437,8 +456,8 @@ moment anyone asks. Trends is where every colormap on the page now lives, which
 is why it is the only tab whose `$W` is not zero or everything.
 
 `$T` is the tab's panel count exactly -- no renderer adds a tile of its own, and
-the per-layer baseline panels and the eight waveform panels are inside their
-tiles rather than beside them.
+the three grids each map tile draws, like the eight waveform panels on Scope,
+are inside their tile rather than beside it.
 
 The tab buttons carry a count too, and it is a different number: it counts
 *panels that are not `ready`*, so it is 0, 0, 0 and 10 -- only Proposed wears
