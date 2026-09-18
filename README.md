@@ -62,8 +62,13 @@ the noise maps), four on Scope (waveforms, the hit-position maps, the
 charge-depth profile, amplitude by channel), and persistence and
 charge-against-amplitude on Trends. Three of those ten are colormaps and open
 off, a click from drawing — held for the paint cost of a colormap, not for want
-of data, which is a page's choice rather than a blocker and so not what the chip
-reports.
+of data, which is a page's choice rather than a blocker and so does not make
+them part of the backlog.
+
+The other ten are the backlog, and all ten of them are on the Proposed tab.
+That is the only place on the page where a panel is waiting for something, which
+is why no panel states its own status: Channels, Scope and Trends draw
+everything they hold, Proposed draws nothing, and the tab is the answer.
 
 The three tabs backed by an analyzer check for one at load rather than asserting
 its absence, so the reason they show is about this experiment now. The probe runs
@@ -370,9 +375,9 @@ T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
 scripts/shoot.py "$B#tab=atar_channels" /tmp/channels.png --console --wait-for "$T === 5 && $W === 1"
-scripts/shoot.py "$B#tab=atar_scope"    /tmp/scope.png    --console --wait-for "$T === 5 && $W === 1"
-scripts/shoot.py "$B#tab=atar_trends"   /tmp/trends.png   --console --wait-for "$T === 4 && $W === 4"
-scripts/shoot.py "$B#tab=atar_proposed" /tmp/proposed.png --console --wait-for "$T === 8 && $W === 8"
+scripts/shoot.py "$B#tab=atar_scope"    /tmp/scope.png    --console --wait-for "$T === 4 && $W === 0"
+scripts/shoot.py "$B#tab=atar_trends"   /tmp/trends.png   --console --wait-for "$T === 3 && $W === 3"
+scripts/shoot.py "$B#tab=atar_proposed" /tmp/proposed.png --console --wait-for "$T === 10 && $W === 10"
 ```
 
 The first two hold whether or not `mdqm-analyzer` is running, which is worth
@@ -390,15 +395,19 @@ is the one thing that would move these: with no name to try, a drawing tile
 falls back to an empty-why and `$W` goes up.)
 
 The `$W` counts are the useful ones to watch, because they say how many panels
-are still explaining themselves *in a sentence*. Scope is 1 of 5: its waveform,
-hit-position, charge-depth and raw-event tiles are all built, and only the layer
-hit rate is left waiting on a counting equipment. Trends is 4 of 4 and Proposed
-is 8 of 8, which is the honest picture of a backlog -- those two tabs are the
-gap, and the tab buttons carry a count so it is legible without opening either.
-That badge counts *panels that are not `ready`*, so it is 1, 3 and 8 rather than
-the `$W` above: `$W` is what is on screen now, and on Trends it includes the
-persistence colormap sitting behind its toggle, which is ready and drawing the
-moment anyone asks.
+are still explaining themselves *in a sentence*. Every panel that is waiting for
+something now sits on Proposed, so that tab is 10 of 10 and Scope is 0 of 4 --
+the layer hit rate and the two-track rate moved off Scope and Trends and took
+their sentences with them. Trends is still 3 of 3, which is the one count worth
+understanding before reading it as a gap: `$W` is what is on screen now, and
+both Trends tiles are ready colormaps sitting behind their `Show plot` toggle,
+drawing the moment anyone asks.
+
+The tab buttons carry a count too, and it is a different number: it counts
+*panels that are not `ready`*, so it is 0, 0, 0 and 10 -- only Proposed wears
+one. That is now the whole of the status display. Panels no longer carry a
+status chip and tabs no longer carry a strip of status counts, because with the
+backlog gathered onto one tab the tab you are looking at is the status.
 
 Those invocations failing is the signal to update them.
 

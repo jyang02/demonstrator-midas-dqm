@@ -392,31 +392,15 @@ test("the shared read pointer is stated on the page, not left to be discovered",
 
 // --- the ones that correctly have no renderer -------------------------------
 //
-// This block used to name calo_waveforms, event_display_position and
-// event_display_energy. All three were wrong by the time anything could run it:
-// event_display_position had been dropped from the spec (so BY_ID[id] was
-// undefined and this threw), event_display_energy had gained a renderer, and
-// calo_waveforms has now left the page with the rest of the calorimeter. It is
-// derived from the catalogue instead, so it cannot name a panel that is not
-// there.
-
-test("a panel on the Scope tab with no renderer keeps its own reason", async () => {
-  const page = await boot([REAL.events[0]]);
-  await pump(page, 2);
-
-  const tab = globalThis.DQMPanels.byPage("ATAR").tabs
-    .find((t) => t.group === "atar_scope");
-  const unclaimed = tab.elements.filter(
-    (e) => e.kind === "panel" && e.status === "blocked");
-  assert.ok(unclaimed.length > 0, "the Scope tab has no blocked panel to check");
-
-  for (const p of unclaimed) {
-    const tile = page.doc.getElementById(p.id);
-    const why = tile.byClass("dqm-empty-why");
-    assert.strictEqual(why.length, 1, `${p.id} has no empty-state reason`);
-    assert.strictEqual(why[0].textContent.trim(), p.blocked_by.trim());
-  }
-});
+// There are none left here. This block asserted that a blocked panel sharing
+// the Scope tab with the waveform renderers kept its own blocked_by, and it had
+// already had to be rewritten twice as the panels it named left the page:
+// first calo_waveforms and event_display_position, then atar_hit_rate_by_layer,
+// which moved to the Proposed tab along with every other panel that is waiting
+// for something. Every tab now either draws everything on it or draws nothing
+// at all, so "a renderer did not clobber the tile next to it" is no longer a
+// question this tab can ask. What it was guarding lives in pages.test.js, which
+// walks every tab and checks every blocked panel against its own blocked_by.
 
 test("the hit maps and the depth profile are two tiles off one event", async () => {
   const page = await boot([REAL.events[0]]);

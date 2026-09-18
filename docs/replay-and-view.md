@@ -187,15 +187,16 @@ With the replay and the analyzer both up:
 | tab | on DEMODQM |
 |---|---|
 | `#tab=atar_channels` | **live**: occupancy as a strip-by-layer map of hits per channel and hits per event side by side at the top of the tab (they share a row above ~1150px of tab width and stack below it, with no media query -- flex-wrap on the tile size the spec already carries), then noise by channel as three strip-by-layer maps -- the window average, the freshest value on each channel and the difference, with a ranking below naming the loudest and the biggest movers -- and baseline as eight per-layer panels of baseline against time, four to a row, a line per channel over a fixed 60 s window with a strip-colour key above them, a hover readout naming the channel and a ranking of the channels furthest from the median below (both series are cut by time rather than by count -- the analyzer keeps 120 s per channel, over `dqm::series` -- so a channel quiet for a minute has nothing on the plot and a chip counts those) |
-| `#tab=atar_scope` | **live** from the replay: waveforms by layer, the two hit-position maps, and the charge-depth profile with the event total. Amplitude by channel sits at the end of the tab: it is a colormap and opens off -- `Show plot` draws it -- and unlike everything above it it is accumulated over the run rather than taken from the event on screen. The layer hit rate stays blocked |
-| `#tab=atar_trends` | persistence and charge-against-amplitude are both **live** behind their `Show plot`; the two-track rate stays blocked, wanting track finding nobody has written. Charge is the waveform's integral in V*samples, the same one the Scope tab's charge display takes -- not an energy, because the volts-to-MeV calibration still has no owner |
-| `#tab=atar_proposed` | eight panels, each naming what it waits for. This tab is the backlog and is expected to be empty of plots |
+| `#tab=atar_scope` | **live** from the replay: waveforms by layer, the two hit-position maps, and the charge-depth profile with the event total. Amplitude by channel sits at the end of the tab: it is a colormap and opens off -- `Show plot` draws it -- and unlike everything above it it is accumulated over the run rather than taken from the event on screen. Every tile on the tab draws |
+| `#tab=atar_trends` | persistence and charge-against-amplitude are both **live** behind their `Show plot`, and they are the whole tab. Charge is the waveform's integral in V*samples, the same one the Scope tab's charge display takes -- not an energy, because the volts-to-MeV calibration still has no owner |
+| `#tab=atar_proposed` | ten panels, each naming what it waits for -- including the layer hit rate and the two-track rate, which used to sit among the drawing tiles on Scope and Trends. This tab is the backlog, it is where every panel that is waiting for something now lives, and it is expected to be empty of plots |
 
-Individual panels on Channels and Scope stay blocked too, and correctly so: they
-ask for a counting equipment or an `fesampic` bank that run 108 does not
-contain. Each says which. Without the analyzer, every analyzer-backed panel is
-blocked and names the client it got no answer from -- including on a tab opened
-later, because the probe's answer is cached at boot.
+The first three tabs draw everything on them, which is the point of gathering
+the waiting panels onto Proposed: a tile that is empty on Channels, Scope or
+Trends is now a fault to chase rather than a gap somebody already knew about.
+Without the analyzer that changes -- every analyzer-backed panel goes blocked
+and names the client it got no answer from, including on a tab opened later,
+because the probe's answer is cached at boot.
 
 ### Checking it really rendered
 

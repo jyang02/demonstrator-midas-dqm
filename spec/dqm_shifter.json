@@ -157,24 +157,6 @@
           ]
         },
         {
-          "id": "atar_hit_rate_by_layer",
-          "kind": "panel",
-          "label": "ATAR hit rate by layer",
-          "question": "Is every layer seeing the beam it should?",
-          "why": "a layer that has gone quiet is a cable or a bias, and it shows here first",
-          "status": "blocked",
-          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. And which mechanism this tile uses is decision 2's open half: a layer coincidence formed in hardware makes it a Variables key with a free trend, one counted in software makes it an analyzer product with no trend at all. Which channels form a layer is settled and is a setting in the frontend. Wishlist 1d.",
-          "evidence": "none",
-          "size": "l",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-atar-layer-rate",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
-        },
-        {
           "id": "atar_raw_waveforms",
           "kind": "panel",
           "label": "ATAR waveforms",
@@ -291,25 +273,6 @@
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ],
           "_note": "Built 2026-09-17 as CHARGE against amplitude, not energy. The blocker recorded against it was an energy calibration with an owner -- 'nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it' -- and that is still true and still nobody's. What unblocks the tile is dropping the claim rather than waiting for the constant: the waveform's integral is a charge up to the input impedance and needs no calibration at all, and the axis says V*samples so nothing here is believed to be MeV. The id keeps the word energy because the wishlist (3f) and docs/frontend_requirements.md cite it under that name. Its original blocked_by, for the day somebody owns the calibration: Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f."
-        },
-        {
-          "id": "n_tracks_in_window",
-          "kind": "panel",
-          "label": "Rate of events with 2 tracks",
-          "question": "How often does an event look like a stopped muon?",
-          "why": "slide 8 asks for it and the answer is further away than it looks",
-          "status": "blocked",
-          "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. A live count only, with no trend and honest about it: the analyzer writes its per-run summaries to the UDB, which no custom page can read, so the run-over-run comparison is a link out rather than a tile in (decision 3). That is also why it is here and not on Rates, whose whole premise is a value with a free history trend beside it.",
-          "evidence": "none",
-          "size": "m",
-          "sketch": "hist1d",
-          "targets": {},
-          "proposed_figure": "dqm-two-track-rate",
-          "_note": "This is the largest gap on the screen and the one with a real design choice behind it: either a tracklet count is published into the DQM stream, or 'number of tracks' is accepted as a nearline question and leaves the shift view entirely.",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ]
         }
       ]
     },
@@ -369,6 +332,24 @@
             "docs/frontend_requirements.md",
             "docs/closed_plans/dqm_custom_pages_plan.md",
             "docs/dqm_inventory.md"
+          ]
+        },
+        {
+          "id": "atar_hit_rate_by_layer",
+          "kind": "panel",
+          "label": "ATAR hit rate by layer",
+          "question": "Is every layer seeing the beam it should?",
+          "why": "a layer that has gone quiet is a cable or a bias, and it shows here first",
+          "status": "blocked",
+          "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. And which mechanism this tile uses is decision 2's open half: a layer coincidence formed in hardware makes it a Variables key with a free trend, one counted in software makes it an analyzer product with no trend at all. Which channels form a layer is settled and is a setting in the frontend. Wishlist 1d.",
+          "evidence": "none",
+          "size": "l",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-atar-layer-rate",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
           ]
         },
         {
@@ -485,6 +466,25 @@
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ],
           "_note": "Not on the wishlist. It is the check that the stopping distribution beside it is made of stops: a muon coming to rest leaves its Bragg peak in the layer it stops in, less in the one before, less again in the one before that. Three properties earn it a tile. It reads without an energy calibration, alone among the tiles that plot an energy, because a shifter reads three peaks in an order rather than three numbers in MeV -- and an inverted order means a muon that left, or a layer assignment off by one. It is indexed relative to the stop rather than to the detector, so every stopped muon fills the same three histograms and it is readable early in a run. And it is one graph, because 1D histograms overlay where a colormap cannot. The three do not hold equal entries -- a muon stopping in layer 2 has no third-to-last layer -- so the third is both smaller and a biased sample, and unstated that shortfall reads as missing data rather than as geometry."
+        },
+        {
+          "id": "n_tracks_in_window",
+          "kind": "panel",
+          "label": "Rate of events with 2 tracks",
+          "question": "How often does an event look like a stopped muon?",
+          "why": "slide 8 asks for it and the answer is further away than it looks",
+          "status": "blocked",
+          "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. A live count only, with no trend and honest about it: the analyzer writes its per-run summaries to the UDB, which no custom page can read, so the run-over-run comparison is a link out rather than a tile in (decision 3). That is also why it is here and not on Rates, whose whole premise is a value with a free history trend beside it.",
+          "evidence": "none",
+          "size": "m",
+          "sketch": "hist1d",
+          "targets": {},
+          "proposed_figure": "dqm-two-track-rate",
+          "_note": "This is the largest gap on the screen and the one with a real design choice behind it: either a tracklet count is published into the DQM stream, or 'number of tracks' is accepted as a nearline question and leaves the shift view entirely.",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ]
         },
         {
           "id": "time_between_hits",

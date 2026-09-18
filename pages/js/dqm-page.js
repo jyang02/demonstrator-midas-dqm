@@ -2,10 +2,14 @@
 // dqm-page.js -- the page renderer, and the file every page loads.
 //
 // There is one page now, ATAR, and it is a heading, a row of tabs, and inside
-// the open tab a strip of status counts and one tile per element in spec order.
-// A tab is a spec group; see buildTab below for why that is the whole of the
-// mechanism. What differs between tiles is which of them have a renderer
-// registered against them, and most do not.
+// the open tab one tile per element in spec order. A tab is a spec group; see
+// buildTab below for why that is the whole of the mechanism. What differs
+// between tiles is which of them have a renderer registered against them, and
+// most do not.
+//
+// No tile says its own status. Every panel that is waiting for something now
+// lives on the Proposed tab, so the tab a shifter is looking at is the status,
+// and the count on the tab button is what says how much is waiting.
 //
 // That is not a placeholder arrangement. Most of the panels in the spec are
 // blocked on DAQ work that does not exist -- no documented calorimeter bank, no
@@ -236,11 +240,6 @@ const SHAPE = {
   none: "",
 };
 
-// Keys are the spec's status vocabulary (spec/schema.md): ready, blocked,
-// proposed, dropped. This said `live`, which the spec has never used, so the
-// first panel to go ready would have worn an uncoloured chip.
-const CHIP = { ready: "green", blocked: "yellow", proposed: "blue", dropped: "" };
-
 function render(entry, page) {
   const rootEl = document.getElementById("dqm-root");
   rootEl.innerHTML = "";
@@ -258,8 +257,8 @@ function render(entry, page) {
                                   id: `tab-${tab.group}` }, tab.name);
     // Panels only. A note is a sentence the tab wants read, not a plot that is
     // missing, and counting one as waiting made the Scope tab claim two empty
-    // panels when it has one. The strip inside the tab still counts every
-    // element, because there it is labelled with the status it is counting.
+    // panels when it had one. With the waiting panels gathered onto Proposed
+    // this is the only number on the page, so it must count the right things.
     const waiting = tab.elements.filter(
       (e) => e.kind === "panel" && e.status !== "ready").length;
     // The count is on the tab and not only inside it, so the size of the gap is
@@ -322,7 +321,6 @@ function showTab(i, page) {
  */
 function buildTab(tab, page, host) {
   host.appendChild(el("div", { class: "dqm-tile-q" }, tab.question));
-  host.appendChild(summaryStrip(tab));
   tab.elements.forEach(function (element) {
     host.appendChild(element.kind === "note" ? noteNode(element) : panelNode(element, page));
   });
@@ -358,25 +356,6 @@ function rememberTab(group) {
 }
 
 /**
- * The counts, so the state of a tab is legible before any panel is read.
- */
-function summaryStrip(tab) {
-  const counts = {};
-  tab.elements.forEach(function (e) { counts[e.status] = (counts[e.status] || 0) + 1; });
-  const strip = el("div", { class: "dqm-strip" });
-  ["blocked", "proposed", "dropped"].forEach(function (status) {
-    if (!counts[status]) return;
-    strip.appendChild(el("span", { class: `dqm-chip ${CHIP[status] || ""}` },
-      el("b", {}, String(counts[status])), el("span", {}, status)));
-  });
-  return strip;
-}
-
-function statusChip(status) {
-  return el("span", { class: `dqm-chip ${CHIP[status] || ""}` }, status);
-}
-
-/**
  * Why this panel is not showing data, in the panel's own words.
  *
  * A blocked panel is waiting for something somebody has to build; a dropped one
@@ -396,7 +375,7 @@ function reasonFor(p) {
 function panelNode(p, page) {
   const sec = el("section", { class: `dqm-panel dqm-tile dqm-tile-${p.size || "m"}`, id: p.id });
   sec.dataset.status = p.status;
-  sec.appendChild(el("h3", { class: "dqm-tile-title" }, p.label, statusChip(p.status)));
+  sec.appendChild(el("h3", { class: "dqm-tile-title" }, p.label));
   if (p.question) sec.appendChild(el("div", { class: "dqm-tile-q" }, p.question));
 
   const body = el("div", { class: "dqm-tile-body" });
@@ -512,6 +491,12 @@ function setAlarm(id, level) {
   if (level) node.classList.add(level);
 }
 
+// Keys are the spec's status vocabulary (spec/schema.md): ready, blocked,
+// proposed, dropped. Panels no longer wear their status -- the tab they are on
+// says it, and the tile's left border keeps the colour -- so a note's rule is
+// the one reader left.
+const CHIP = { ready: "green", blocked: "yellow", proposed: "blue", dropped: "" };
+
 /**
  * A note is a page-level statement, not a tile: it is the sentence the spec
  * wanted read before the panels under it.
@@ -607,7 +592,7 @@ function chip(label, valueNode, unit, cls) {
 // ---------------------------------------------------------------------------
 const DQMPage = { boot, register, render, blocked, editButton, setAlarm, SHAPE,
                   probeAnalyzer, probeThisBox, showTab,
-                  el, modb, watch, chip, statusChip, reasonFor };
+                  el, modb, watch, chip, reasonFor };
 root.DQMPage = DQMPage;
 if (typeof module !== "undefined" && module.exports) module.exports = DQMPage;
 

@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       796826860d7c49f0002fbddb997129777b170943ab52632bb2aafceb50c41526
+// sha256:       6b40b84b529471f06134b2bc49cb46f31f6923129d84a3528a2cd5edca9e509d
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "796826860d7c49f0002fbddb997129777b170943ab52632bb2aafceb50c41526";
+const SPEC_SHA256 = "6b40b84b529471f06134b2bc49cb46f31f6923129d84a3528a2cd5edca9e509d";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -93,17 +93,6 @@ const PAGES = [
             "body": "This page refreshes one event per second by default, matching mhttpd's own one-second loop so a shifter does not hold two cadences in their head. The rate is read from an ODB key at load -- the same pattern as the layer definition -- so it is tunable during a shift without a rebuild. The merge of the event display into this page is what makes the number worth stating: a waveform view and a position view tolerate different rates, and leaving it to whoever builds the page would have produced two."
           },
           {
-            "id": "atar_hit_rate_by_layer",
-            "kind": "panel",
-            "label": "ATAR hit rate by layer",
-            "question": "Is every layer seeing the beam it should?",
-            "why": "a layer that has gone quiet is a cable or a bias, and it shows here first",
-            "status": "blocked",
-            "size": "l",
-            "sketch": "hist1d",
-            "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. And which mechanism this tile uses is decision 2's open half: a layer coincidence formed in hardware makes it a Variables key with a free trend, one counted in software makes it an analyzer product with no trend at all. Which channels form a layer is settled and is a setting in the frontend. Wishlist 1d."
-          },
-          {
             "id": "atar_raw_waveforms",
             "kind": "panel",
             "label": "ATAR waveforms",
@@ -169,17 +158,6 @@ const PAGES = [
             "status": "ready",
             "size": "l",
             "sketch": "hist2d"
-          },
-          {
-            "id": "n_tracks_in_window",
-            "kind": "panel",
-            "label": "Rate of events with 2 tracks",
-            "question": "How often does an event look like a stopped muon?",
-            "why": "slide 8 asks for it and the answer is further away than it looks",
-            "status": "blocked",
-            "size": "m",
-            "sketch": "hist1d",
-            "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. A live count only, with no trend and honest about it: the analyzer writes its per-run summaries to the UDB, which no custom page can read, so the run-over-run comparison is a link out rather than a tile in (decision 3). That is also why it is here and not on Rates, whose whole premise is a value with a free history trend beside it."
           }
         ]
       },
@@ -218,6 +196,17 @@ const PAGES = [
               "condition": "a column is empty, or a baseline row has walked off its band",
               "action": "note the channel number in the eLog and tell the DAQ expert; this is not a reason to stop the run"
             }
+          },
+          {
+            "id": "atar_hit_rate_by_layer",
+            "kind": "panel",
+            "label": "ATAR hit rate by layer",
+            "question": "Is every layer seeing the beam it should?",
+            "why": "a layer that has gone quiet is a cable or a bias, and it shows here first",
+            "status": "blocked",
+            "size": "l",
+            "sketch": "hist1d",
+            "blocked_by": "No counting equipment exists. docs/frontend_requirements.md lists what a trigger equipment would own -- but there is no fetrigger, and no decision about whether the coincidence lives in its own equipment or inside fesampic -- so there is no /Equipment/<name>/Variables key for this rate and nothing for MIDAS history to trend. And which mechanism this tile uses is decision 2's open half: a layer coincidence formed in hardware makes it a Variables key with a free trend, one counted in software makes it an analyzer product with no trend at all. Which channels form a layer is settled and is a setting in the frontend. Wishlist 1d."
           },
           {
             "id": "amplitude_recent_by_channel",
@@ -287,6 +276,17 @@ const PAGES = [
             "size": "l",
             "sketch": "hist1d",
             "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And more than the stopping distribution beside it asks for: the deposits have to be attributed to the muon track, because the decay positron crosses those same upstream layers on its way out and a whole-window integral flattens the profile for a reason that has nothing to do with stopping."
+          },
+          {
+            "id": "n_tracks_in_window",
+            "kind": "panel",
+            "label": "Rate of events with 2 tracks",
+            "question": "How often does an event look like a stopped muon?",
+            "why": "slide 8 asks for it and the answer is further away than it looks",
+            "status": "blocked",
+            "size": "m",
+            "sketch": "hist1d",
+            "blocked_by": "Track finding in the analyzer, which nobody has started, on top of the ATAR bank and a histogram definition. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. A live count only, with no trend and honest about it: the analyzer writes its per-run summaries to the UDB, which no custom page can read, so the run-over-run comparison is a link out rather than a tile in (decision 3). That is also why it is here and not on Rates, whose whole premise is a value with a free history trend beside it."
           },
           {
             "id": "time_between_hits",
