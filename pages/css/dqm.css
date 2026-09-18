@@ -186,6 +186,11 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 }
 .dqm-heat-cols .dqm-heat-span { grid-column: 1 / -1; }
 .dqm-heat-cols .dqm-col-head { margin-top: 6px; }
+/* The distribution plot. Height fixed because mplot sizes from the host div
+   and a div with no height measures zero, which paints a blank white box with
+   no error anywhere. */
+.dqm-dist { margin: 6px 0 8px 0; }
+.dqm-dist-plot { width: 100%; max-width: 640px; height: 180px; }
 .dqm-heat {
   display: grid; gap: 1px; grid-auto-rows: 16px;
   max-width: 640px; margin: 2px 0 6px 0;

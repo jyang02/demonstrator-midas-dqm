@@ -26,7 +26,12 @@ const N_LAYERS = 8;
 const PER_LAYER = 32;
 const STRIDE = 46;
 const BASE = 100000;
-const DEPTH = 10;
+//: Values per channel in the fixtures. Deep enough that its ages, which run
+//: 0..(DEPTH-1)*2 s in steps of 2, STRADDLE the default recent window --
+//: otherwise every test below draws a short window holding the whole
+//: fixture and cutting nothing. The guard at the bottom of this file pins
+//: that relationship, so moving the default is what sends you here.
+const DEPTH = 20;
 //: The fixed x window. Written out rather than imported, because requiring
 //: dqm-hists.js at load destructures DQMPage and there is no page yet -- and
 //: because a test that reads the value it is checking checks nothing. The one
@@ -189,7 +194,7 @@ for (const tile of MAP_TILES) {
     const theirs = textOf(page.doc.getElementById(other.panel));
     assert.match(theirs, /Average over the last 120 s/,
       `setting the ${tile.slug} windows moved the ${other.slug} tile's`);
-    assert.match(theirs, /Average over the last 10 s/);
+    assert.match(theirs, /Average over the last 30 s/);
   });
 
   test(`${tile.slug}: each window offers the ODB path that sets it`, async () => {
@@ -267,7 +272,7 @@ for (const tile of MAP_TILES) {
     // Both column heads name the window they are drawn over, because a table
     // beside a map that named a different window would be worse than no head.
     assert.match(text, /avg 120 s/);
-    assert.match(text, /recent 10 s/);
+    assert.match(text, /recent 30 s/);
   });
 
   test(`${tile.slug}: with no geometry it is one row and says which key it wanted`, async () => {
@@ -592,7 +597,7 @@ test("occupancy and hits per event come first, and are sized to share a row", as
 //: The noise tile's two window defaults, written out rather than imported: a
 //: test that reads the number it is asserting asserts nothing.
 const NOISE_LONG = 120.0;
-const NOISE_SHORT = 10.0;
+const NOISE_SHORT = 30.0;
 
 function textOf(node) {
   return [...node.walk()].map((e) => e._text || "").join(" ");
@@ -730,14 +735,14 @@ test("a channel with nothing in the short window has no recent average at all", 
   // average and no present. It replaces the staleness dimming the tile used to
   // carry -- a window says "nothing here" outright rather than asking anyone to
   // read an opacity.
-  const s = seenOnce(series(N_LAYERS * PER_LAYER, DEPTH), 137);  // one value, age 18
+  const s = seenOnce(series(N_LAYERS * PER_LAYER, DEPTH), 137);  // one value, age 38
   const page = await boot(s, sampicSettings());
 
   const now = cellFor(page, "noise-map-now", 137);
   assert.ok(now.classList.contains("dqm-heat-nodata"),
     "a channel with nothing recent was painted as a measurement");
   assert.strictEqual(now.style.background, "");
-  assert.match(now.title, /nothing in the last 10 s/);
+  assert.match(now.title, /nothing in the last 30 s/);
   // Never "dead": a quiet channel does this too, and the tile cannot tell them
   // apart.
   assert.doesNotMatch(now.title, /dead/i);
@@ -755,7 +760,7 @@ test("a channel with nothing in the short window has no recent average at all", 
   // And the chip counts it, because it is the number to watch when deciding
   // whether the recent window is wide enough.
   assert.match(textOf(page.doc.getElementById("noise_by_channel")),
-    /1 with nothing in 10 s/);
+    /1 with nothing in 30 s/);
 });
 
 test("both windows come from the config, and every heading says the one it drew", async () => {
@@ -861,7 +866,7 @@ test("a blank or zero window falls back rather than drawing nothing", async () =
 
   const text = textOf(page.doc.getElementById("noise_by_channel"));
   assert.match(text, /Average over the last 120 s/);
-  assert.match(text, /Average over the last 10 s/);
+  assert.match(text, /Average over the last 30 s/);
   assert.ok(cellFor(page, "noise-map-avg", 137).style.background,
     "a bad setting left the map unpainted");
 });
@@ -1017,9 +1022,10 @@ test("a reply out of order still cuts both windows on age", async () => {
   // already not to rely on another process's emission order. Both windows are
   // cut on each point's own age, so scrambling the arrays must change nothing.
   //
-  // Ages run 18 down to 0 in steps of 2, so the six points at or under 10 s are
-  // exactly the ones worth 0.99 -- a recent average of 0.99 on the nose, which
-  // a cut made by array position could not produce from a reversed reply.
+  // Ages run 38 down to 0 in steps of 2, so the sixteen points at or under the
+  // 30 s recent window are exactly the ones worth 0.99 -- a recent average of
+  // 0.99 on the nose, which a cut made by array position could not produce
+  // from a reversed reply.
   const s = series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
     if (ch !== 137) return 0.3;
     return k >= 4 ? 0.99 : 0.10;
@@ -1033,11 +1039,11 @@ test("a reply out of order still cuts both windows on age", async () => {
   const page = await boot(scrambled, sampicSettings());
 
   assert.match(cellFor(page, "noise-map-now", 137).title,
-    /recent 0\.9900 V from 6 values/,
+    /recent 0\.9900 V from 16 values/,
     "the recent window was cut by position in the array rather than by age");
-  // And the long window still holds all ten: (4 x 0.10 + 6 x 0.99) / 10.
+  // And the long window still holds all twenty: (4 x 0.10 + 16 x 0.99) / 20.
   assert.match(cellFor(page, "noise-map-avg", 137).title,
-    /avg 0\.6340 V from 10 values over 120 s/);
+    /avg 0\.8120 V from 20 values over 120 s/);
 });
 
 test("every cell carries its channel as data, and the three maps agree on where it is", async () => {
@@ -1371,4 +1377,70 @@ test("ping-pong: one pair over the threshold brings the table back alone", async
   // The footnote accounts for the ones it left out rather than quietly
   // shrinking the population it ranks against.
   assert.match(textOf(box), /255 within 1 and not listed/);
+});
+
+// --- the distribution histogram ---------------------------------------------
+//
+// A third reading of the same numbers: the maps say where, this says what the
+// family looks like, and the tables say which channel. What it adds over the
+// maps is the SHAPE -- one peak is a detector whose channels agree, two is a
+// set that has split, and a map shows that only as a mixture of colours with
+// no way to count the groups.
+
+function distOf(page, slug) {
+  const div = page.doc.getElementById(`${slug}-dist-plot`);
+  return div && div.mpg;
+}
+
+test("each map tile carries a distribution of its own channels", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  ["noise", "baseline"].forEach(function (slug) {
+    const g = distOf(page, slug);
+    assert.ok(g, `${slug} has no distribution plot`);
+    const p = g.param.plot[0];
+    assert.strictEqual(p.type, "histogram");
+    // Every mapped channel is in it, counting the under/over bins.
+    const counts = g.data[0].y;
+    const total = counts.reduce((a, b) => a + b, 0);
+    assert.strictEqual(total, N_LAYERS * PER_LAYER,
+      `${slug} binned ${total} of ${N_LAYERS * PER_LAYER} channels`);
+  });
+  assert.match(textOf(page.doc.getElementById("noise-dist")),
+    /Distribution over 256 channels, 120 s average/);
+});
+
+test("the distribution is binned over the maps' own scale, not its own", async () => {
+  // The x axis and the colour key have to be one axis, or a bar would sit
+  // under a colour that no cell of that value is painted.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
+    (ch) => 0.004 + (ch % 13) * 0.0001), sampicSettings());
+
+  const seq = page.doc.getElementById("noise-map-avg").dqmScale;
+  const p = distOf(page, "noise").param.plot[0];
+  // display() widens by one bin at each end to hold under/overflow, which is
+  // the same arithmetic it uses for an analyzer histogram.
+  const width = (seq.hi - seq.lo) / 48;
+  assert.ok(Math.abs(p.xMin - (seq.lo - width)) < 1e-9,
+    `xMin ${p.xMin} is not the scale's low end less one bin`);
+  assert.ok(Math.abs(p.xMax - (seq.hi + width)) < 1e-9,
+    `xMax ${p.xMax} is not the scale's high end plus one bin`);
+});
+
+test("a channel past the fenced end is in the overflow bin, not off the plot", async () => {
+  // Fitting the axis to the data instead would let one loud channel stretch it
+  // and squash the other 255 into three bins -- the same argument the maps'
+  // own fence makes, and the reason this borrows that fence rather than
+  // computing a second one.
+  let n = 0;
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function () {
+    n += 1;
+    return n === 1 ? 0.2 : 0.004;          // one channel far out
+  }), sampicSettings());
+
+  const counts = distOf(page, "noise").data[0].y;
+  assert.strictEqual(counts[counts.length - 1], 1,
+    "the outlier is not in the overflow bin");
+  assert.strictEqual(counts.reduce((a, b) => a + b, 0), N_LAYERS * PER_LAYER,
+    "a channel went missing rather than overflowing");
 });

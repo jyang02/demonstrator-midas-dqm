@@ -860,6 +860,40 @@ function positiveOr(value, fallback) {
   return (isFinite(n) && n > 0) ? n : fallback;
 }
 
+//: How many bins the distribution histogram uses. 48 over the maps' own
+//: scale: with 512 channels that is about ten per bin, fine enough to show a
+//: family that has split in two and coarse enough that a bin is a measurement
+//: rather than one channel.
+const DIST_BINS = 48;
+
+/**
+ * A `dqm::histogram` payload built out of page-side values.
+ *
+ * Shaped exactly as the analyzer's replies are -- under-flow at index 0, the
+ * bins, then over-flow -- so `BRPC.display()` draws it with the same bin
+ * arithmetic and the same widened axis it uses for a real one. Reusing that
+ * rather than writing a second binner is the point: the two cannot drift, and
+ * the under/over bins keep their meaning.
+ *
+ * `lo`/`hi` are the maps' own sequential scale, which is what makes this plot
+ * and the colour key above it the same axis: a bar here sits under the colour
+ * the cells of that value are painted. It also means a channel past the fence
+ * lands in the over-flow bin rather than stretching the axis and squashing the
+ * family into three bins, which is what fitting to the data would do.
+ */
+function distHistogram(values, lo, hi, nBins) {
+  const data = new Array(nBins + 2).fill(0);
+  const width = (hi > lo) ? (hi - lo) / nBins : 1;
+  values.forEach(function (v) {
+    if (v < lo) { data[0] += 1; return; }
+    const i = Math.floor((v - lo) / width);
+    if (i >= nBins) { data[nBins + 1] += 1; return; }
+    data[i + 1] += 1;
+  });
+  return { dimensions: 1, nBins: [nBins], lowEdge: [lo], highEdge: [hi],
+           entries: values.length, data: data };
+}
+
 /** The smallest and largest of a list, without apply(). Null on empty. */
 function span(values) {
   if (!values.length) return null;
@@ -1029,7 +1063,7 @@ function channelMaps(spec) {
     const LONG_PATH = `${DQM.CONFIG_ROOT}/${ctx.page}/${spec.longKey}`;
     const SHORT_PATH = `${DQM.CONFIG_ROOT}/${ctx.page}/${spec.shortKey}`;
     const wantLong = positiveOr(ctx.cfg[spec.longKey], 120);
-    const wantShort = positiveOr(ctx.cfg[spec.shortKey], 10);
+    const wantShort = positiveOr(ctx.cfg[spec.shortKey], 30);
 
     const covered = el("span", {}, "—");
     const longChipValue = el("span", {}, "—");
@@ -1080,6 +1114,12 @@ function channelMaps(spec) {
 
     const maps = el("div", { class: "dqm-heat-maps", id: `${spec.slug}-maps` });
     ctx.body.appendChild(maps);
+
+    // Between the maps and the rankings, because it is the same numbers read a
+    // third way: the maps say where, this says what the family looks like, and
+    // the tables say which channel. A reader works down that order.
+    const distHost = el("div", { class: "dqm-dist", id: `${spec.slug}-dist` });
+    ctx.body.appendChild(distHost);
 
     const rankBox = el("div", { class: "dqm-outliers", id: `${spec.slug}-outliers` });
     ctx.body.appendChild(rankBox);
@@ -1414,6 +1454,28 @@ function channelMaps(spec) {
         }
       }
 
+      if (!built.dist) {
+        // mplot sizes a graph from its host div, so this is built on the first
+        // reply -- by which time the tile is laid out -- and never again.
+        const head = el("div", { class: "dqm-subhead" }, "");
+        distHost.appendChild(head);
+        const div = el("div", { class: "dqm-dist-plot",
+                                id: `${spec.slug}-dist-plot` });
+        distHost.appendChild(div);
+        const graph = new MPlotGraph(div, {
+          title: { text: "" },
+          stats: { show: false },
+          legend: { show: false },
+          mouseWheelZoom: false,
+          xAxis: { title: { text: unit || spec.unit } },
+          yAxis: { title: { text: "channels" } },
+          plot: [{ label: "channels", type: "histogram" }],
+        });
+        div.mpg = graph;
+        built.dist = { graph: graph, head: head, div: div };
+        graph.resize();
+      }
+
       const by = reduceByChannel(s, longS, shortS);
 
       // Each map says the window it is drawing, every tick, because both are
@@ -1581,6 +1643,25 @@ function channelMaps(spec) {
           + `the short window, has no comparison to make and is left blank.`
           + (div.clipped ? ` Outlined cells are past the end of this scale.` : ""),
       }));
+      // After `seq`, because the axis IS `seq`: the histogram and the colour
+      // key above the maps have to span the same range or a bar would sit
+      // under a colour that no cell of that value is painted.
+      const dist = built.dist;
+      dist.head.textContent = `Distribution over ${avgVals.length} channels, `
+        + `${Math.round(longS)} s average`;
+      dist.head.title = `Every channel's long-window average, binned over the `
+        + `same range as the colour key above -- so this plot's x axis and the `
+        + `maps' scale are one axis. What it adds over the maps is the shape of `
+        + `the family: one peak is a detector whose channels agree, and two is `
+        + `a set that has split into two populations, which a map shows only as `
+        + `a mixture of colours with no way to tell how many groups there are. `
+        + `Channels past the fenced end of the scale are in the outermost bin `
+        + `rather than off the plot.`;
+      BRPC.display(distHistogram(avgVals, seq.lo, seq.hi, DIST_BINS),
+                   dist.graph, 0);
+      dist.graph.calcMinMax();
+      dist.graph.redraw();
+
       fillRanks(rows, win);
 
       drawn = true;

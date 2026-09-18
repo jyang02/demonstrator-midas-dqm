@@ -103,14 +103,14 @@ DEFAULTS: dict[str, dict[str, object]] = {
         # between refreshes, and short enough that it still answers "now".
         # Must be under the long window or the difference map has nothing to
         # subtract; the page clamps and says so.
-        "Noise Recent Seconds": 10.0,
+        "Noise Recent Seconds": 30.0,
         # The same pair for the baseline maps, and the same defaults -- which is
         # a starting point rather than a claim that the two quantities want the
         # same windows. A baseline walks over minutes where a noise excursion
         # arrives in seconds, so if either pair moves first it is likely this
         # one, and that is exactly what having two pairs is for.
         "Baseline Window Seconds": 120.0,
-        "Baseline Recent Seconds": 10.0,
+        "Baseline Recent Seconds": 30.0,
 
         # -- what the analyzer-backed tabs ask for -----------------------------
         # Kept in step with PANELS in pages/js/dqm-hists.js, which decides which

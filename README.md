@@ -283,6 +283,17 @@ the same grid read the same way, a strip is the same cell on every one of them,
 and there is one implementation to be right rather than two. Trending a baseline
 across a run was always a different tile wanting MIDAS history, and still is.
 
+Under the maps in both tiles is a **distribution of every channel's long-window
+average**, binned over the same range as the colour key above it — so the plot's
+x axis and the maps' scale are one axis, and a bar sits under the colour the
+cells of that value are painted. What it adds over the maps is the *shape* of
+the family: one peak is a detector whose channels agree, two is a set that has
+split into two populations, and a map can only show that as a mixture of
+colours with no way to count the groups. A channel past the fenced end of the
+scale lands in the outermost bin rather than stretching the axis and squashing
+everything else into three bins. It is built from the series the tile already
+has, so it costs no extra fetch and no analyzer change.
+
 One table sits under both: **Moved most**, the channels whose short average is
 furthest from their own long one. That question is the same whatever is being
 averaged, so it is part of the shared renderer.
@@ -423,7 +434,7 @@ chip is the number to watch when deciding whether to widen them.
 
 **Every window is a setting**: `Noise Window Seconds` and `Noise Recent
 Seconds` under `/DQM/ATAR`, and `Baseline Window Seconds` and `Baseline Recent
-Seconds` beside them, all four defaulting to 120 s and 10 s, with an Edit button
+Seconds` beside them, all four defaulting to 120 s and 30 s, with an Edit button
 on each chip. They are knobs rather than constants because the right numbers
 follow the beam rate and what a shift is chasing, and because they cost nothing:
 every cut is made by the page, by age, over the one `dqm::series` reply the
