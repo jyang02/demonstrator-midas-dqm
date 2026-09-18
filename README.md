@@ -35,7 +35,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise and baseline as three strip-by-layer maps each: a long average, a short one, and the difference. In ping-pong mode each grows a fourth, the partner gap |
+| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise and baseline as three strip-by-layer maps each: a long average, a short one, and the difference. In ping-pong mode each is drawn twice side by side, once per channel of a pair |
 | **Scope** | What does this event look like? | event buffer | **all three draw** — waveforms by layer, the hit-position maps and the charge-depth profile, every one of them off the one event on screen |
 | **Trends** | Is the detector's response holding still? | analyzer | **all three draw**, each behind its own toggle — persistence, charge against amplitude, and amplitude by channel. What they have in common is that they accumulate over the run rather than showing the event in front of you, which is what makes this a tab and not three tiles on Scope |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
@@ -380,35 +380,38 @@ What each tile does with the pair differs, because the question does:
   not divide evenly. Ranked by `|a-b| / sqrt(a+b)` — the number of standard
   deviations an even split would have — and not by the raw fraction, which
   cannot tell a strip that took three hits from one that took eight hundred.
-  Dividing by the expected spread is also what lets the table have no threshold:
-  a quiet pair cannot climb it, which is what a cut on the count would be for.
-- **Noise and baseline pick one and draw it**, and grow a fourth map, the
-  **partner gap**, which is the only view of the half they did not draw.
-  Picking rather than averaging is what keeps the three maps subtracting cell by
-  cell: reduce each map separately and the difference map would be one channel's
-  present minus the other's past wherever the two crossed. Two channels on a
-  strip are two amplifiers with their own pedestals, so their mean is a voltage
-  neither of them is sitting at.
+  Dividing by the expected spread is also what keeps a quiet pair from climbing
+  it. **Pairs splitting by 1 or less are left out entirely, and with none above
+  that the table does not appear at all**: perfect alternation puts `|a-b|` at
+  0, or at 1 when the pair has taken an odd number of hits, so that is the
+  healthy state rather than a finding. On a working run this table is absent,
+  which is the whole of what it has to say.
+- **Noise and baseline draw each channel in its own right.** The three maps
+  are duplicated into a second column beside the first, **ping** on the left
+  and **pong** on the right, so a strip's two channels each get their own long
+  average, short average and difference. What these tiles are asked is whether
+  each *channel* is healthy, and a strip's two channels are two amplifiers with
+  their own pedestal and their own noise — reducing the pair to one cell would
+  answer a question nobody asked of them.
 
-Noise picks the **louder** of the pair, which is the rule its own ranking sorts
-by and for the same reason — loud is high and only high, so a ringing channel
-sharing a strip with a quiet one would be hidden by any rule that did not go
-looking for it. Baseline picks the **first in map order**, which is arbitrary
-but stable: there is no absolute rule to pick by, for exactly the reason that
-cost this tile its median ranking, and picking by "furthest out of family" would
-choose the cells that set the scale that decides the choice. The partner map is
-what covers what that leaves out, and **Partners furthest apart** names them.
+Ping is the first channel the channel map lists for a strip and pong the
+second, in map order, never by the parity of the channel number. Both columns
+carry the **same scale objects**, sequential and diverging alike, which is what
+lets a channel be read against its neighbour across the row: two ramps fitted
+separately look identical whether or not they were fitted together. The colour
+keys and the per-map headings span both columns for the same reason — one
+scale, one window, and a heading repeated per column would invite reading them
+as two different measurements.
 
-The partner map has its own diverging scale rather than sharing the time
-difference's. The two answer different questions — how far a strip has moved
-since the run started, and how far its two amplifiers sit apart — and there is
-no reason the sizes should match; sharing one would let whichever spread is
-larger flatten the other to a sheet of white.
+There is no partner-difference map and no partner ranking. Both existed
+briefly and both answered "how far apart are these two channels", which is a
+question about the pair rather than about either channel, and not one these
+tiles are for.
 
 None of this is drawn on a one-channel-per-strip map. `heatGrid` reports
-whether any position has two channels, and with none the fourth map and both
-partner tables are absent rather than present and empty — a grid of blanks
-asserting that nothing has a partner is worse than no grid.
+whether any position has two channels, and with none there is one column and
+the tile is exactly what it was before ping-pong — same ids, same layout. The
+second column is built only where there is a second channel to put in it.
 
 **Two things ping-pong changes that are not the DQM's to fix.** Hits per event
 rises, because the recovered triggers are the point, so the `hits_per_event`

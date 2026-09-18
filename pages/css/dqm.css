@@ -174,6 +174,18 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    channel map, and a number typed into this file would be a geometry invented
    in a stylesheet. */
 .dqm-heat-maps { margin: 4px 0 8px 0; }
+/* Two ping-pong columns side by side, one per channel of a pair. A grid and
+   not two floated blocks: the colour keys and the per-map headings have to
+   span both columns, because both are drawn on one scale over one window and a
+   heading repeated per column would read as two different measurements.
+   max-content on the columns keeps each grid at its natural width so the two
+   stay the same size as the single-column case rather than stretching. */
+.dqm-heat-cols {
+  display: grid; grid-template-columns: repeat(2, max-content);
+  gap: 0 18px; align-items: start;
+}
+.dqm-heat-cols .dqm-heat-span { grid-column: 1 / -1; }
+.dqm-heat-cols .dqm-col-head { margin-top: 6px; }
 .dqm-heat {
   display: grid; gap: 1px; grid-auto-rows: 16px;
   max-width: 640px; margin: 2px 0 6px 0;

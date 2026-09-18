@@ -379,6 +379,13 @@ const LABEL_EVERY = 4;
  * cell, so both partners of a pair resolve to the same one and iterating it
  * would visit that cell twice.
  *
+ * `opts.member` narrows every cell to ONE channel of its position -- 0 for the
+ * first the map lists, 1 for the second -- which is what lets two grids of the
+ * same geometry be drawn side by side, one per ping-pong channel, so each is
+ * read for its own health rather than against its partner. `paired` still
+ * describes the underlying map rather than the narrowed view, so a caller can
+ * ask whether a second column exists before building one.
+ *
  * Which channel is first at a position is the order the map lists them, never
  * the parity of the channel number. Pairs being (2k, 2k+1) is a cabling fact
  * this file is in no position to assume -- the same refusal that stops it
@@ -425,6 +432,7 @@ function heatGrid(map, opts) {
     return c;
   }
 
+  let anyPaired = false;
   if (map) {
     const lo = map.stripLo, hi = map.stripHi;
     grid.style.gridTemplateColumns =
@@ -435,7 +443,7 @@ function heatGrid(map, opts) {
     map.byChannel.forEach(function (layer, ch) {
       const key = `${layer}:${stripOf(map, ch)}`;
       const here = atPos.get(key);
-      if (here) here.push(ch); else atPos.set(key, [ch]);
+      if (here) { here.push(ch); anyPaired = true; } else atPos.set(key, [ch]);
     });
     map.layers.forEach(function (layer) {
       const orient = orientationOf(map, layer);
@@ -450,6 +458,23 @@ function heatGrid(map, opts) {
           const gap = DQMPage.el("div", { class: "dqm-heat-cell dqm-heat-empty" });
           gap.title = `No channel at layer ${layer}, strip ${strip}.`;
           grid.appendChild(gap);
+          continue;
+        }
+        if (o.member !== undefined) {
+          // This grid draws one channel per strip. A strip wired to fewer
+          // channels than that has nothing here, and it is a fact about the
+          // cabling rather than about the run -- the same state as a position
+          // the layer does not instrument, and painted the same way.
+          if (chs.length <= o.member) {
+            const gap = DQMPage.el("div",
+              { class: "dqm-heat-cell dqm-heat-empty" });
+            gap.title = `Layer ${layer}, strip ${strip} is wired to `
+              + `${chs.length} channel${chs.length === 1 ? "" : "s"}, so it has `
+              + `none in this column.`;
+            grid.appendChild(gap);
+            continue;
+          }
+          grid.appendChild(cell([chs[o.member]], layer, strip));
           continue;
         }
         grid.appendChild(cell(chs, layer, strip));
@@ -475,8 +500,10 @@ function heatGrid(map, opts) {
       grid.appendChild(cell([ch], null, null));
     }
   }
-  return { grid: grid, byCh: byCh, byPos: byPos,
-           paired: byPos.some((p) => p.channels.length > 1) };
+  // From the map and not from byPos: with `member` set every cell holds one
+  // channel, so counting them would report an unpaired map and the caller
+  // would never build the second column.
+  return { grid: grid, byCh: byCh, byPos: byPos, paired: anyPaired };
 }
 
 /**

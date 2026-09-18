@@ -908,7 +908,7 @@ test("each key sits above what it explains, and says the scale is shared", async
   // The sharing stays *visible*, not moved to a tooltip: it is the claim the
   // two maps are read on, and two ramps drawn separately look identical
   // whether or not they were fitted together.
-  assert.match(textOf(maps), /one scale for both maps below/);
+  assert.match(textOf(maps), /one scale for every map below/);
 });
 
 test("hovering a cell names the channel, its layer and its strip", async () => {
@@ -1231,72 +1231,86 @@ test("ping-pong: a pair with a dead half is named, and a quiet pair is not", asy
     "the table is not sorted by how far from even the split is");
 });
 
-test("ping-pong: the maps say which half of the pair they are drawing", async () => {
-  // Every cell above the partner map draws one of two channels. A map that did
-  // not say which one is a map whose reader attributes what they see to the
-  // wrong amplifier.
-  const page = await boot(series(PP_NCH, DEPTH, function (ch) {
-    return ch === 1 ? 0.02 : 0.004;         // ch 1 is the loud half of strip 0
-  }), pingPongSettings());
+test("ping-pong: ping and pong each get their own three maps", async () => {
+  // The question these tiles answer is whether each CHANNEL is healthy. A
+  // strip's two channels are two amplifiers with their own pedestal and their
+  // own noise, so each is drawn in its own right rather than the pair being
+  // reduced to one cell.
+  const page = await boot(series(PP_NCH, DEPTH), pingPongSettings());
 
-  const cell = cellFor(page, "noise-map-avg", 0);
-  assert.match(cell.title, /^ch 0\+1 \(showing ch 1, the louder of the pair\)/,
-    "the noise map did not draw the louder half, or did not say so");
-  assert.match(cell.title, /avg 0\.0200 V/);
+  ["noise", "baseline"].forEach(function (slug) {
+    ["avg", "now", "diff"].forEach(function (kind) {
+      const ping = page.doc.getElementById(`${slug}-map-${kind}`);
+      const pong = page.doc.getElementById(`${slug}-map-${kind}-pong`);
+      assert.ok(ping && pong, `${slug} ${kind} is missing a column`);
+      assert.strictEqual(cellsOf(page, `${slug}-map-${kind}`).length, 256);
+      assert.strictEqual(cellsOf(page, `${slug}-map-${kind}-pong`).length, 256);
+    });
+  });
 
-  // Baseline has no absolute rule to pick by -- the highest baseline means
-  // nothing -- so it draws the first in map order and says that instead.
-  const b = cellFor(page, "baseline-map-avg", 0);
-  assert.match(b.title, /showing ch 0, the first of the pair in map order/);
-});
-
-test("ping-pong: the partner map is the only view of the half not drawn", async () => {
-  const page = await boot(series(PP_NCH, DEPTH, function (ch) {
-    return ch === 1 ? 0.010 : 0.004;        // strip 0's second half sits high
-  }), pingPongSettings());
-
-  const pair = page.doc.getElementById("baseline-map-pair");
-  assert.ok(pair, "no partner map on a ping-pong geometry");
-  const cell = cellFor(page, "baseline-map-pair", 0);
-  assert.match(cell.title, /ch 1 minus ch 0, \+6\.00 mV/,
-    "the partner map does not carry the gap the three maps above hide");
-  // Signed, and against map order rather than against whichever was drawn, so
-  // the colour does not flip when the pick does.
-  assert.strictEqual(cell.style.background,
-    globalThis.ATARGeom.diffColour(1), "a gap at the top of the scale is not "
-    + "at the end of the diverging ramp");
-
-  const box = page.doc.getElementById("baseline-outliers");
-  assert.match(textOf(box), /Partners furthest apart/);
-});
-
-test("ping-pong: a pair with a silent half is blank, not a gap of zero", async () => {
-  // "Nothing to compare" and "the two agree" are opposite readings and a
-  // diverging ramp paints them the same colour, which is why this is a class.
-  const full = series(PP_NCH, DEPTH);
-  const reply = onlyRecent(full, 1, -1);    // ch 1 says nothing at all
-  const page = await boot(reply, pingPongSettings());
-
-  const cell = cellFor(page, "noise-map-pair", 0);
-  assert.ok(cell.className.includes("dqm-heat-single"),
-    "a pair with a silent half was painted as a measured zero");
-  assert.strictEqual(cell.style.background, "");
-  assert.match(cell.title, /only one of the pair reported/);
-});
-
-test("without ping-pong there is no partner map and no partner table", async () => {
-  // The whole of this block has to stay off on a one-channel-per-strip map,
-  // where a partner view would be a grid of blanks asserting that nothing has
-  // a partner.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
-
+  // Ping is the FIRST channel the map lists for a strip and pong the second,
+  // in map order -- never by parity of the channel number.
+  assert.strictEqual(cellsOf(page, "noise-map-avg")[0].dataset.ch, "0");
+  assert.strictEqual(cellsOf(page, "noise-map-avg-pong")[0].dataset.ch, "1");
+  // And the partner comparison is gone: these tiles no longer ask it.
   assert.strictEqual(page.doc.getElementById("noise-map-pair"), null);
-  assert.strictEqual(page.doc.getElementById("noise-pair-key"), null);
   assert.doesNotMatch(textOf(page.doc.getElementById("noise-outliers")),
     /Partners furthest apart/);
-  // And the strip axis stays under the last grid that is actually drawn.
-  assert.ok(page.doc.getElementById("noise-map-diff").byClass("dqm-heat-collab").length,
-    "the strip axis went with the partner map that was never built");
+});
+
+test("ping-pong: a column draws its own channel's value, not its partner's", async () => {
+  // The failure this rules out is a column that looks right because it is
+  // drawing the other half of the pair.
+  const page = await boot(series(PP_NCH, DEPTH, function (ch) {
+    return ch === 1 ? 0.0200 : 0.0040;      // only pong on strip 0 is loud
+  }), pingPongSettings());
+
+  assert.match(cellFor(page, "noise-map-avg", 0).title, /ch 0 .* avg 0\.0040 V/);
+  assert.match(cellFor(page, "noise-map-avg-pong", 1).title, /ch 1 .* avg 0\.0200 V/);
+});
+
+test("ping-pong: both columns are drawn on one scale", async () => {
+  // Two ramps fitted separately look identical whether or not they were fitted
+  // together, so reading a channel against its neighbour across the row would
+  // silently stop meaning anything.
+  const page = await boot(series(PP_NCH, DEPTH, (ch) => 0.004 + ch * 1e-5),
+    pingPongSettings());
+
+  const ping = page.doc.getElementById("noise-map-avg");
+  const pong = page.doc.getElementById("noise-map-avg-pong");
+  assert.strictEqual(ping.dqmScale, pong.dqmScale,
+    "the two columns carry different scale objects");
+  assert.strictEqual(page.doc.getElementById("noise-map-diff").dqmDiffScale,
+    page.doc.getElementById("noise-map-diff-pong").dqmDiffScale);
+  // One key, not one per column.
+  assert.strictEqual(page.doc.getElementById("noise-maps")
+    .byClass("dqm-heat-key").length, 2, "a key was drawn per column");
+});
+
+test("a channel with nothing in the window is blank in its own column", async () => {
+  const full = series(PP_NCH, DEPTH);
+  const page = await boot(onlyRecent(full, 1, -1), pingPongSettings());
+
+  const gone = cellFor(page, "noise-map-avg-pong", 1);
+  assert.ok(gone.className.includes("dqm-heat-nodata"),
+    "a channel the analyzer never mentioned was painted as a measurement");
+  // Its partner is unaffected, which is the whole point of separate columns.
+  assert.ok(!cellFor(page, "noise-map-avg", 0).className.includes("dqm-heat-nodata"));
+});
+
+test("without ping-pong there is one column and it is the tile as it was", async () => {
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  ["avg", "now", "diff"].forEach(function (kind) {
+    assert.ok(page.doc.getElementById(`noise-map-${kind}`), `${kind} missing`);
+    assert.strictEqual(page.doc.getElementById(`noise-map-${kind}-pong`), null,
+      `${kind} grew a second column on a one-channel-per-strip map`);
+  });
+  assert.strictEqual(page.doc.getElementById("noise-map-pair"), null);
+  // The strip axis still sits under the last grid drawn.
+  assert.ok(page.doc.getElementById("noise-map-diff")
+    .byClass("dqm-heat-collab").length,
+    "the strip axis went missing with the partner map");
 });
 
 test("ping-pong: the per-channel tables place both halves of a pair", async () => {

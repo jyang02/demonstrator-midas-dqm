@@ -949,44 +949,6 @@ function reduceByChannel(s, longS, shortS) {
 }
 
 /**
- * A grid position's channels, reduced to the one record the three maps draw.
- *
- * Under ping-pong a strip is two channels and both have their own pedestal and
- * their own noise -- they are two amplifiers, not two samples of one. So this
- * does not average them. It **picks one**, by a rule the tile states, and draws
- * that channel's average, recent and difference throughout.
- *
- * Picking rather than averaging is what keeps the stack subtracting cell by
- * cell, which is the property the three maps are read on. Reduce each map
- * separately -- max of the averages here, max of the recents there -- and the
- * difference map would be one channel's present minus the other's past on any
- * cell where the two crossed, which is a number about nothing.
- *
- * What the picked channel cannot show is the partner, and that is exactly what
- * the fourth map is for: `gap` is the second channel's long average minus the
- * first's, **in map order**, whichever of the two the maps above are drawing.
- * Map order rather than drawn-first because the sign has to stay stable -- a
- * difference whose reference flipped when the pick flipped would change colour
- * without anything changing in the detector.
- */
-function reduceAtPosition(pos, by, pair) {
-  const recs = pos.channels.map((ch) => by.get(ch) || null);
-  const live = [];
-  recs.forEach(function (r, i) { if (r) live.push(i); });
-  const pick = live.length
-    ? (live.length === 1 ? live[0] : pair.pick(recs, live))
-    : null;
-  // Exactly two, and both reporting. A position with one channel has no
-  // partner, and one whose partner said nothing inside the long window has
-  // nothing to subtract -- which is a different fact from a gap of zero, and
-  // the map marks it as such rather than painting it at the middle of the ramp.
-  const gap = (recs.length === 2 && recs[0] && recs[1])
-    ? recs[1].avg - recs[0].avg : null;
-  return { chs: pos.channels, recs: recs, pick: pick, gap: gap,
-           r: pick === null ? null : recs[pick] };
-}
-
-/**
  * A per-channel quantity as the target: a long average, a short one, and the
  * move between. Both recent-value tiles on the Channels tab are this function.
  *
@@ -1132,13 +1094,20 @@ function channelMaps(spec) {
       { kind: "now", id: `${spec.slug}-map-now` },
       { kind: "diff", id: `${spec.slug}-map-diff` },
     ];
-    //: The fourth map, drawn only where a position has two channels. It is the
-    //: one thing the three above cannot say under ping-pong: they draw one of
-    //: the pair, so a partner sitting somewhere else is invisible on all three
-    //: while the strip looks perfectly ordinary. Absent entirely on a map with
-    //: one channel per strip, where it would be a grid of blanks asserting that
-    //: nothing has a partner.
-    const PAIR_KIND = { kind: "pair", id: `${spec.slug}-map-pair` };
+    //: One column per ping-pong channel, drawn side by side. The question
+    //: these tiles are asked is whether each CHANNEL is healthy, and a strip's
+    //: two channels are two amplifiers with their own pedestal and their own
+    //: noise -- so each gets its own three maps rather than the pair being
+    //: reduced to one cell and a gap. Ping is the first channel the map lists
+    //: for a strip and pong the second, in map order, never by parity of the
+    //: channel number.
+    //:
+    //: A map with one channel per strip builds the first column only, and it
+    //: is then exactly the tile that existed before ping-pong.
+    const COLUMNS = [
+      { key: "ping", note: "first channel of each pair" },
+      { key: "pong", note: "second channel of each pair" },
+    ];
 
     let map = null;
     let unit = "";
@@ -1160,21 +1129,14 @@ function channelMaps(spec) {
      * under the base and stride it was made with, and assuming 48 where the
      * file used 46 moves a fifth of the channels while looking plausible.
      */
-    /** One map: its heading, its grid, and the grid's place in the block. */
-    function buildGrid(spec, nChannels, withAxis) {
-      const box = el("div", {});
-      const head = el("div", { class: "dqm-subhead" }, "");
-      box.appendChild(head);
-      const built = ATARGeom.heatGrid(map, {
-        id: spec.id, channels: nChannels, axis: withAxis,
+    /** One map's grid. Built, not placed: the layout below decides where. */
+    function makeGrid(id, member, withAxis, nCh) {
+      return ATARGeom.heatGrid(map, {
+        id: id, channels: nCh, axis: withAxis, member: member,
         onHover: function (chs, cell) {
           readout.textContent = cell.title || ATARGeom.chLabel(chs);
         },
       });
-      box.appendChild(built.grid);
-      maps.appendChild(box);
-      built.head = head;
-      return built;
     }
 
     /**
@@ -1184,46 +1146,10 @@ function channelMaps(spec) {
      * that "no value in the window", "seen once" and "off the top of the
      * scale" cannot be mistaken for measurements at the bottom of a ramp.
      */
-    function paint(cell, pos, kind, seq, div, pairDiv, win) {
-      const r = pos.r;
+    function paint(cell, r, kind, seq, div, win) {
+      const ch = cell.dataset.ch;
       const where = ATARGeom.whereText(map, cell);
-      const who = ATARGeom.chLabel(pos.chs);
-      // Which of a pair is on screen, said on every cell that has a pair. A
-      // map drawing one of two channels without saying which one is a map
-      // whose reader will attribute what they see to the wrong amplifier.
-      const drew = (pos.chs.length > 1 && pos.r)
-        ? ` (showing ch ${pos.chs[pos.pick]}, ${spec.pair.why})` : "";
-      const ch = who + drew;
-
-      // The partner map, which is about the pair rather than about either
-      // channel, so it shares none of the states below.
-      if (kind === "pair") {
-        if (pos.gap === null) {
-          cell.className = "dqm-heat-cell dqm-heat-single";
-          cell.style.background = "";
-          cell.title = `${who} — ${where} — `
-            + (pos.chs.length < 2
-              ? `one channel at this strip, so there is no partner to compare.`
-              : `only one of the pair reported inside the last `
-                + `${Math.round(win.longS)} s, so there is nothing to compare `
-                + `it against. A pair with a silent half is what the ranking `
-                + `below names.`);
-          return;
-        }
-        const t = pairDiv.hi > 0 ? pos.gap / pairDiv.hi : 0;
-        const over = Math.abs(pos.gap) > pairDiv.hi;
-        cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "");
-        cell.style.background = ATARGeom.diffColour(t);
-        cell.title = `${who} — ${where} — ch ${pos.chs[1]} minus ch `
-          + `${pos.chs[0]}, ${pos.gap >= 0 ? "+" : ""}`
-          + `${(pos.gap * 1000).toFixed(2)} mV over the last `
-          + `${Math.round(win.longS)} s `
-          + `(${pos.recs[0].avg.toFixed(4)} V and `
-          + `${pos.recs[1].avg.toFixed(4)} V). Two channels on one strip are `
-          + `two amplifiers, so a gap here is a fact about the readout and not `
-          + `about the beam.`;
-        return;
-      }
+      const who = `ch ${ch}`;
 
       if (!r) {
         cell.className = "dqm-heat-cell dqm-heat-nodata";
@@ -1241,7 +1167,7 @@ function channelMaps(spec) {
         ? `nothing in the last ${Math.round(win.shortS)} s`
         : `recent ${r.recent.toFixed(4)} V from ${r.nRecent} `
           + `value${r.nRecent === 1 ? "" : "s"}`;
-      const common = `${ch} — ${where} — avg ${r.avg.toFixed(4)} V `
+      const common = `${who} — ${where} — avg ${r.avg.toFixed(4)} V `
         + `from ${r.n} value${r.n === 1 ? "" : "s"} over `
         + `${Math.round(win.longS)} s, ${recent}`
         + (r.newest === null ? "" : `, last hit ${Math.round(r.age)} s ago`);
@@ -1306,7 +1232,7 @@ function channelMaps(spec) {
      * seeing. Both rank and neither judges: there is no threshold here, and on
      * a healthy run these are simply the least average five.
      */
-    function fillRanks(rows, win, positions) {
+    function fillRanks(rows, win) {
       rankBox.textContent = "";
       if (!rows.length) {
         rankBox.appendChild(el("div", { class: "dqm-note" },
@@ -1368,68 +1294,6 @@ function channelMaps(spec) {
         + `simply the least average channels. Several rows sharing a layer is `
         + `the shape a whole layer going together makes.`;
       rankBox.appendChild(foot);
-
-      // Last, and after that footnote, which counts the rows of the per-channel
-      // tables above it. This one is the question neither of them can ask: both
-      // rank channels against the run, and this ranks a strip's two channels
-      // against each other. A channel can sit in the middle of every
-      // distribution on the tab and still be nothing like its own partner,
-      // which under ping-pong is one strip reading two ways depending on which
-      // trigger it caught.
-      if (built.pair) pairTable(positions, win);
-    }
-
-    /**
-     * The strips whose two ping-pong channels disagree most.
-     *
-     * Its own table rather than a column on the ones above, because it ranks a
-     * different thing: those rank channels against the run, this ranks a
-     * strip's two channels against each other. Both halves can sit in the
-     * middle of every distribution on the tab and still be nothing like one
-     * another, which is one strip reading two ways depending on which trigger
-     * it caught -- and the maps cannot show it, because they draw one of the
-     * two.
-     *
-     * No threshold and no verdict, for the reason the tables above give: two
-     * channels are two amplifiers and a standing offset between them is
-     * ordinary. What this names is where the offsets are largest, and the
-     * reader decides whether that is the cabling or a fault.
-     */
-    function pairTable(positions, win) {
-      const pairs = (positions || []).filter((p) => p.gap !== null);
-      if (!pairs.length) return;
-      const sorted = pairs.slice()
-        .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
-
-      rankBox.appendChild(el("div", { class: "dqm-subhead" }, "Partners furthest apart"));
-      const t = el("table", { class: "dqm-table" });
-      t.appendChild(el("tr", {},
-        el("th", {}, "channels"), el("th", {}, "layer"), el("th", {}, "strip"),
-        el("th", {}, "first"), el("th", {}, "second"), el("th", {}, "gap")));
-      sorted.slice(0, MAP_RANK).forEach(function (pp) {
-        const cell = built.avg.byCh.get(pp.chs[0]);
-        t.appendChild(el("tr", {},
-          el("td", { class: "label" }, ATARGeom.chLabel(pp.chs)),
-          el("td", {}, cell && cell.dataset.layer !== undefined
-            ? cell.dataset.layer : "—"),
-          el("td", {}, cell && cell.dataset.strip !== undefined
-            ? cell.dataset.strip : "—"),
-          el("td", {}, `${pp.recs[0].avg.toFixed(4)} V`),
-          el("td", {}, `${pp.recs[1].avg.toFixed(4)} V`),
-          el("td", {}, `${pp.gap >= 0 ? "+" : ""}`
-            + `${(pp.gap * 1000).toFixed(2)} mV`)));
-      });
-      rankBox.appendChild(t);
-
-      const foot = el("div", { class: "dqm-footnote" },
-        `${Math.min(MAP_RANK, sorted.length)} of ${pairs.length} pairs over `
-        + `${Math.round(win.longS)} s \u2014 a ranking, not a verdict`);
-      foot.title = `Second channel minus first, in the order the channel map `
-        + `lists them. Two channels on one strip are two amplifiers, so a `
-        + `standing gap between them is ordinary and no threshold here could `
-        + `tell one from a fault; what settles it is whether the cell on the `
-        + `partner map looks like its neighbours.`;
-      rankBox.appendChild(foot);
     }
 
     async function tick() {
@@ -1481,26 +1345,55 @@ function channelMaps(spec) {
         // into: a shared key sitting between the second and third maps reads as
         // belonging to the third, which is the one map it does not describe.
         built = {};
-        built.seqKey = el("div", {});
-        maps.appendChild(built.seqKey);
-        built.avg = buildGrid(KINDS[0], nChannels, false);
-        // Read off the grid that was just built rather than worked out from
-        // the map again here: whether a position carries two channels is
-        // heatGrid's answer, and asking it twice is how the two drift apart.
-        built.paired = built.avg.paired;
-        built.now = buildGrid(KINDS[1], nChannels, false);
-        built.diffKey = el("div", {});
-        maps.appendChild(built.diffKey);
-        // The strip axis goes under the last grid only: identical axes stacked
-        // are more ink for one fact. Which grid is last depends on whether
-        // there is a partner map, so the flag follows it rather than sitting
-        // on the time difference by name.
-        built.diff = buildGrid(KINDS[2], nChannels, !built.paired);
-        if (built.paired) {
-          built.pairKey = el("div", {});
-          maps.appendChild(built.pairKey);
-          built.pair = buildGrid(PAIR_KIND, nChannels, true);
+        // The first column's grid is built before the layout so its `paired`
+        // can decide whether there is a second one. heatGrid does not place
+        // what it builds, which is what makes that order possible.
+        const first = makeGrid(`${spec.slug}-map-avg`, 0, false, nChannels);
+        built.paired = first.paired;
+        const cols = built.paired ? COLUMNS : [COLUMNS[0]];
+        //: The first column keeps the ids it has always had, so a map with one
+        //: channel per strip is byte-for-byte the tile that existed before
+        //: ping-pong and everything pinned to those ids still holds.
+        built.cols = cols.map(function (c, i) {
+          const sfx = i === 0 ? "" : `-${c.key}`;
+          return {
+            spec: c,
+            avg: i === 0 ? first
+              : makeGrid(`${spec.slug}-map-avg${sfx}`, i, false, nChannels),
+            now: makeGrid(`${spec.slug}-map-now${sfx}`, i, false, nChannels),
+            // The strip axis goes under the last grid only: identical axes
+            // stacked are more ink for one fact.
+            diff: makeGrid(`${spec.slug}-map-diff${sfx}`, i, true, nChannels),
+          };
+        });
+
+        // Two columns of the same three maps, so a channel is read down its
+        // own column and against its neighbours across the row. The keys and
+        // the per-map headings span both, because both columns are drawn on
+        // one scale and over one window -- a heading repeated per column would
+        // invite reading them as two different measurements.
+        maps.className = "dqm-heat-maps"
+          + (built.cols.length > 1 ? " dqm-heat-cols" : "");
+        if (built.cols.length > 1) {
+          built.cols.forEach(function (c) {
+            maps.appendChild(el("div", { class: "dqm-subhead dqm-col-head" },
+              `${c.spec.key} \u2014 ${c.spec.note}`));
+          });
         }
+        function row(head, kind) {
+          maps.appendChild(head);
+          built.cols.forEach(function (c) { maps.appendChild(c[kind].grid); });
+        }
+        built.seqKey = el("div", { class: "dqm-heat-span" });
+        maps.appendChild(built.seqKey);
+        built.headAvg = el("div", { class: "dqm-subhead dqm-heat-span" }, "");
+        row(built.headAvg, "avg");
+        built.headNow = el("div", { class: "dqm-subhead dqm-heat-span" }, "");
+        row(built.headNow, "now");
+        built.diffKey = el("div", { class: "dqm-heat-span" });
+        maps.appendChild(built.diffKey);
+        built.headDiff = el("div", { class: "dqm-subhead dqm-heat-span" }, "");
+        row(built.headDiff, "diff");
         // Nothing on the happy path: the rows are labelled L0..L7 and the axis
         // is labelled strip, so a sentence saying the cells are laid out by
         // strip and layer is telling a reader what they are looking at.
@@ -1525,10 +1418,9 @@ function channelMaps(spec) {
 
       // Each map says the window it is drawing, every tick, because both are
       // settable and one of them may have just been clamped.
-      built.avg.head.textContent = `Average over the last ${Math.round(longS)} s`;
-      built.now.head.textContent = `Average over the last ${Math.round(shortS)} s`;
-      built.diff.head.textContent = `Recent minus average`;
-      if (built.pair) built.pair.head.textContent = `Partner gap`;
+      built.headAvg.textContent = `Average over the last ${Math.round(longS)} s`;
+      built.headNow.textContent = `Average over the last ${Math.round(shortS)} s`;
+      built.headDiff.textContent = `Recent minus average`;
 
       // The sequential scale spans BOTH maps, because they are read against
       // each other: the same colour has to mean the same RMS in the average and
@@ -1548,24 +1440,35 @@ function channelMaps(spec) {
       // mean. The average then occupies the lower part of the ramp and looks
       // more uniform than the recent -- which is a true statement about the
       // data and not an artefact of the drawing.
-      // Two passes, because the maps and the tables are two populations. The
-      // maps are per position and draw one channel of each pair; the tables
-      // are per channel and name both. The scale has to be fitted to what is
-      // actually painted -- fence over every channel and the halves that are
-      // not on screen drag the quartiles down and clip the cells that are.
-      const positions = built.avg.byPos.map(function (pos) {
-        return reduceAtPosition(pos, by, spec.pair);
+      // Every channel that has a cell somewhere, which with two columns is
+      // both halves of every pair. The scale is fitted to exactly what is
+      // painted -- and now that each channel is drawn in its own right, that
+      // is simply "the mapped channels" rather than a chosen one per strip.
+      const cellOf = new Map();
+      built.cols.forEach(function (c) {
+        c.avg.byCh.forEach(function (cell, ch) { cellOf.set(ch, cell); });
       });
 
       const avgVals = [];
       const nowVals = [];
       const seqVals = [];
       const diffVals = [];
-      const gapVals = [];
-      positions.forEach(function (p) {
-        if (p.gap !== null) gapVals.push(Math.abs(p.gap));
-        const r = p.r;
-        if (!r) return;
+      // Per channel, because what it is for is deciding whether the short
+      // window is wide enough for the rate each channel is actually seeing.
+      let quiet = 0;
+      const rows = [];
+      by.forEach(function (r) {
+        const cell = cellOf.get(r.ch);
+        rows.push({
+          ch: r.ch, n: r.n, nRecent: r.nRecent,
+          avg: r.avg, recent: r.recent, diff: r.diff,
+          layer: cell && cell.dataset.layer !== undefined
+            ? Number(cell.dataset.layer) : null,
+          strip: cell && cell.dataset.strip !== undefined
+            ? Number(cell.dataset.strip) : null,
+        });
+        if (!cell) return;                   // reported, but off this map
+        if (r.recent === null) quiet += 1;
         avgVals.push(r.avg);
         seqVals.push(r.avg);
         // A channel with nothing in the short window contributes nothing to
@@ -1576,27 +1479,6 @@ function channelMaps(spec) {
           seqVals.push(r.recent);
         }
         if (r.diff !== null) diffVals.push(Math.abs(r.diff));
-      });
-
-      // Counted here rather than inside the paint loop, which is where it used
-      // to sit. Both halves of a pair resolve to the same cell, so a loop over
-      // byCh would visit that cell twice, and a loop over positions would miss
-      // the partner the maps are not drawing -- and this number is per channel,
-      // because what it is for is deciding whether the short window is wide
-      // enough for the rate each channel is actually seeing.
-      let quiet = 0;
-      const rows = [];
-      by.forEach(function (r) {
-        const cell = built.avg.byCh.get(r.ch);
-        if (cell && r.recent === null) quiet += 1;
-        rows.push({
-          ch: r.ch, n: r.n, nRecent: r.nRecent,
-          avg: r.avg, recent: r.recent, diff: r.diff,
-          layer: cell && cell.dataset.layer !== undefined
-            ? Number(cell.dataset.layer) : null,
-          strip: cell && cell.dataset.strip !== undefined
-            ? Number(cell.dataset.strip) : null,
-        });
       });
 
       // Cut only when the cut earns itself. A fence above the largest value is
@@ -1633,38 +1515,31 @@ function channelMaps(spec) {
       div.clipped = !!dFull && div.hi < dFull.hi;
       if (!(div.hi > 0)) div.hi = 1e-4;
 
-      // The partner map's own scale, fenced and symmetric exactly as the time
-      // difference is, and deliberately NOT the same number. The two answer
-      // different questions -- how far a strip has moved since the run
-      // started, and how far its two amplifiers sit apart -- and there is no
-      // reason the sizes should match. Sharing one would let whichever spread
-      // is larger flatten the other to a sheet of white.
-      const gFull = span(gapVals);
-      const gFence = fenceTop(gapVals);
-      const pairDiv = gFull
-        ? { hi: (gFence !== null && gFence > 0 && gFence < gFull.hi)
-              ? gFence : gFull.hi,
-            clipped: false }
-        : { hi: 0, clipped: false };
-      pairDiv.clipped = !!gFull && pairDiv.hi < gFull.hi;
-      if (!(pairDiv.hi > 0)) pairDiv.hi = 1e-4;
-
       // Reachable from the console and from the tests, the way a graph is hung
       // off its div. The two sequential maps carry the SAME object, which is
       // what "one scale" means when it is asserted rather than described.
-      built.avg.grid.dqmScale = seq;
-      built.now.grid.dqmScale = seq;
-      built.diff.grid.dqmDiffScale = div;
-      if (built.pair) built.pair.grid.dqmPairScale = pairDiv;
+      // Every column carries the SAME scale objects, which is what "one scale"
+      // means when it is asserted rather than described: a colour is one RMS on
+      // ping and on pong alike, or reading one channel against its neighbour
+      // across the row would not be available.
+      built.cols.forEach(function (c) {
+        c.avg.grid.dqmScale = seq;
+        c.now.grid.dqmScale = seq;
+        c.diff.grid.dqmDiffScale = div;
+      });
 
       // By position and not by channel: both halves of a pair resolve to the
       // same cell, so iterating byCh would paint it twice and the second pass
       // would win. Every grid here was built from the one channel map, so the
       // byPos arrays are parallel and index i is the same strip on all of them.
-      KINDS.concat(built.pair ? [PAIR_KIND] : []).forEach(function (k) {
-        const b = built[k.kind];
-        b.byPos.forEach(function (pos, i) {
-          paint(pos.cell, positions[i], k.kind, seq, div, pairDiv, win);
+      // One cell, one channel: with `member` set every position in a column's
+      // grid holds exactly the channel that column draws, so the record comes
+      // straight out of `by` and nothing has to be picked or reduced.
+      built.cols.forEach(function (c) {
+        KINDS.forEach(function (k) {
+          c[k.kind].byPos.forEach(function (pos) {
+            paint(pos.cell, by.get(pos.channels[0]) || null, k.kind, seq, div, win);
+          });
         });
       });
 
@@ -1689,7 +1564,7 @@ function channelMaps(spec) {
         // read on and two ramps drawn separately look identical whether or not
         // they were fitted together. In the label it pushed the upper bound
         // onto its own line, so it goes in the note.
-        note: `one scale for both maps below${seqNote ? ", " + seqNote : ""}`,
+        note: `one scale for every map below${seqNote ? ", " + seqNote : ""}`,
         detail: seqDetail,
       }));
       built.diffKey.appendChild(ATARGeom.diffLegend(div.hi, {
@@ -1706,29 +1581,7 @@ function channelMaps(spec) {
           + `the short window, has no comparison to make and is left blank.`
           + (div.clipped ? ` Outlined cells are past the end of this scale.` : ""),
       }));
-      if (built.pair) {
-        built.pairKey.textContent = "";
-        built.pairKey.appendChild(ATARGeom.diffLegend(pairDiv.hi, {
-          id: `${spec.slug}-pair-key`,
-          label: "partner gap (V)",
-          note: `second channel minus first, over ${Math.round(longS)} s`
-            + (pairDiv.clipped ? ", top clipped" : ""),
-          detail: `Ping-pong wires a strip to two channels and records a `
-            + `deposit on whichever was not used last, so every cell above `
-            + `draws one of the two and this is the only map that can show the `
-            + `other. Second minus first in the order the channel map lists `
-            + `them, whichever of the two the maps above chose, so the sign `
-            + `does not flip when the pick does. They are two amplifiers, so a `
-            + `standing gap is ordinary and what is worth reading is a cell `
-            + `unlike its neighbours. A strip with one channel, or a pair with `
-            + `a half that said nothing in the window, has no comparison to `
-            + `make and is left blank.`
-            + (pairDiv.clipped
-              ? ` Outlined cells are past the end of this scale.` : ""),
-        }));
-      }
-
-      fillRanks(rows, win, positions);
+      fillRanks(rows, win);
 
       drawn = true;
       covered.textContent = nChannels ? `${by.size} of ${nChannels}` : String(by.size);
@@ -1800,19 +1653,6 @@ Object.keys(PANELS).forEach(function (id) {
 const NOISE_MAPS = {
   name: NOISE, slug: "noise", unit: "RMS (V)",
   longKey: "Noise Window Seconds", shortKey: "Noise Recent Seconds",
-  //: Which half of a ping-pong pair the three maps draw: the louder one, which
-  //: is the same rule `rank` sorts by and for the same reason. Loud is high and
-  //: only high, so a noisy channel that shared a strip with a quiet one would
-  //: be hidden on every map by any rule that did not go looking for it -- and
-  //: "one of these two amplifiers is ringing" is exactly what this tile is for.
-  pair: {
-    why: "the louder of the pair",
-    pick: function (recs, live) {
-      let best = live[0];
-      live.forEach(function (i) { if (recs[i].avg > recs[best].avg) best = i; });
-      return best;
-    },
-  },
   //: Loud is high, and only high. The top of the distribution is the answer.
   rank: function (rows, win) {
     return {
@@ -1825,23 +1665,6 @@ const NOISE_MAPS = {
 const BASELINE_MAPS = {
   name: BASELINE, slug: "baseline", unit: "V",
   longKey: "Baseline Window Seconds", shortKey: "Baseline Recent Seconds",
-  //: The first of the pair in map order, and deliberately not "the worst".
-  //:
-  //: There is no absolute rule to pick by here, which is the same fact that
-  //: cost this tile its median ranking: the highest baseline means nothing, and
-  //: a set of channels all at 0.74 V is a healthy detector. Out of family is
-  //: the only sense in which one is worse than the other, and that is defined
-  //: against the population being drawn -- so picking by it would choose the
-  //: cells that set the scale that decides the choice.
-  //:
-  //: Map order instead, which is arbitrary but stable, and the partner map is
-  //: what covers what it leaves out: a second channel sitting somewhere its
-  //: neighbours' second channels do not is a cell unlike the ones around it.
-  //: Averaging the two was the other option and is worse than either -- two
-  //: channels on a strip are two amplifiers with their own pedestals, and
-  //: their mean is a voltage neither of them is sitting at.
-  pair: { why: "the first of the pair in map order",
-          pick: function (recs, live) { return live[0]; } },
   //: No ranking of its own: "Moved most" is the only table under these maps.
   //:
   //: There was a second one, ranking each channel by how far its average sat
