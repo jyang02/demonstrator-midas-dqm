@@ -312,60 +312,42 @@ test("noise ranks by the highest RMS, because loud is high and only high", async
   assert.strictEqual(first, "ch 200", "the loudest channel is not at the top");
 });
 
-test("baseline ranks by distance from the median, in either direction", async () => {
-  // The highest baseline means nothing: a set of channels all sitting at 0.74 V
-  // is a healthy detector. The one worth naming sits away from where the others
-  // sit, whichever side of them it is on -- so a channel BELOW the median has to
-  // be able to reach the top of this table, which a "loudest" sort could never
-  // do.
+test("the baseline maps carry one ranking, and it is the shared one", async () => {
+  // A ranking by distance from the median of every channel used to sit in front
+  // of it, answering "which baseline is out of family". The maps answer that
+  // now -- a baseline away from where the others sit is a cell that is not the
+  // colour of its neighbours, on a scale spanning every channel -- so the tile
+  // is down to the one question a table adds a channel number to.
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
     (ch, k) => (ch === 200 ? 0.70 : 0.74)), sampicSettings());
 
   const box = page.doc.getElementById("baseline-outliers");
+  assert.strictEqual(box.byClass("dqm-subhead").length, 1,
+    "the baseline tile has more than one ranking");
+  assert.strictEqual(box.byTag("table").length, 1);
+  assert.strictEqual(box.byClass("dqm-subhead")[0].textContent, "Moved most");
+
   const text = textOf(box);
-  assert.match(text, /Furthest from median/);
-  // The median itself is a number, not a heading: it goes on the hover, and
-  // the signed gap to it is a column of the table.
-  assert.match(box.byClass("dqm-subhead")[0].title, /0\.7400 V/);
-  const first = firstRanked(box)[0];
-  assert.strictEqual(first, "ch 200",
-    "a channel 40 mV below the median did not reach the top of the table");
-  // And the table says how far out, in mV and signed.
-  assert.match(text, /\u0394 from median/);
-  assert.match(text, /-40\.0 mV/);
+  assert.doesNotMatch(text, /median/i, "the median ranking is still in the tile");
+  assert.doesNotMatch(text, /Furthest/);
+  // It still names channels, which is the whole reason a table sits under a
+  // grid of unlabelled cells.
+  assert.match(text, /ch \d+/);
+  assert.match(text, /ranking, not a verdict/);
 });
 
-test("one dead channel does not drag the baseline median and indict everybody else", async () => {
-  // The median, not the mean: one channel stuck at 0 V would drag a mean far
-  // enough to make every healthy channel look like an outlier, which is the
-  // failure that matters most here.
+test("noise keeps both of its rankings", async () => {
+  // The shared table is common to both tiles; the loudest table is the noise
+  // tile's own. Dropping the baseline's must not have dropped this one.
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
-    (ch, k) => (ch === 9 ? 0.0 : 0.74)), sampicSettings());
+    (ch, k) => (ch === 200 ? 0.9 : 0.1)), sampicSettings());
 
-  const box = page.doc.getElementById("baseline-outliers");
-  assert.match(box.byClass("dqm-subhead")[0].title, /is 0\.7400 V/,
-    "one dead channel moved the median");
-  assert.strictEqual(firstRanked(box)[0], "ch 9");
-  // The healthy ones are all at the median, so their deltas are zero. They are
-  // still listed -- it is a ranking of five, not a list of faults -- and they
-  // say +0.0 mV rather than anything that reads as a finding.
-  assert.match(textOf(box), /\+0\.0 mV/);
+  const box = page.doc.getElementById("noise-outliers");
+  assert.deepStrictEqual(
+    box.byClass("dqm-subhead").map((h) => h.textContent),
+    ["Loudest", "Moved most"]);
 });
 
-test("a whole baseline layer sagging shows as rows sharing one layer number", async () => {
-  // Ranked against the median of EVERY channel rather than of its own layer.
-  // Against a per-layer median a layer sagging together would cancel out and
-  // show nothing; against the global one it is the shape in the table.
-  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
-    (ch, k) => (ch >= 4 * PER_LAYER && ch < 5 * PER_LAYER ? 0.70 : 0.74)),
-    sampicSettings());
-
-  const box = page.doc.getElementById("baseline-outliers");
-  const layers = box.byTag("table")[0].byTag("tr").slice(1)
-    .map((r) => r.byTag("td")[1].textContent);
-  assert.deepStrictEqual(layers, ["4", "4", "4", "4", "4"],
-    "a sagging layer did not come out as rows sharing a layer number");
-});
 
 
 // --- how much prose a tile carries ------------------------------------------

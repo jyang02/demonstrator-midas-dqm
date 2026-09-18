@@ -283,17 +283,20 @@ the same grid read the same way, a strip is the same cell on every one of them,
 and there is one implementation to be right rather than two. Trending a baseline
 across a run was always a different tile wanting MIDAS history, and still is.
 
-What the two map tiles do not share is the first ranking under them, because
-"out of family" is not the same fact twice. Loud is high and only high, so noise
-ranks by the highest RMS. A baseline is out of family when it sits away from
-where the others sit, in either direction -- the highest baseline means nothing,
-a set of channels all at 0.74 V being a healthy detector -- so baseline ranks by
-distance from the median of every channel, with the signed gap in its own
-column. The median rather than the mean, because one channel stuck at 0 V would
-drag a mean far enough to indict everybody else; and of every channel rather
-than of its own layer, because against a per-layer median a whole layer sagging
-together would cancel out and show nothing, where against the global one it is
-several rows sharing a layer number.
+One table sits under both: **Moved most**, the channels whose short average is
+furthest from their own long one. That question is the same whatever is being
+averaged, so it is part of the shared renderer.
+
+A tile may put a ranking of its own in front of it, and only noise does --
+**Loudest**, the highest RMS, which is what out of family means when loud is
+high and only high. Baseline had one too, ranking each channel by how far its
+average sat from the median of every channel with the signed gap in a column,
+because the highest baseline means nothing: a set of channels all at 0.74 V is a
+healthy detector. It is gone, and what answers that now is the maps. A baseline
+away from where the others sit is a cell that is not the colour of its
+neighbours, on a scale spanning every channel, which is legible without a table.
+What a table adds over a map is the channel number, and Moved most still carries
+it for the channels that have changed.
 
 The map all three tiles lay their cells out by comes from
 `pages/js/dqm-atar-geom.js`, read once from `/Equipment/SAMPIC/Settings` and

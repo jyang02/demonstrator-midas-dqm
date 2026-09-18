@@ -689,8 +689,8 @@ const MAP_RANK = 5;
 /**
  * The middle of a sorted copy at the given fraction. Null on an empty list.
  *
- * A copy, for the reason median() takes one: the array handed in is the page's
- * own data and sorting it in place would reorder the thing being drawn.
+ * A copy, not in place: the array handed in is the page's own data, and sorting
+ * it would reorder the thing being drawn.
  *
  * And a loop-free index rather than Math.min/max.apply, for the reason the old
  * scatter wrote down: apply() on a long enough array throws rather than
@@ -1138,15 +1138,15 @@ function channelMaps(spec) {
         rankBox.appendChild(t);
       }
 
-      // What "out of family" means is the one thing these two tiles cannot
-      // share. A loud channel is the top of the noise distribution, so the
-      // highest RMS is the answer; a baseline is out of family when it sits
-      // away from where the others sit, in either direction, and the highest
-      // voltage means nothing at all. So the first table is the tile's own. The
-      // second is common, because "has this moved between the two windows" is
-      // the same question whatever is being averaged.
-      const primary = spec.rank(rows, win);
-      table(primary.head, primary.sorted, primary.extra, primary.why);
+      // "Has this moved between the two windows" is the same question whatever
+      // is being averaged, so that table is common and always drawn. A tile may
+      // put one of its own in front of it -- what "out of family" means being
+      // exactly what the two tiles cannot agree on -- and a tile with no second
+      // question to ask omits it.
+      if (spec.rank) {
+        const primary = spec.rank(rows, win);
+        table(primary.head, primary.sorted, primary.extra, primary.why);
+      }
 
       const moved = rows.filter((r) => r.diff !== null)
         .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
@@ -1449,15 +1449,6 @@ function channelMaps(spec) {
 }
 
 
-//: The middle value, on a copy: the caller's array is the plot's own data.
-function median(values) {
-  if (!values.length) return null;
-  const v = values.slice().sort((a, b) => a - b);
-  const mid = v.length >> 1;
-  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
-}
-
-
 //: Panel ids in PANELS that are drawn by something other than histPanel. They
 //: stay in PANELS because that map is what /DQM/ATAR/Histograms is checked
 //: against -- occupancy is still a histogram fetched over dqm::histogram, it is
@@ -1472,10 +1463,12 @@ Object.keys(PANELS).forEach(function (id) {
 
 //: The two recent-value tiles on the Channels tab. Same renderer, same grid,
 //: same two-window shape -- what differs is the series, the ids, which pair of
-//: ODB keys sets the windows, and what "out of family" means for the quantity.
+//: ODB keys sets the windows, and whether the tile has a ranking of its own to
+//: put in front of the shared one.
 //:
-//: `rank` is called only with a non-empty `rows`; fillRanks returns before it
-//: on an empty one, which is what lets the baseline's median be used unguarded.
+//: `rank` is optional, and is called only with a non-empty `rows`: fillRanks
+//: returns before it on an empty one, so a rank function needs no guard of its
+//: own against an empty set.
 const NOISE_MAPS = {
   name: NOISE, slug: "noise", unit: "RMS (V)",
   longKey: "Noise Window Seconds", shortKey: "Noise Recent Seconds",
@@ -1494,37 +1487,21 @@ const NOISE_MAPS = {
 const BASELINE_MAPS = {
   name: BASELINE, slug: "baseline", unit: "V",
   longKey: "Baseline Window Seconds", shortKey: "Baseline Recent Seconds",
-  //: Out of family in either direction, against the median of every channel.
+  //: No ranking of its own: "Moved most" is the only table under these maps.
   //:
-  //: The highest baseline means nothing -- a set of channels all sitting at
-  //: 0.74 V is a healthy detector, and the one worth naming is the one sitting
-  //: 40 mV away from the rest whichever side it is on.
+  //: There was a second one, ranking each channel by how far its average sat
+  //: from the median of every channel, with the signed gap in a column. It
+  //: answered "which baseline is out of family", which the highest-first sort
+  //: the noise tile uses cannot do -- a set of channels all on 0.74 V is a
+  //: healthy detector, and the one worth naming sits away from the rest on
+  //: either side.
   //:
-  //: The median, not the mean, and of every channel rather than of its own
-  //: layer. One channel stuck at 0 V would drag a mean far enough to make every
-  //: healthy channel look like an outlier, which is the failure that matters
-  //: most here; and against a per-layer median a whole layer sagging together
-  //: would cancel out and show nothing, where against the global one it appears
-  //: as several rows sharing a layer number.
-  rank: function (rows, win) {
-    const mid = median(rows.map((r) => r.avg));
-    return {
-      head: "Furthest from median",
-      why: `The median of every channel is ${mid.toFixed(4)} V over the last `
-        + `${Math.round(win.longS)} s; these sit furthest from it, either side. `
-        + `The highest baseline would mean nothing -- a set of channels all on `
-        + `one voltage is a healthy detector.`,
-      sorted: rows.slice()
-        .sort((a, b) => Math.abs(b.avg - mid) - Math.abs(a.avg - mid)),
-      extra: {
-        head: "Δ from median",
-        cell: function (r) {
-          const mv = (r.avg - mid) * 1000;
-          return `${mv >= 0 ? "+" : ""}${mv.toFixed(1)} mV`;
-        },
-      },
-    };
-  },
+  //: What replaces it is the maps themselves. A baseline away from where the
+  //: others sit is a cell that is not the colour of its neighbours, on a scale
+  //: spanning every channel, and that is legible without a table. What a table
+  //: adds over a map is the channel number, and "Moved most" still carries that
+  //: for the channels that have changed.
+  rank: null,
 };
 
 DQMPage.register("noise_by_channel", channelMaps(NOISE_MAPS));
