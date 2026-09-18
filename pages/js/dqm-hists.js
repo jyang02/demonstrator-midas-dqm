@@ -726,7 +726,13 @@ function occupancyMap(name) {
         r.gap = hi - lo;
         r.z = r.gap / Math.sqrt(r.v);
       });
-      const sorted = pairs.slice().sort((a, b) => b.z - a.z);
+      // Only the pairs a perfect alternation could not have produced. See
+      // UNEVEN_MIN_GAP: 0 and 1 are what the mode does when it is working, so
+      // a run with nothing above that has no table rather than a table of
+      // zeroes.
+      const sorted = pairs.filter((r) => r.gap > UNEVEN_MIN_GAP)
+        .sort((a, b) => b.z - a.z);
+      if (!sorted.length) return;
 
       rankBox.appendChild(el("div", { class: "dqm-subhead" }, "Most uneven pairs"));
       const t = el("table", { class: "dqm-table" });
@@ -744,10 +750,18 @@ function occupancyMap(name) {
       });
       rankBox.appendChild(t);
 
+      const even = pairs.length - sorted.length;
       const foot = el("div", { class: "dqm-footnote" },
-        `${Math.min(MAP_RANK, sorted.length)} of ${pairs.length} pairs, worst `
-        + `${sorted[0].z.toFixed(1)}\u03c3 \u2014 a ranking, not a verdict`);
-      foot.title = `Ping-pong puts a strip's deposit on whichever of its two `
+        `${Math.min(MAP_RANK, sorted.length)} of ${sorted.length} pairs `
+        + `splitting by more than ${UNEVEN_MIN_GAP}, worst `
+        + `${sorted[0].z.toFixed(1)}\u03c3`
+        + (even ? `; ${even} within ${UNEVEN_MIN_GAP} and not listed` : "")
+        + ` \u2014 a ranking, not a verdict`);
+      foot.title = `Pairs splitting by ${UNEVEN_MIN_GAP} or less are left out: `
+        + `perfect alternation puts |a-b| at 0, or at 1 when the pair has taken `
+        + `an odd number of hits, so that is the healthy state and not a `
+        + `finding. With none above it this table does not appear.\n\n`
+        + `Ping-pong puts a strip's deposit on whichever of its two `
         + `channels was not used last, so the split is even by construction and `
         + `a pair that is not even is a fault in that alternation -- which the `
         + `map above cannot show, because the strip's total is right while its `
@@ -789,6 +803,17 @@ function occupancyMap(name) {
 //: ask the same thing of it -- a cell carries no label, so a map stops one step
 //: short of naming what a shifter has to act on.
 const MAP_RANK = 5;
+
+//: The smallest split a pair has to show before it is worth a row.
+//:
+//: Perfect alternation can only ever put |a - b| at 0 or 1 -- 1 exactly when
+//: the pair has taken an odd number of hits, so one channel keeps the spare.
+//: A difference of 1 is therefore the largest the mode can produce by
+//: construction, and everything at or under it is the healthy state rather
+//: than a finding. With no pair above it the table does not appear at all: a
+//: ranking of differences that are all zero is five rows saying nothing, and
+//: the tile is already telling that story by being absent.
+const UNEVEN_MIN_GAP = 1;
 
 /**
  * The middle of a sorted copy at the given fraction. Null on an empty list.

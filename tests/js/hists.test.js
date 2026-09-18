@@ -1320,3 +1320,41 @@ test("ping-pong: the per-channel tables place both halves of a pair", async () =
       `${td[0].textContent} is a mapped ATAR channel with no strip`);
   });
 });
+
+test("ping-pong: pairs splitting by 1 or less are not a finding", async () => {
+  // Perfect alternation puts |a-b| at 0, or at 1 when the pair has taken an
+  // odd number of hits and one channel keeps the spare. Neither is something
+  // a shifter needs a table for, and a ranking of differences that are all
+  // zero is five rows saying nothing.
+  for (const [even, odd, what] of [[50, 50, "an exactly even split"],
+                                   [51, 50, "a split of one"]]) {
+    const page = await boot(series(PP_NCH, DEPTH), pingPongSettings(),
+      occupancy(PP_NCH, (ch) => (ch % 2 === 0 ? even : odd)));
+    const box = page.doc.getElementById("occupancy-outliers");
+    assert.doesNotMatch(textOf(box), /Most uneven pairs/,
+      `${what} was reported as uneven`);
+    // The quietest/busiest tables are untouched -- this hides one block, not
+    // the tile's whole ranking.
+    assert.match(textOf(box), /Busiest strips/);
+  }
+});
+
+test("ping-pong: one pair over the threshold brings the table back alone", async () => {
+  const page = await boot(series(PP_NCH, DEPTH), pingPongSettings(),
+    occupancy(PP_NCH, function (ch) {
+      if (ch === 0) return 60;            // strip 0 splits 60/40, gap 20
+      if (ch === 1) return 40;
+      if (ch === 2) return 51;            // strip 1 splits 51/50, gap 1
+      if (ch === 3) return 50;
+      return ch % 2 === 0 ? 50 : 50;      // everything else dead even
+    }));
+
+  const box = page.doc.getElementById("occupancy-outliers");
+  assert.match(textOf(box), /Most uneven pairs/);
+  const rows = box.byTag("table").pop().byTag("tr").slice(1);
+  assert.strictEqual(rows.length, 1, "a pair within the threshold was listed");
+  assert.strictEqual(rows[0].byTag("td")[0].textContent, "ch 0+1");
+  // The footnote accounts for the ones it left out rather than quietly
+  // shrinking the population it ranks against.
+  assert.match(textOf(box), /255 within 1 and not listed/);
+});
