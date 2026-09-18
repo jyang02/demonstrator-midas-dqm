@@ -48,6 +48,8 @@ const DEFAULTS = {
     "Collector Bank": "AC00",
     "Sample Period ns": 0.625,
     "Buffer": "SYSTEM",
+    "Noise Window Seconds": 120.0,
+    "Noise Recent Seconds": 10.0,
     "Histograms": [
       "sampic/occupancy",
       "sampic/hits_per_event",

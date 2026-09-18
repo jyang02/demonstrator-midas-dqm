@@ -320,19 +320,39 @@ channel-against-value can only show it as a column that has grown taller --
 which is also what a channel that got noisier looks like.
 
 **Noise goes against the target**: three grids of one cell per channel, placed
-by strip and layer, showing the window average, the freshest value on each
-channel, and the difference. The old scatter's x axis was the *global channel*,
-so two columns side by side were two channels sharing a cable rather than two
-strips sharing a neighbourhood -- and "which strips are loud" is a question
-about where they are. The three maps stack so a column is one strip read three
-ways, and they are `div`s rather than an mplot colormap because a cell has three
-states no colour scale can carry: no value in the window, a freshest value that
-is stale, and a channel seen once whose difference is zero by construction
-rather than by measurement. A colormap paints all three as the bottom of the
-ramp, which is the one reading they must not get. Under the maps is a ranking
-that names the loudest channels and the ones that moved most, because a cell
-carries no label and the global channel number is what the ODB, the frontend
-and the cable map all speak.
+by strip and layer, showing the same RMS averaged over a long window, over a
+short one, and the difference. The old scatter's x axis was the *global
+channel*, so two columns side by side were two channels sharing a cable rather
+than two strips sharing a neighbourhood -- and "which strips are loud" is a
+question about where they are. The three maps stack so a column is one strip
+read three ways, and they are `div`s rather than an mplot colormap because a
+cell has states no colour scale can carry: no value in the long window, no value
+in the short one, and no older values to compare the short one against, so the
+difference would be zero by construction rather than by measurement. A colormap
+paints them all as the bottom of the ramp, which is the one reading they must
+not get. Under the maps is a ranking that names the loudest channels and the
+ones that moved most, because a cell carries no label and the global channel
+number is what the ODB, the frontend and the cable map all speak.
+
+**Both windows are settings**, `/DQM/ATAR/Noise Window Seconds` and `Noise
+Recent Seconds`, defaulting to 120 s and 10 s, with an Edit button on each chip.
+They are knobs rather than constants because the right numbers follow the beam
+rate and what a shift is chasing, and because they cost nothing: both cuts are
+made by the page, by age, over the one `dqm::series` reply the analyzer already
+sent, so changing either resets no history and asks the analyzer for nothing.
+The page clamps the long window to what the analyzer actually keeps, and the
+short one to under the long, and says so in the tile when it has to -- a window
+silently narrowed would be a map labelled with a number it is not drawing.
+
+The short map was a single freshest value per channel until it was a window. A
+demonstrator event is ~35 hits of 256 channels, so one value is one hit: the map
+moved between refreshes by the noise on a single sample, which is more than most
+of what it was there to show, and it needed a per-cell dimming to admit how old
+each value was. A window fixes both at once -- the age is bounded by the window,
+and averaging inside it takes the single-hit scatter out -- so the dimming is
+gone and a channel with nothing inside the short window is simply absent there.
+A chip counts those, which is the number to watch when deciding whether the
+short window is wide enough.
 
 The remaining two -- amplitude by channel and persistence, both on Trends --
 are **colormaps and start off**, listed in `TWO_D` in that file, each with a

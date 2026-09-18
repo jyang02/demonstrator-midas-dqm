@@ -102,9 +102,15 @@ function occupancy(nch, countAt) {
            entries: entries, data: data };
 }
 
-/** Boot the ATAR page on its Channels tab with one canned series reply. */
-async function boot(reply, odbExtra, histReply) {
-  const cfg = Object.assign({}, globalThis.DQM.DEFAULTS.ATAR);
+/**
+ * Boot the ATAR page on its Channels tab with one canned series reply.
+ *
+ * `cfgExtra` overrides keys of the ATAR subtree, which is how the noise tile's
+ * two window settings are exercised: they are read from the config at build,
+ * the same as every other page-side setting.
+ */
+async function boot(reply, odbExtra, histReply, cfgExtra) {
+  const cfg = Object.assign({}, globalThis.DQM.DEFAULTS.ATAR, cfgExtra || {});
   const page = runPage(path.join(JS, "dqm-page.js"), {
     db_get_values: (p) => ({
       data: p.paths.map((x) => (x.endsWith("/ATAR") ? cfg
@@ -728,7 +734,10 @@ test("occupancy and hits per event come first, and are sized to share a row", as
 // page clears a box with `textContent = ""` before refilling it, and the stub's
 // getter returns that empty string in preference to its children.
 
-const NOISE_FRESH = 60;
+//: The noise tile's two window defaults, written out rather than imported: a
+//: test that reads the number it is asserting asserts nothing.
+const NOISE_LONG = 120.0;
+const NOISE_SHORT = 10.0;
 
 function textOf(node) {
   return [...node.walk()].map((e) => e._text || "").join(" ");
@@ -743,6 +752,18 @@ function cellsOf(page, id) {
 
 function cellFor(page, id, ch) {
   return cellsOf(page, id).find((c) => c.dataset.ch === String(ch));
+}
+
+/** The same reply with every value on `ch` older than `maxAge` taken away. */
+function onlyRecent(s, ch, maxAge) {
+  const out = Object.assign({}, s, { channel: [], value: [], age: [] });
+  for (let i = 0; i < s.channel.length; i++) {
+    if (s.channel[i] === ch && s.age[i] > maxAge) continue;
+    out.channel.push(s.channel[i]);
+    out.value.push(s.value[i]);
+    out.age.push(s.age[i]);
+  }
+  return out;
 }
 
 /** The same reply with every value on `ch` but the first taken away. */
@@ -788,13 +809,16 @@ test("a channel with nothing in the window is not a cell sitting at zero", async
     "a channel that was hit is drawn as absent");
 });
 
-test("the average and the freshest are drawn against one scale", async () => {
+test("the long and the short average are drawn against one scale", async () => {
   // Structural and behavioural, because either alone passes on a coincidence.
   // The point of stacking the maps is that one colour means one RMS in both;
   // two scales fitted independently would make the comparison silently false.
+  //
+  // Ages in the fixture run 18 s down to 0 in steps of 2, so the default 10 s
+  // recent window is the last six values and the 120 s one is all ten.
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
-    if (ch === 0) return k % 2 ? 0.6 : 0.4;       // average 0.5
-    if (ch === 1) return k === DEPTH - 1 ? 0.5 : 0.1;  // freshest 0.5
+    if (ch === 0) return k % 2 ? 0.6 : 0.4;      // long average 0.5
+    if (ch === 1) return k >= 4 ? 0.5 : 0.1;     // recent average 0.5
     return 0.3;
   }), sampicSettings());
 
@@ -811,35 +835,180 @@ test("the average and the freshest are drawn against one scale", async () => {
     "the difference map was given the sequential scale");
   assert.ok(diff.dqmDiffScale, "the difference map carries no scale of its own");
 
-  // The behavioural half: an average of 0.5 and a freshest of 0.5 are the same
-  // colour, which is what "one scale" means to somebody reading the tile.
+  // The behavioural half: a long average of 0.5 and a short one of 0.5 are the
+  // same colour, which is what "one scale" means to somebody reading the tile.
   assert.strictEqual(cellFor(page, "noise-map-avg", 0).style.background,
                      cellFor(page, "noise-map-now", 1).style.background,
     "equal values got different colours on the two maps");
 });
 
-test("a channel seen once has no difference, and says so rather than showing zero", async () => {
-  // With one value the mean IS that value, so the difference is zero by
-  // construction and says nothing about whether the channel moved. Painting it
-  // as zero would be the opposite reading of the truth.
-  const s = seenOnce(series(N_LAYERS * PER_LAYER, DEPTH), 137);
+test("a channel with every value inside the short window has nothing to subtract", async () => {
+  // The two averages are then the same arithmetic, so their difference is zero
+  // by construction and says nothing about whether the channel moved. Painting
+  // it as zero would be the opposite reading of the truth.
+  //
+  // This is what "seen once" generalises to once both windows are settings: one
+  // value was only ever a special case of "the long window holds nothing the
+  // short one does not".
+  const s = onlyRecent(series(N_LAYERS * PER_LAYER, DEPTH), 137, 10);
   const page = await boot(s, sampicSettings());
 
   const d = cellFor(page, "noise-map-diff", 137);
   assert.ok(d.classList.contains("dqm-heat-single"),
-    "a channel seen once was drawn as a measured difference");
+    "a channel with no older values was drawn as a measured difference");
   assert.notStrictEqual(d.style.background, ATARGeom.diffColour(0),
-    "a channel seen once was painted as 'did not move'");
-  assert.match(d.title, /seen once/);
+    "it was painted as 'did not move'");
+  assert.match(d.title, /zero by construction/);
 
-  // Its average and its freshest are perfectly ordinary readings, though: one
-  // value is enough for both, and blanking all three would hide a real number.
+  // Both averages are perfectly ordinary readings, though, and blanking them
+  // would hide real numbers.
   ["noise-map-avg", "noise-map-now"].forEach(function (id) {
     const c = cellFor(page, id, 137);
     assert.ok(!c.classList.contains("dqm-heat-single"), `${id} blanked a real value`);
     assert.ok(!c.classList.contains("dqm-heat-nodata"), `${id} blanked a real value`);
     assert.ok(c.style.background, `${id} left a measured cell unpainted`);
   });
+});
+
+test("a channel with nothing in the short window has no recent average at all", async () => {
+  // The other empty state, and a different fact: this channel has a standing
+  // average and no present. It replaces the staleness dimming the tile used to
+  // carry -- a window says "nothing here" outright rather than asking anyone to
+  // read an opacity.
+  const s = seenOnce(series(N_LAYERS * PER_LAYER, DEPTH), 137);  // one value, age 18
+  const page = await boot(s, sampicSettings());
+
+  const now = cellFor(page, "noise-map-now", 137);
+  assert.ok(now.classList.contains("dqm-heat-nodata"),
+    "a channel with nothing recent was painted as a measurement");
+  assert.strictEqual(now.style.background, "");
+  assert.match(now.title, /nothing in the last 10 s/);
+  // Never "dead": a quiet channel does this too, and the tile cannot tell them
+  // apart.
+  assert.doesNotMatch(now.title, /dead/i);
+
+  // The difference has nothing to compare, and says which of the two reasons.
+  const d = cellFor(page, "noise-map-diff", 137);
+  assert.ok(d.classList.contains("dqm-heat-single"));
+  assert.match(d.title, /no recent value to compare/);
+
+  // Its long average is a real reading and stays drawn.
+  const avg = cellFor(page, "noise-map-avg", 137);
+  assert.ok(!avg.classList.contains("dqm-heat-nodata"), "the long average was blanked");
+  assert.ok(avg.style.background);
+
+  // And the chip counts it, because it is the number to watch when deciding
+  // whether the recent window is wide enough.
+  assert.match(textOf(page.doc.getElementById("noise_by_channel")),
+    /1 with nothing in 10 s/);
+});
+
+test("both windows come from the config, and every heading says the one it drew", async () => {
+  // The point of the pair being settings: a shift chasing something fast wants
+  // a short recent window, one watching a slow drift wants a long average, and
+  // neither is a number this file can choose. Both cuts are made by the page
+  // over the reply the analyzer already sent, so changing either costs nothing.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings(),
+    undefined, { "Noise Window Seconds": 16.0, "Noise Recent Seconds": 4.0 });
+
+  const tile = page.doc.getElementById("noise_by_channel");
+  const text = textOf(tile);
+  // The map headings, which are what a reader actually reads.
+  assert.match(text, /Average over the last 16 s/);
+  assert.match(text, /Average over the last 4 s/);
+  // And the chips, which are where the Edit buttons are.
+  assert.match(text, /average over\s+16 s/);
+  assert.match(text, /recent over\s+4 s/);
+
+  // The cuts really moved, not just the labels. Ages are 18,16,...,0: a 16 s
+  // window holds nine of the ten values and a 4 s window holds three.
+  assert.match(cellFor(page, "noise-map-avg", 137).title, /from 9 values over 16 s/);
+  assert.match(cellFor(page, "noise-map-now", 137).title, /recent .* from 3 values/);
+
+  // The ranking table agrees with the maps, because a column head that named a
+  // different window from the map above it would be worse than no head.
+  const rank = page.doc.getElementById("noise-outliers");
+  assert.match(textOf(rank), /avg 16 s/);
+  assert.match(textOf(rank), /recent 4 s/);
+});
+
+test("each window offers the ODB path that sets it", async () => {
+  // Offered rather than described, which is what every other configurable value
+  // on these pages does: the button opens the key itself.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  // The stub records dlgOdbEdit's argument as `params`, a bare path string.
+  const paths = page.calls.filter((c) => c.method === "dlgOdbEdit");
+  assert.strictEqual(paths.length, 0, "the tile edited the ODB without being asked");
+
+  const tile = page.doc.getElementById("noise_by_channel");
+  const buttons = tile.byClass("mbutton");
+  assert.ok(buttons.length >= 2, "the two windows do not both offer an Edit");
+  buttons.slice(0, 2).forEach((b) => b.dispatch("click"));
+  const asked = page.calls.filter((c) => c.method === "dlgOdbEdit")
+    .map((c) => c.params);
+  assert.deepStrictEqual(asked,
+    ["/DQM/ATAR/Noise Window Seconds", "/DQM/ATAR/Noise Recent Seconds"]);
+});
+
+test("an average window past the analyzer's horizon is clamped, and said", async () => {
+  // The one thing a pair of knobs can do that a pair of constants could not: be
+  // set to something the data cannot honour. The analyzer keeps 120 s per
+  // channel, so a 300 s average is 120 s of data under a heading claiming 300.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings(),
+    undefined, { "Noise Window Seconds": 300.0 });
+
+  const tile = page.doc.getElementById("noise_by_channel");
+  const text = textOf(tile);
+  assert.match(text, /set to 300 s/);
+  assert.match(text, /analyzer keeps 120 s/);
+  assert.match(text, /recent seconds per channel/,
+    "the caveat does not say which key would make the longer window available");
+  // Drawn at what it actually has, not at what it was asked for.
+  assert.match(text, /Average over the last 120 s/);
+  assert.doesNotMatch(text, /Average over the last 300 s/);
+  // A caveat on the view, not a fault: both maps are drawing.
+  assert.ok(tile.byClass("yellow").length > 0, "the clamp was reported silently");
+  assert.strictEqual(tile.byClass("red").length, 0,
+    "a setting that had to be clamped was reported as a failure");
+});
+
+test("a recent window that reaches the average window is clamped, and said", async () => {
+  // At or past the long window the two maps are the same average, so every
+  // difference cell goes blank -- which a reader would be entitled to read as
+  // the detector rather than as the setting.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings(),
+    undefined, { "Noise Window Seconds": 20.0, "Noise Recent Seconds": 40.0 });
+
+  const tile = page.doc.getElementById("noise_by_channel");
+  const text = textOf(tile);
+  assert.match(text, /recent window is set to 40 s/);
+  assert.match(text, /drawn at 20 s/);
+  assert.match(text, /difference between them is empty/);
+
+  // And it really is empty, every cell, for the stated reason.
+  const diff = cellsOf(page, "noise-map-diff");
+  assert.ok(diff.length > 0);
+  diff.forEach(function (c) {
+    assert.ok(c.classList.contains("dqm-heat-single")
+              || c.classList.contains("dqm-heat-nodata"),
+      "a difference was drawn where both windows are the same average");
+  });
+});
+
+test("a blank or zero window falls back rather than drawing nothing", async () => {
+  // An ODB edit that went wrong must not produce an empty tile, which is the
+  // failure this whole page set exists to avoid. The chips print what was
+  // actually used, so a value that did not take is visible where a reader is
+  // already looking.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings(),
+    undefined, { "Noise Window Seconds": 0, "Noise Recent Seconds": -5 });
+
+  const text = textOf(page.doc.getElementById("noise_by_channel"));
+  assert.match(text, /Average over the last 120 s/);
+  assert.match(text, /Average over the last 10 s/);
+  assert.ok(cellFor(page, "noise-map-avg", 137).style.background,
+    "a bad setting left the map unpainted");
 });
 
 test("with no geometry the maps say which key they wanted, rather than inventing layers", async () => {
@@ -988,13 +1157,17 @@ test("the shared scale is fenced on the wider of the two maps, not on the pool",
     `the freshest map came out in ${colours.size} colours`);
 });
 
-test("a reply out of order still finds the freshest value on a channel", async () => {
+test("a reply out of order still cuts both windows on age", async () => {
   // The analyzer emits oldest-first and says so, but this page decided once
-  // already not to rely on another process's emission order. The freshest is
-  // the point of least age, not the last one in the array.
+  // already not to rely on another process's emission order. Both windows are
+  // cut on each point's own age, so scrambling the arrays must change nothing.
+  //
+  // Ages run 18 down to 0 in steps of 2, so the six points at or under 10 s are
+  // exactly the ones worth 0.99 -- a recent average of 0.99 on the nose, which
+  // a cut made by array position could not produce from a reversed reply.
   const s = series(N_LAYERS * PER_LAYER, DEPTH, function (ch, k) {
     if (ch !== 137) return 0.3;
-    return k === DEPTH - 1 ? 0.99 : 0.10;    // 0.99 is the newest, age 0
+    return k >= 4 ? 0.99 : 0.10;
   });
   const order = s.channel.map((_, i) => i).reverse();
   const scrambled = Object.assign({}, s, {
@@ -1004,8 +1177,12 @@ test("a reply out of order still finds the freshest value on a channel", async (
   });
   const page = await boot(scrambled, sampicSettings());
 
-  assert.match(cellFor(page, "noise-map-now", 137).title, /now 0\.9900 V/,
-    "the freshest value was taken from the end of the array, not from the age");
+  assert.match(cellFor(page, "noise-map-now", 137).title,
+    /recent 0\.9900 V from 6 values/,
+    "the recent window was cut by position in the array rather than by age");
+  // And the long window still holds all ten: (4 x 0.10 + 6 x 0.99) / 10.
+  assert.match(cellFor(page, "noise-map-avg", 137).title,
+    /avg 0\.6340 V from 10 values over 120 s/);
 });
 
 test("every cell carries its channel as data, and the three maps agree on where it is", async () => {
@@ -1042,16 +1219,26 @@ test("the ranking names channels, and ranks rather than judges", async () => {
   });
 });
 
-test("the constants these tests assume are the ones the page uses", async () => {
+test("the constants and defaults these tests assume are the ones the page uses", async () => {
   // Written out above rather than imported, for the reason the window test
   // gives: a test that reads the number it is asserting asserts nothing.
   await boot(series(1, DEPTH), sampicSettings());
   const H = require(path.join(JS, "dqm-hists.js"));
-  assert.strictEqual(H.NOISE_FRESH_S, NOISE_FRESH,
-    "dqm-hists.js moved the staleness cut and these tests still assume the old one");
-  assert.ok(H.NOISE_FRESH_S < 120,
-    "the staleness cut is at or past the analyzer's horizon, so no cell can reach it");
   assert.strictEqual(H.NOISE_FENCE, 1.5, "the outlier fence moved");
+
+  // The two noise windows are settings now, so what these tests pin is the
+  // default, which is what the tile draws on a bare experiment.
+  const cfg = globalThis.DQM.DEFAULTS.ATAR;
+  assert.strictEqual(cfg["Noise Window Seconds"], NOISE_LONG,
+    "the default long window moved and these tests still assume the old one");
+  assert.strictEqual(cfg["Noise Recent Seconds"], NOISE_SHORT,
+    "the default recent window moved and these tests still assume the old one");
+  assert.ok(NOISE_SHORT < NOISE_LONG,
+    "the default recent window is not inside the default average window");
+  // The fixture's ages run 0..18 s, so both defaults have to land inside it or
+  // the tests above are exercising an empty window.
+  assert.ok(NOISE_SHORT < (DEPTH - 1) * 2,
+    "the default recent window holds the whole fixture, so it cuts nothing");
 });
 
 test("a healthy spread is not clipped, so the mark keeps meaning something", async () => {

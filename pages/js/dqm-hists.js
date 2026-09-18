@@ -70,17 +70,6 @@ const PANELS = {
 //: and the global channel number is a fact about cabling.
 const NOISE = "sampic/noise_by_channel";
 
-//: Beyond this many seconds a channel's freshest value is dimmed rather than
-//: presented as now.
-//:
-//: Strictly less than the analyzer's horizon ("recent seconds per channel",
-//: 120 s) or the state is unreachable and the dimming is dead code. 60 is also
-//: the ruler BASELINE_WINDOW_S already set on this tab, and at the
-//: demonstrator's rate a channel is hit every few seconds -- so a minute
-//: without one is a quiet channel by any reading, which is the thing worth
-//: marking without claiming it is a fault.
-const NOISE_FRESH_S = 60;
-
 //: How many interquartile ranges above the upper quartile a scale reaches
 //: before it stops and starts marking cells instead.
 //:
@@ -727,6 +716,20 @@ function fenceTop(values) {
   return q3 + NOISE_FENCE * (q3 - q1);
 }
 
+/**
+ * A configured number, or the built-in default when the ODB says nothing usable.
+ *
+ * A window of zero, a negative one or a key somebody blanked would each divide
+ * the maps into nothing, and a page that draws an empty tile because an ODB
+ * edit went wrong is the failure this page set exists to avoid. Falling back is
+ * silent on purpose: the chips print what was actually used, so a value that
+ * did not take is visible where a reader is already looking.
+ */
+function positiveOr(value, fallback) {
+  const n = Number(value);
+  return (isFinite(n) && n > 0) ? n : fallback;
+}
+
 /** The smallest and largest of a list, without apply(). Null on empty. */
 function span(values) {
   if (!values.length) return null;
@@ -739,22 +742,47 @@ function span(values) {
 }
 
 /**
- * One channel's window, reduced: how many values, their mean, and the freshest.
+ * One channel's window, reduced over two nested windows: the long average, the
+ * recent average, and the move between them.
  *
- * The freshest is the point of *least age*, not the last element of the array.
- * The analyzer does emit oldest-first and says so, but this file already
- * decided once not to rely on another process's emission order -- see
- * polylines() -- and the suite scrambles a reply on purpose to keep that
- * honest. Taking the minimum costs nothing inside a pass that is happening
- * anyway.
+ * Both cuts are made here, by age, over the one reply the analyzer already
+ * sent. That is the whole reason they can be knobs: neither costs an analyzer
+ * round trip, neither resets anything, and changing one cannot lose history the
+ * other still needs. The short window is a subset of the long one by
+ * construction -- the caller clamps it -- which is what makes the difference
+ * map a difference rather than two unrelated numbers.
  *
- * `diff` is null on a channel seen once, and that is a real distinction rather
- * than a missing number: with one value the mean *is* that value, so the
- * difference is zero by construction and says nothing about whether the
- * channel moved. The map marks those instead of painting them as "did not
- * move", which is the opposite reading.
+ * The recent average replaced a single freshest value, and the reason is that a
+ * demonstrator event is ~35 hits of 256 channels: one value per channel is one
+ * hit, so the map jumped between refreshes by the width of the noise on a
+ * single sample and a reader could not tell that from a channel moving. An
+ * average over a few seconds is the same claim with the sampling noise taken
+ * out of it. `newest` and `age` survive for the tooltip, which is where "when
+ * was this channel last hit" is still worth having.
+ *
+ * `age` is the *least* age, not the last element of the array. The analyzer
+ * does emit oldest-first and says so, but this file already decided once not to
+ * rely on another process's emission order -- see polylines() -- and the suite
+ * scrambles a reply on purpose to keep that honest. Taking the minimum costs
+ * nothing inside a pass that is happening anyway, and both window cuts are on
+ * age rather than on position for the same reason.
+ *
+ * Two null states, and they are different facts:
+ *
+ * - `recent` is null when nothing arrived inside the short window. The channel
+ *   has a standing average and no present, which is a quiet channel -- and this
+ *   tile cannot tell a quiet channel from a dead one, so it says the first.
+ * - `diff` is null when there is nothing to subtract: either no recent value,
+ *   or every value in the long window is also in the short one, in which case
+ *   the two averages are the same arithmetic and the difference is zero by
+ *   construction rather than by measurement. The map marks both instead of
+ *   painting them as "did not move", which is the opposite reading.
+ *
+ * A channel with nothing inside the long window is dropped entirely: it is not
+ * a channel this tile has anything to say about, and the maps draw it as absent
+ * exactly as they draw one the analyzer never mentioned.
  */
-function reduceByChannel(s) {
+function reduceByChannel(s, longS, shortS) {
   const by = new Map();
   for (let i = 0; i < s.channel.length; i++) {
     const ch = s.channel[i];
@@ -762,27 +790,36 @@ function reduceByChannel(s) {
     const age = (s.age && i < s.age.length) ? s.age[i] : 0;
     let r = by.get(ch);
     if (!r) {
-      r = { ch: ch, n: 0, sum: 0, newest: v, age: age };
+      r = { ch: ch, n: 0, sum: 0, nRecent: 0, sumRecent: 0,
+            newest: null, age: Infinity };
       by.set(ch, r);
     }
-    r.n += 1;
-    r.sum += v;
-    if (age < r.age) { r.age = age; r.newest = v; }
+    if (age <= longS) {
+      r.n += 1;
+      r.sum += v;
+      if (age < r.age) { r.age = age; r.newest = v; }
+    }
+    if (age <= shortS) { r.nRecent += 1; r.sumRecent += v; }
   }
-  by.forEach(function (r) {
+  const out = new Map();
+  by.forEach(function (r, ch) {
+    if (!r.n) return;
     r.avg = r.sum / r.n;
-    // Over all n including the freshest, so that what the Average map shows is
-    // exactly what the Difference map subtracted. The cost is a 1/n damping --
-    // a channel seen twice shows half the move it made -- and that is stated in
-    // the key rather than corrected for, because the three maps subtracting
-    // cell by cell is the property that makes a stack of three readable at all.
-    r.diff = r.n > 1 ? r.newest - r.avg : null;
+    r.recent = r.nRecent ? r.sumRecent / r.nRecent : null;
+    // The long average includes the short window's values, so that what the
+    // Average map shows is exactly what the Difference map subtracted. The cost
+    // is a damping -- the move shows at (1 - nRecent/n) of its size -- and that
+    // is stated in the key rather than corrected for, because the three maps
+    // subtracting cell by cell is the property that makes a stack of three
+    // readable at all.
+    r.diff = (r.recent !== null && r.n > r.nRecent) ? r.recent - r.avg : null;
+    out.set(ch, r);
   });
-  return by;
+  return out;
 }
 
 /**
- * Noise RMS as the target: the window average, the freshest value, and the move.
+ * Noise RMS as the target: a long average, a short one, and the move between.
  *
  * The scatter this replaces put RMS against the *global channel* -- so two
  * columns side by side on the plot were two channels sharing a cable, not two
@@ -793,24 +830,33 @@ function reduceByChannel(s) {
  *
  * **Three maps, because one number cannot answer the question.** "Which strips
  * are noisy" and "has anything got noisier just now" are different questions
- * and a single picture answers whichever one the reader assumed. The average
- * over the window is the standing state, the freshest value on each channel is
- * where it is now, and the difference is what changed. Stacked rather than side
- * by side so a column is one strip read three ways, top to bottom.
+ * and a single picture answers whichever one the reader assumed. The long
+ * average is the standing state, the short one is where the channel is now, and
+ * the difference is what changed. Stacked rather than side by side so a column
+ * is one strip read three ways, top to bottom.
  *
- * **The freshest is not one event.** A demonstrator event is ~35 hits of 256
+ * **Both windows are settings**, `/DQM/<page>/Noise Window Seconds` and
+ * `Noise Recent Seconds`, with an Edit button on each chip. They are knobs and
+ * not constants because the right numbers follow the beam rate and what a shift
+ * is chasing, and because they cost nothing: both cuts are made by the page,
+ * by age, over the one series the analyzer already sent, so changing either
+ * resets no history and asks the analyzer for nothing.
+ *
+ * **Neither map is one event.** A demonstrator event is ~35 hits of 256
  * channels, so a literal per-event map would be a seventh full and the
- * difference meaningful only there. What is drawn instead is each channel's
- * most recent value whenever it arrived -- denser, and the thing that actually
- * answers "has this gone loud" -- at the price of being a mosaic of the last
- * few seconds rather than a moment. The price is paid in public: every cell
- * carries its age, and one older than NOISE_FRESH_S is dimmed.
+ * difference meaningful only there. The short map used to be each channel's
+ * single freshest value whenever it arrived, which was denser but carried the
+ * noise on one sample -- the map moved between refreshes by more than most of
+ * what it was meant to show, and it had to be dimmed cell by cell to admit how
+ * old it was. A window says the same thing without either problem: the age is
+ * bounded by the window, and averaging inside it is what takes the single-hit
+ * scatter out.
  *
  * **Divs and not an mplot colormap**, which is the one structural choice here.
- * A cell has three states no colour scale can carry -- no value in the window,
- * a freshest value that is stale, and a channel seen once whose difference is
- * zero by construction -- and a colormap paints all three as the bottom of the
- * ramp, which is exactly the reading they must not get. 768 divs is also
+ * A cell has states no colour scale can carry -- no value in the long window,
+ * no value in the short one, and no older values to compare the short one
+ * against -- and a colormap paints them all as the bottom of the ramp, which is
+ * exactly the reading they must not get. 768 divs is also
  * nothing next to the 26316 rectangles the colormaps here are toggled off to
  * avoid, and it sidesteps every mplot trap this file has paid for once already.
  */
@@ -825,20 +871,50 @@ function noiseMaps(name) {
       return;
     }
 
+    // What the two maps are asked to average over, before the clamps below.
+    // Read once at build, like every other page-side setting: loadConfig runs
+    // at boot, so an edit applies on the next page load. The Edit buttons go to
+    // the keys themselves rather than describing them, which is what every
+    // other configurable value on these pages does.
+    const LONG_PATH = `${DQM.CONFIG_ROOT}/${ctx.page}/Noise Window Seconds`;
+    const SHORT_PATH = `${DQM.CONFIG_ROOT}/${ctx.page}/Noise Recent Seconds`;
+    const wantLong = positiveOr(ctx.cfg["Noise Window Seconds"], 120);
+    const wantShort = positiveOr(ctx.cfg["Noise Recent Seconds"], 10);
+
     const covered = el("span", {}, "—");
-    const depth = el("span", {}, "—");
-    const staleChip = el("span", { class: "dqm-chip" }, "");
-    // Always written, and not only when it is unusual. The freshest map claims
-    // to be "now", and the honest size of that claim is the refresh interval
-    // plus the age of the point -- a reader comparing it against the average
-    // is entitled to both halves.
+    const longChipValue = el("span", {}, "—");
+    const shortChipValue = el("span", {}, "—");
+    const quietChip = el("span", { class: "dqm-chip" }, "");
+
+    const longChip = chip("average over", longChipValue);
+    longChip.appendChild(editButton(LONG_PATH, "Edit"));
+    longChip.title = `The long window: the standing state each channel is in. `
+      + `Capped by what the analyzer keeps, which is its own setting.`;
+    const shortChip = chip("recent over", shortChipValue);
+    shortChip.appendChild(editButton(SHORT_PATH, "Edit"));
+    shortChip.title = `The short window: where each channel is now. Must be `
+      + `under the long one, or there is nothing left for the difference map `
+      + `to subtract.`;
+
+    // Always written, and not only when it is unusual. The recent map claims to
+    // be "now", and the honest size of that claim is its own window plus the
+    // refresh interval -- a reader comparing it against the average is entitled
+    // to both halves.
     const cadence = el("span", { class: "dqm-chip" },
       `every ${Math.round(REFRESH_MS / 1000)} s`);
-    cadence.title = `How often the maps are refetched. The freshest value on a `
-      + `channel can therefore be up to this old before its own age is counted.`;
+    cadence.title = `How often the maps are refetched. The recent average on a `
+      + `channel can therefore be up to this much older than its own window.`;
     ctx.body.appendChild(el("div", { class: "dqm-strip" },
       chip("series", el("code", {}, name)),
-      chip("channels", covered), chip("window", depth), staleChip, cadence));
+      chip("channels", covered), longChip, shortChip, quietChip, cadence));
+
+    // Empty on the happy path. It carries the one thing a pair of knobs can do
+    // that a pair of constants could not: be set to something the data cannot
+    // honour. A window silently narrowed is a map labelled with a number it is
+    // not drawing.
+    const cfgNote = el("div", { class: "dqm-note" }, "");
+    cfgNote.hidden = true;
+    ctx.body.appendChild(cfgNote);
 
     const note = el("div", { class: "dqm-note" }, "Asking the analyzer…");
     const geoNote = el("div", { class: "dqm-note" }, "Reading the channel map…");
@@ -863,11 +939,14 @@ function noiseMaps(name) {
     ctx.body.appendChild(rankBox);
 
     //: The three maps, in the order they are read. `kind` is what paint()
-    //: switches on and what the tests name.
+    //: switches on and what the tests name. The headings are written each tick
+    //: rather than fixed here: they name the window each map averages over, and
+    //: that is a setting -- and one the page may have had to clamp, in which
+    //: case the heading has to say the number actually drawn.
     const KINDS = [
-      { kind: "avg", id: "noise-map-avg", head: "Average over the window" },
-      { kind: "now", id: "noise-map-now", head: "Freshest value on each channel" },
-      { kind: "diff", id: "noise-map-diff", head: "Freshest minus average" },
+      { kind: "avg", id: "noise-map-avg" },
+      { kind: "now", id: "noise-map-now" },
+      { kind: "diff", id: "noise-map-diff" },
     ];
 
     let map = null;
@@ -893,7 +972,8 @@ function noiseMaps(name) {
     /** One map: its heading, its grid, and the grid's place in the block. */
     function buildGrid(spec, nChannels, withAxis) {
       const box = el("div", {});
-      box.appendChild(el("div", { class: "dqm-subhead" }, spec.head));
+      const head = el("div", { class: "dqm-subhead" }, "");
+      box.appendChild(head);
       const built = ATARGeom.heatGrid(map, {
         id: spec.id, channels: nChannels, axis: withAxis,
         onHover: function (ch, cell) {
@@ -902,6 +982,7 @@ function noiseMaps(name) {
       });
       box.appendChild(built.grid);
       maps.appendChild(box);
+      built.head = head;
       return built;
     }
 
@@ -912,7 +993,7 @@ function noiseMaps(name) {
      * that "no value in the window", "seen once" and "off the top of the
      * scale" cannot be mistaken for measurements at the bottom of a ramp.
      */
-    function paint(cell, r, kind, seq, div, windowS) {
+    function paint(cell, r, kind, seq, div, win) {
       const ch = cell.dataset.ch;
       const where = ATARGeom.whereText(map, cell);
       if (!r) {
@@ -923,41 +1004,60 @@ function noiseMaps(name) {
         // window -- which a quiet beam produces exactly as readily as a fault,
         // and this tile cannot tell the two apart.
         cell.title = `ch ${ch} — ${where} — no value in the last `
-          + `${Math.round(windowS)} s.`;
+          + `${Math.round(win.longS)} s.`;
         return;
       }
 
+      const recent = r.recent === null
+        ? `nothing in the last ${Math.round(win.shortS)} s`
+        : `recent ${r.recent.toFixed(4)} V from ${r.nRecent} `
+          + `value${r.nRecent === 1 ? "" : "s"}`;
       const common = `ch ${ch} — ${where} — avg ${r.avg.toFixed(4)} V `
-        + `from ${r.n} value${r.n === 1 ? "" : "s"}, now ${r.newest.toFixed(4)} V `
-        + `(${Math.round(r.age)} s ago)`;
+        + `from ${r.n} value${r.n === 1 ? "" : "s"} over `
+        + `${Math.round(win.longS)} s, ${recent}`
+        + (r.newest === null ? "" : `, last hit ${Math.round(r.age)} s ago`);
 
       if (kind === "diff") {
         if (r.diff === null) {
           cell.className = "dqm-heat-cell dqm-heat-single";
           cell.style.background = "";
-          cell.title = `${common} — seen once in the window, so there is no `
-            + `average to compare it against.`;
+          // Two ways to have nothing to subtract, and they are different facts
+          // about the channel rather than one missing number. Saying which is
+          // the whole reason this state is a class and not a colour.
+          cell.title = `${common} — `
+            + (r.recent === null
+              ? `no recent value to compare against the average.`
+              : `every value in the ${Math.round(win.longS)} s window is also `
+                + `inside the last ${Math.round(win.shortS)} s, so the two `
+                + `averages are the same arithmetic and their difference is `
+                + `zero by construction rather than by measurement.`);
           return;
         }
         const t = div.hi > 0 ? r.diff / div.hi : 0;
         const over = Math.abs(r.diff) > div.hi;
-        cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "")
-          + (r.age > NOISE_FRESH_S ? " dqm-heat-stale" : "");
+        cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "");
         cell.style.background = ATARGeom.diffColour(t);
         cell.title = `${common} — Δ ${r.diff >= 0 ? "+" : ""}`
           + `${(r.diff * 1000).toFixed(2)} mV`;
         return;
       }
 
-      const v = kind === "now" ? r.newest : r.avg;
+      const v = kind === "now" ? r.recent : r.avg;
+      // The recent map's own absent state, and the reason the staleness dimming
+      // this tile used to carry is gone. That dimming existed because the map
+      // drew each channel's freshest value whenever it arrived, so a cell could
+      // be a minute old while claiming to be now. A window says so outright: a
+      // channel with nothing inside it has no recent value to draw, which is
+      // the same fact without asking anyone to read an opacity.
+      if (v === null) {
+        cell.className = "dqm-heat-cell dqm-heat-nodata";
+        cell.style.background = "";
+        cell.title = `${common} — nothing to average for the recent map.`;
+        return;
+      }
       const t = seq.hi > seq.lo ? (v - seq.lo) / (seq.hi - seq.lo) : 0;
       const over = v > seq.hi;
-      // Stale dims the freshest map only. On the average it would be saying
-      // something the average does not claim: a mean over the window is not a
-      // statement about now and does not go out of date the same way.
-      const stale = kind === "now" && r.age > NOISE_FRESH_S;
-      cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "")
-        + (stale ? " dqm-heat-stale" : "");
+      cell.className = "dqm-heat-cell" + (over ? " dqm-heat-over" : "");
       cell.style.background = ATARGeom.heatColour(t);
       cell.title = common;
     }
@@ -977,11 +1077,11 @@ function noiseMaps(name) {
      * seeing. Both rank and neither judges: there is no threshold here, and on
      * a healthy run these are simply the least average five.
      */
-    function fillRanks(rows, windowS) {
+    function fillRanks(rows, win) {
       rankBox.textContent = "";
       if (!rows.length) {
         rankBox.appendChild(el("div", { class: "dqm-note" },
-          `No channel has been hit in the last ${Math.round(windowS)} s, so `
+          `No channel has been hit in the last ${Math.round(win.longS)} s, so `
           + `there is nothing to rank.`));
         return;
       }
@@ -991,7 +1091,11 @@ function noiseMaps(name) {
         const t = el("table", { class: "dqm-table" });
         t.appendChild(el("tr", {},
           el("th", {}, "channel"), el("th", {}, "layer"), el("th", {}, "strip"),
-          el("th", {}, "average"), el("th", {}, "now"),
+          // The column heads name their windows, because with both of them
+          // settable "average" and "recent" are no longer self-describing --
+          // and a table beside a map has to agree with the map's own heading.
+          el("th", {}, `avg ${Math.round(win.longS)} s`),
+          el("th", {}, `recent ${Math.round(win.shortS)} s`),
           el("th", {}, "Δ")));
         sorted.slice(0, MAP_RANK).forEach(function (r) {
           t.appendChild(el("tr", {},
@@ -999,22 +1103,26 @@ function noiseMaps(name) {
             el("td", {}, r.layer === null ? "—" : String(r.layer)),
             el("td", {}, r.strip === null ? "—" : String(r.strip)),
             el("td", {}, `${r.avg.toFixed(4)} V`),
-            el("td", {}, `${r.newest.toFixed(4)} V`),
+            el("td", {}, r.recent === null ? "none"
+              : `${r.recent.toFixed(4)} V`),
             // Millivolts, for the reason the baseline table uses them: the
             // moves worth reading are single mV and four decimals of a volt is
             // a column of leading zeros to count.
-            el("td", {}, r.diff === null ? "seen once"
+            el("td", {}, r.diff === null ? "—"
               : `${r.diff >= 0 ? "+" : ""}${(r.diff * 1000).toFixed(2)} mV`)));
         });
         rankBox.appendChild(t);
       }
 
       const loudest = rows.slice().sort((a, b) => b.avg - a.avg);
-      table(`Loudest over the last ${Math.round(windowS)} s`, loudest);
+      table(`Loudest over the last ${Math.round(win.longS)} s`, loudest);
 
       const moved = rows.filter((r) => r.diff !== null)
         .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-      if (moved.length) table("Moved most from their own average", moved);
+      if (moved.length) {
+        table(`Moved most: last ${Math.round(win.shortS)} s against the `
+              + `${Math.round(win.longS)} s average`, moved);
+      }
 
       const foot = el("div", { class: "dqm-footnote" },
         `${MAP_RANK} of ${rows.length} \u2014 a ranking, not a verdict`);
@@ -1027,9 +1135,44 @@ function noiseMaps(name) {
     async function tick() {
       const s = await BRPC.json(client, "dqm::series", name);
       if (!s || !s.channel) throw new Error(`empty reply for ${name}`);
-      const windowS = Number(s.window_s) || 0;
+      const horizon = Number(s.window_s) || 0;
       const nChannels = Number(s.channels) || 0;
       unit = s.unit || "RMS (V)";
+
+      // The clamps, and the sentence each one owes the reader.
+      //
+      // Neither is a correction the page can make quietly. A long window wider
+      // than what the analyzer keeps would draw 120 s of data under a heading
+      // saying 300; a short window that reaches the long one leaves the
+      // difference map with nothing to subtract on any channel, so every cell
+      // goes blank and a reader would be entitled to read that as the detector
+      // rather than as the setting. Clamped here, said below.
+      const longS = horizon > 0 ? Math.min(wantLong, horizon) : wantLong;
+      const shortS = Math.min(wantShort, longS);
+      const win = { longS: longS, shortS: shortS };
+      const caveats = [];
+      if (horizon > 0 && wantLong > horizon) {
+        caveats.push(`The average window is set to ${Math.round(wantLong)} s, `
+          + `but the analyzer keeps ${Math.round(horizon)} s per channel, so `
+          + `${Math.round(longS)} s is what is drawn. Raising `
+          + `${DQM.CONFIG_ROOT}/Analyzer/Binning/recent seconds per channel is `
+          + `what would make the longer window available.`);
+      }
+      if (wantShort > longS) {
+        caveats.push(`The recent window is set to ${Math.round(wantShort)} s, `
+          + `which is not shorter than the ${Math.round(longS)} s average, so `
+          + `it is drawn at ${Math.round(shortS)} s. The two maps are then the `
+          + `same average and the difference between them is empty.`);
+      } else if (wantShort === longS) {
+        caveats.push(`Both windows are ${Math.round(longS)} s, so the two maps `
+          + `are the same average and the difference between them is empty.`);
+      }
+      cfgNote.textContent = caveats.join(" ");
+      cfgNote.hidden = !caveats.length;
+      // Yellow rather than red: nothing is broken and both maps are drawing.
+      // What is wrong is a setting, and the tile is still answering the
+      // question it was asked -- over a window it had to choose.
+      cfgNote.className = caveats.length ? "dqm-diagnosis yellow" : "dqm-note";
 
       if (!built) {
         // Each key above what it explains, which is where this page set puts a
@@ -1067,23 +1210,31 @@ function noiseMaps(name) {
         }
       }
 
-      const by = reduceByChannel(s);
+      const by = reduceByChannel(s, longS, shortS);
+
+      // Each map says the window it is drawing, every tick, because both are
+      // settable and one of them may have just been clamped.
+      built.avg.head.textContent = `Average over the last ${Math.round(longS)} s`;
+      built.now.head.textContent = `Average over the last ${Math.round(shortS)} s`;
+      built.diff.head.textContent = `Recent minus average`;
 
       // The sequential scale spans BOTH maps, because they are read against
       // each other: the same colour has to mean the same RMS in the average and
-      // in the freshest, or the comparison the stack exists for is not
+      // in the recent, or the comparison the stack exists for is not
       // available.
       //
       // But the fence is taken from each population separately and the WIDER
       // one wins, which is not the same as fencing the pool. A mean over n
       // values is narrower than a single value by construction -- that is what
       // averaging is -- so the pooled quartiles sit inside the average's tight
-      // bulk, and a fence drawn there is one the freshest values step straight
-      // over. Measured on the live analyzer: 46 of 256 cells off the top of the
-      // scale and 19 distinct colours left on the freshest map, against 151 on
-      // the average. Covering both distributions is what a shared scale has to
+      // bulk, and a fence drawn there is one the recent values step straight
+      // over. Measured on the live analyzer when the short map was one value
+      // per channel: 46 of 256 cells off the top of the scale and 19 distinct
+      // colours left on it, against 151 on the average. Averaging the short
+      // window narrows it, so the two populations are closer than that now --
+      // and the wider fence still has to win, because they never coincide. Covering both distributions is what a shared scale has to
       // mean. The average then occupies the lower part of the ramp and looks
-      // more uniform than the freshest -- which is a true statement about the
+      // more uniform than the recent -- which is a true statement about the
       // data and not an artefact of the drawing.
       const avgVals = [];
       const nowVals = [];
@@ -1092,12 +1243,19 @@ function noiseMaps(name) {
       const rows = [];
       by.forEach(function (r) {
         avgVals.push(r.avg);
-        nowVals.push(r.newest);
-        seqVals.push(r.avg, r.newest);
+        seqVals.push(r.avg);
+        // A channel with nothing in the short window contributes nothing to
+        // the recent map's population. Pooling a null would poison the fence
+        // and the span; leaving it out is what "no value" has to mean.
+        if (r.recent !== null) {
+          nowVals.push(r.recent);
+          seqVals.push(r.recent);
+        }
         if (r.diff !== null) diffVals.push(Math.abs(r.diff));
         const cell = built.avg.byCh.get(r.ch);
         rows.push({
-          ch: r.ch, n: r.n, avg: r.avg, newest: r.newest, diff: r.diff,
+          ch: r.ch, n: r.n, nRecent: r.nRecent,
+          avg: r.avg, recent: r.recent, diff: r.diff,
           layer: cell && cell.dataset.layer !== undefined
             ? Number(cell.dataset.layer) : null,
           strip: cell && cell.dataset.strip !== undefined
@@ -1146,13 +1304,13 @@ function noiseMaps(name) {
       built.now.grid.dqmScale = seq;
       built.diff.grid.dqmDiffScale = div;
 
-      let stale = 0;
+      let quiet = 0;
       KINDS.forEach(function (spec) {
         const b = built[spec.kind];
         b.byCh.forEach(function (cell, ch) {
           const r = by.get(ch) || null;
-          if (spec.kind === "avg" && r && r.age > NOISE_FRESH_S) stale += 1;
-          paint(cell, r, spec.kind, seq, div, windowS);
+          if (spec.kind === "avg" && r && r.recent === null) quiet += 1;
+          paint(cell, r, spec.kind, seq, div, win);
         });
       });
 
@@ -1164,7 +1322,7 @@ function noiseMaps(name) {
       const seqNote = seq.clipped ? "top clipped" : "";
       const seqDetail = `One scale for both maps, fenced on whichever of the `
         + `two is wider: a mean is narrower than a single value by `
-        + `construction, so fencing the pool would cut the freshest map in half.`
+        + `construction, so fencing the pool would cut the recent map in half.`
         + (seq.clipped
           ? ` The top stops at ${NOISE_FENCE} x IQR above the upper quartile so `
             + `one loud channel does not flatten the rest; the highest is `
@@ -1183,32 +1341,39 @@ function noiseMaps(name) {
       built.diffKey.appendChild(ATARGeom.diffLegend(div.hi, {
         id: "noise-diff-key",
         label: "change (V)",
-        note: "freshest minus average" + (div.clipped ? ", top clipped" : ""),
-        detail: `The average is over the same window and includes the freshest `
-          + `value, so a channel seen n times shows (1 - 1/n) of the move it `
-          + `made and one seen twice shows half. Kept that way so the three `
-          + `maps subtract cell by cell. A channel seen once has no average to `
-          + `compare against and is left blank.`
+        note: `last ${Math.round(shortS)} s minus last ${Math.round(longS)} s`
+          + (div.clipped ? ", top clipped" : ""),
+        detail: `The long average includes the short window's values, so a `
+          + `channel shows the fraction of its move that the long window does `
+          + `not already contain: with a ${Math.round(shortS)} s window inside `
+          + `a ${Math.round(longS)} s one that is most of it, and it goes to `
+          + `nothing as the two windows close up. Kept that way so the three maps subtract cell by cell. A `
+          + `channel with nothing recent, or with every value already inside `
+          + `the short window, has no comparison to make and is left blank.`
           + (div.clipped ? ` Outlined cells are past the end of this scale.` : ""),
       }));
 
-      fillRanks(rows, windowS);
+      fillRanks(rows, win);
 
       drawn = true;
       covered.textContent = nChannels ? `${by.size} of ${nChannels}` : String(by.size);
-      depth.textContent = `${Math.round(windowS)} s`;
-      staleChip.textContent = stale
-        ? `${stale} older than ${NOISE_FRESH_S} s`
-        : `all within ${NOISE_FRESH_S} s`;
+      longChipValue.textContent = `${Math.round(longS)} s`;
+      shortChipValue.textContent = `${Math.round(shortS)} s`;
+      quietChip.textContent = quiet
+        ? `${quiet} with nothing in ${Math.round(shortS)} s`
+        : `all ${by.size} have a recent value`;
       // Yellow, not red, for the reason the baseline tile gives: a quiet
       // channel is a fact about the beam as often as it is a fault.
-      staleChip.className = stale ? "dqm-chip yellow" : "dqm-chip";
-      staleChip.title = stale
-        ? `The freshest value on ${stale} channel${stale === 1 ? " is" : "s is"} `
-          + `older than ${NOISE_FRESH_S} s, so ${stale === 1 ? "its cell is" : "those cells are"} `
-          + `dimmed on the freshest map. That is a quiet channel, which this `
-          + `tile cannot tell from a fault.`
-        : `Every channel with a value has been hit inside ${NOISE_FRESH_S} s.`;
+      quietChip.className = quiet ? "dqm-chip yellow" : "dqm-chip";
+      quietChip.title = quiet
+        ? `${quiet} channel${quiet === 1 ? " has" : "s have"} a standing `
+          + `average but nothing inside the last ${Math.round(shortS)} s, so `
+          + `${quiet === 1 ? "its cell is" : "those cells are"} blank on the `
+          + `recent map and on the difference. That is a quiet channel, which `
+          + `this tile cannot tell from a fault -- and it is the number to `
+          + `watch when widening the recent window.`
+        : `Every channel with a standing average was also hit inside the last `
+          + `${Math.round(shortS)} s.`;
       note.className = "dqm-note";
       note.textContent = s.channel.length
         ? ""
@@ -1828,7 +1993,7 @@ DQMPage.register("baseline_by_channel", baselineTrend(BASELINE));
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { PANELS, NOISE, BASELINE, TWO_D, refreshFor, cadenceText,
                     REFRESH_MS, BIG_HIST_CELLS, MAX_REFRESH_MS,
-                    BASELINE_WINDOW_S, NOISE_FRESH_S, NOISE_FENCE };
+                    BASELINE_WINDOW_S, NOISE_FENCE };
 }
 
 })();
