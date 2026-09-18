@@ -211,24 +211,6 @@
             "docs/closed_plans/dqm_custom_pages_plan.md",
             "docs/dqm_inventory.md"
           ]
-        },
-        {
-          "id": "amplitude_by_channel",
-          "kind": "panel",
-          "label": "Amplitude by channel",
-          "question": "Is every channel seeing the same pulse height?",
-          "why": "it is where a channel whose gain has drifted shows up first",
-          "status": "ready",
-          "evidence": "replay",
-          "size": "l",
-          "sketch": "hist2d",
-          "targets": {},
-          "proposed_figure": "dqm-amplitude-by-channel",
-          "cites": [
-            "docs/frontend_requirements.md",
-            "docs/closed_plans/dqm_custom_pages_plan.md"
-          ],
-          "_note": "Decision 6, taken 2026-09-14: no Landau fit, and no reference peak in its place either. A MIP Landau MPV is a per-channel calibration number rather than a monitoring one, and a fit over a partial run is wrong early in a way a shifter cannot see. The reference peak that had been proposed instead needs an owner and has none, and an unowned reference is not a harmless placeholder: a stale one makes a correct spectrum look wrong and a shifter re-tunes a channel that was fine. The comparison this tile actually supports is across its own channel axis -- every channel saw the same beam, so one whose peak has moved is a row out of line with its neighbours. It comes back when the energy calibration has an owner, who is the same person."
         }
       ]
     },
@@ -273,6 +255,24 @@
             "docs/closed_plans/dqm_custom_pages_plan.md"
           ],
           "_note": "Built 2026-09-17 as CHARGE against amplitude, not energy. The blocker recorded against it was an energy calibration with an owner -- 'nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it' -- and that is still true and still nobody's. What unblocks the tile is dropping the claim rather than waiting for the constant: the waveform's integral is a charge up to the input impedance and needs no calibration at all, and the axis says V*samples so nothing here is believed to be MeV. The id keeps the word energy because the wishlist (3f) and docs/frontend_requirements.md cite it under that name. Its original blocked_by, for the day somebody owns the calibration: Mechanism C: the ATAR bank, a histogram definition, and the analyzer client nobody has started. docs/frontend_requirements.md lists the quantities nobody writes because there is no fesampic. And an energy calibration with an owner, which this design surfaces and does not own: nothing says where the volts-to-MeV constant per channel comes from, who sets it, or whether it lives in the ODB where a page can read it. Until that is answered this tile plots amplitude with the axis named honestly, because an uncalibrated axis labelled MeV is the kind of plot that is believed for a month. Wishlist 3f."
+        },
+        {
+          "id": "amplitude_by_channel",
+          "kind": "panel",
+          "label": "Amplitude by channel",
+          "question": "Is every channel seeing the same pulse height?",
+          "why": "it is where a channel whose gain has drifted shows up first",
+          "status": "ready",
+          "evidence": "replay",
+          "size": "l",
+          "sketch": "hist2d",
+          "targets": {},
+          "proposed_figure": "dqm-amplitude-by-channel",
+          "cites": [
+            "docs/frontend_requirements.md",
+            "docs/closed_plans/dqm_custom_pages_plan.md"
+          ],
+          "_note": "Decision 6, taken 2026-09-14: no Landau fit, and no reference peak in its place either. A MIP Landau MPV is a per-channel calibration number rather than a monitoring one, and a fit over a partial run is wrong early in a way a shifter cannot see. The reference peak that had been proposed instead needs an owner and has none, and an unowned reference is not a harmless placeholder: a stale one makes a correct spectrum look wrong and a shifter re-tunes a channel that was fine. The comparison this tile actually supports is across its own channel axis -- every channel saw the same beam, so one whose peak has moved is a row out of line with its neighbours. It comes back when the energy calibration has an owner, who is the same person."
         }
       ]
     },

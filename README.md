@@ -36,8 +36,8 @@ order the questions get asked at 3am rather than the order the data arrives in.
 | tab | asks | mechanism | state |
 |---|---|---|---|
 | **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise as three more strip-by-layer maps and baseline as eight per-layer trends against time |
-| **Scope** | What does this event look like? | event buffer | **four of five draw** — waveforms by layer, the hit-position maps and the charge-depth profile, all off one event, plus amplitude by channel behind a per-tile toggle; the layer hit rate waits on a counting equipment |
-| **Trends** | Is the detector's response holding still? | analyzer | persistence and charge-against-amplitude both draw behind their toggles; the two-track rate wants track finding |
+| **Scope** | What does this event look like? | event buffer | **all three draw** — waveforms by layer, the hit-position maps and the charge-depth profile, every one of them off the one event on screen |
+| **Trends** | Is the detector's response holding still? | analyzer | **all three draw**, each behind its own toggle — persistence, charge against amplitude, and amplitude by channel. What they have in common is that they accumulate over the run rather than showing the event in front of you, which is what makes this a tab and not three tiles on Scope |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
 
 It was six pages — Rates, Scope, Channels, Pulses, Physics and SlowControls —
@@ -58,9 +58,9 @@ trusting the menu.
 
 Ten of the twenty panels are `ready` and draw real data against a replay
 today: four on Channels (the occupancy map, hits per event, the baseline trends,
-the noise maps), four on Scope (waveforms, the hit-position maps, the
-charge-depth profile, amplitude by channel), and persistence and
-charge-against-amplitude on Trends. Three of those ten are colormaps and open
+the noise maps), three on Scope (waveforms, the hit-position maps, the
+charge-depth profile), and three on Trends (persistence, charge against
+amplitude, and amplitude by channel). Three of those ten are colormaps and open
 off, a click from drawing — held for the paint cost of a colormap, not for want
 of data, which is a page's choice rather than a blocker and so does not make
 them part of the backlog.
@@ -239,8 +239,8 @@ publishes no time-over-threshold and no time-between-hits: `tot_value` is the
 docstring lists the rest of what the data will not support.
 
 `pages/js/dqm-hists.js` draws them. Six panels claim a renderer -- occupancy,
-hits per event, baseline and noise on the Channels tab, amplitude by channel on
-Scope, and persistence on Trends. Three of those hand a histogram straight to mplot
+hits per event, baseline and noise on the Channels tab, and amplitude by channel
+and persistence on Trends. Three of those hand a histogram straight to mplot
 through `BRPC.display()`; the other three are the exceptions to the
 one-tile-one-plot shape, and two of them are not mplot at all.
 
@@ -319,7 +319,7 @@ that names the loudest channels and the ones that moved most, because a cell
 carries no label and the global channel number is what the ODB, the frontend
 and the cable map all speak.
 
-The remaining two -- amplitude by channel on Scope, persistence on Trends --
+The remaining two -- amplitude by channel and persistence, both on Trends --
 are **colormaps and start off**, listed in `TWO_D` in that file, each with a
 `Show plot` button in its own tile.
 Off is a real off -- no fetch, no draw, no timer -- so a page of these costs
@@ -374,8 +374,8 @@ B="http://localhost:8088/?cmd=custom&page=ATAR"
 T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
-scripts/shoot.py "$B#tab=atar_channels" /tmp/channels.png --console --wait-for "$T === 5 && $W === 1"
-scripts/shoot.py "$B#tab=atar_scope"    /tmp/scope.png    --console --wait-for "$T === 4 && $W === 0"
+scripts/shoot.py "$B#tab=atar_channels" /tmp/channels.png --console --wait-for "$T === 4 && $W === 0"
+scripts/shoot.py "$B#tab=atar_scope"    /tmp/scope.png    --console --wait-for "$T === 3 && $W === 0"
 scripts/shoot.py "$B#tab=atar_trends"   /tmp/trends.png   --console --wait-for "$T === 3 && $W === 3"
 scripts/shoot.py "$B#tab=atar_proposed" /tmp/proposed.png --console --wait-for "$T === 10 && $W === 10"
 ```
@@ -384,24 +384,26 @@ The first two hold whether or not `mdqm-analyzer` is running, which is worth
 knowing before reading a failure as "the analyzer is down". `$W` counts
 `.dqm-empty-why`, and a colormap tile emits one while it is off, whereas a
 drawing tile that cannot reach the analyzer reports a `.dqm-diagnosis` instead.
-So Channels is zero now that its colormap has moved to Scope, and the count is
-for a freshly opened tab, before anything is toggled on -- each `Show plot`
+Every colormap is on Trends now, so Channels and Scope are zero, and the count
+is for a freshly opened tab, before anything is toggled on -- each `Show plot`
 takes one off. What moves with the analyzer is whether the four tiles that draw
-on open --
-the occupancy map, hits per event, the noise maps and the baseline trends --
-show a
-plot or a red line naming the client they tried. (Blanking `/DQM/Common/Analyzer Client`
-is the one thing that would move these: with no name to try, a drawing tile
-falls back to an empty-why and `$W` goes up.)
+on open -- the occupancy map, hits per event, the noise maps and the baseline
+trends -- show a plot or a red line naming the client they tried. (Blanking
+`/DQM/Common/Analyzer Client` is the one thing that would move these: with no
+name to try, a drawing tile falls back to an empty-why and `$W` goes up.)
 
 The `$W` counts are the useful ones to watch, because they say how many panels
 are still explaining themselves *in a sentence*. Every panel that is waiting for
-something now sits on Proposed, so that tab is 10 of 10 and Scope is 0 of 4 --
-the layer hit rate and the two-track rate moved off Scope and Trends and took
-their sentences with them. Trends is still 3 of 3, which is the one count worth
-understanding before reading it as a gap: `$W` is what is on screen now, and
-both Trends tiles are ready colormaps sitting behind their `Show plot` toggle,
-drawing the moment anyone asks.
+something now sits on Proposed, so that tab is 10 of 10, and Channels and Scope
+are both zero. Trends is 3 of 3, which is the one count worth understanding
+before reading it as a gap: `$W` is what is on screen now, and all three Trends
+tiles are ready colormaps sitting behind their `Show plot` toggle, drawing the
+moment anyone asks. Trends is where every colormap on the page now lives, which
+is why it is the only tab whose `$W` is not zero or everything.
+
+`$T` is the tab's panel count exactly -- no renderer adds a tile of its own, and
+the per-layer baseline panels and the eight waveform panels are inside their
+tiles rather than beside them.
 
 The tab buttons carry a count too, and it is a different number: it counts
 *panels that are not `ready`*, so it is 0, 0, 0 and 10 -- only Proposed wears

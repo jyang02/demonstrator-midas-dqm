@@ -14,12 +14,12 @@
 //
 // source:       dqm_shifter.json
 // spec_version: 1
-// sha256:       6b40b84b529471f06134b2bc49cb46f31f6923129d84a3528a2cd5edca9e509d
+// sha256:       71018d7934194224e131b46409c2b648ea45e9d740b059c4282b1d38491b9646
 //
 (function (root) {
 "use strict";
 
-const SPEC_SHA256 = "6b40b84b529471f06134b2bc49cb46f31f6923129d84a3528a2cd5edca9e509d";
+const SPEC_SHA256 = "71018d7934194224e131b46409c2b648ea45e9d740b059c4282b1d38491b9646";
 
 // Strict JSON on purpose: tests/test_panels.py slices this literal out with a
 // regex and json.loads() it, the same trick tests/test_manifest.py plays on
@@ -121,16 +121,6 @@ const PAGES = [
             "status": "ready",
             "size": "l",
             "sketch": "event"
-          },
-          {
-            "id": "amplitude_by_channel",
-            "kind": "panel",
-            "label": "Amplitude by channel",
-            "question": "Is every channel seeing the same pulse height?",
-            "why": "it is where a channel whose gain has drifted shows up first",
-            "status": "ready",
-            "size": "l",
-            "sketch": "hist2d"
           }
         ]
       },
@@ -155,6 +145,16 @@ const PAGES = [
             "label": "Charge against amplitude",
             "question": "Does the pulse response hold its shape across the range?",
             "why": "two measures of the same pulse that stop agreeing somewhere is where a saturating channel or a changed shaping shows up, and neither the amplitude spectrum nor the persistence plot can show it alone",
+            "status": "ready",
+            "size": "l",
+            "sketch": "hist2d"
+          },
+          {
+            "id": "amplitude_by_channel",
+            "kind": "panel",
+            "label": "Amplitude by channel",
+            "question": "Is every channel seeing the same pulse height?",
+            "why": "it is where a channel whose gain has drifted shows up first",
             "status": "ready",
             "size": "l",
             "sketch": "hist2d"
