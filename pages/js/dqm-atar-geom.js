@@ -368,6 +368,23 @@ const LABEL_EVERY = 4;
  * the window" and "no hits all run" are different statements and this cannot
  * tell which one it is drawing.
  *
+ * **A position holds however many channels the map puts there, not one.** In
+ * ping-pong mode a strip is wired to two consecutive channels and a deposit is
+ * recorded on whichever was not used last, so `Channel map channel id` stops
+ * being injective. This used to invert the map with `atPos.set(key, ch)` in a
+ * loop over ascending channel, which meant the second of every pair silently
+ * overwrote the first: half the channels got no cell at all, and the tile went
+ * on looking healthy. Positions carry a channel *list* for that reason, and
+ * `byPos` is what a caller paints from -- `byCh` maps every channel to its
+ * cell, so both partners of a pair resolve to the same one and iterating it
+ * would visit that cell twice.
+ *
+ * Which channel is first at a position is the order the map lists them, never
+ * the parity of the channel number. Pairs being (2k, 2k+1) is a cabling fact
+ * this file is in no position to assume -- the same refusal that stops it
+ * guessing the pixel stride -- and one non-ATAR channel in the middle of the
+ * map shifts the parity of every channel after it.
+ *
  * With no map it falls back to a single ribbon of every channel. That is not a
  * lesser version of the same picture and the caller is expected to say so: the
  * layer and strip of a channel cannot be guessed, because a pixel id decodes
@@ -378,22 +395,33 @@ function heatGrid(map, opts) {
   const grid = DQMPage.el("div", { class: "dqm-heat" });
   if (o.id) grid.setAttribute("id", o.id);
   const byCh = new Map();
+  const byPos = [];
 
-  function cell(ch, layer, strip) {
+  function cell(channels, layer, strip) {
     const c = DQMPage.el("div", { class: "dqm-heat-cell dqm-heat-nodata" });
     // Assigned rather than written as a data- attribute: the node tests'
     // element stub fills dataset only on direct assignment, and a channel read
     // back out of a display string would make the wording load-bearing.
-    c.dataset.ch = String(ch);
+    //
+    // `ch` stays the FIRST channel at this position rather than becoming a
+    // list. It is what every lookup in and out of this file keys on, and on
+    // any map that is not ping-pong there is exactly one channel here, so the
+    // attribute means what it always meant. `chs` carries the whole list and
+    // is always set, so nothing has to guess which of the two applies.
+    c.dataset.ch = String(channels[0]);
+    c.dataset.chs = channels.join(",");
     if (layer !== null && layer !== undefined) c.dataset.layer = String(layer);
     if (strip !== null && strip !== undefined) c.dataset.strip = String(strip);
     if (o.onHover) {
       // The handler takes no event argument: the stub calls listeners with
       // none, so one reaching for ev.target would work in the browser and throw
       // under test, which is the worst asymmetry on offer.
-      c.addEventListener("mouseenter", function () { o.onHover(ch, c); });
+      c.addEventListener("mouseenter", function () { o.onHover(channels, c); });
     }
-    byCh.set(ch, c);
+    channels.forEach(function (ch) { byCh.set(ch, c); });
+    byPos.push({ cell: c, channels: channels,
+                 layer: layer === undefined ? null : layer,
+                 strip: strip === undefined ? null : strip });
     return c;
   }
 
@@ -402,18 +430,20 @@ function heatGrid(map, opts) {
     grid.style.gridTemplateColumns =
       `max-content repeat(${hi - lo + 1}, minmax(0, 1fr))`;
     // Reversed once per grid: this is walked by position and needs to ask
-    // "which channel is here", where the map answers "where is this channel".
+    // "which channels are here", where the map answers "where is this channel".
     const atPos = new Map();
     map.byChannel.forEach(function (layer, ch) {
-      atPos.set(`${layer}:${stripOf(map, ch)}`, ch);
+      const key = `${layer}:${stripOf(map, ch)}`;
+      const here = atPos.get(key);
+      if (here) here.push(ch); else atPos.set(key, [ch]);
     });
     map.layers.forEach(function (layer) {
       const orient = orientationOf(map, layer);
       grid.appendChild(DQMPage.el("div", { class: "dqm-heat-rowlab" },
         orient ? `L${layer} ${orient.slice(0, 4)}` : `L${layer}`));
       for (let strip = lo; strip <= hi; strip++) {
-        const ch = atPos.get(`${layer}:${strip}`);
-        if (ch === undefined) {
+        const chs = atPos.get(`${layer}:${strip}`);
+        if (chs === undefined) {
           // No channel at this position: the layer is not instrumented here.
           // A fact about the detector, where an empty cell elsewhere is a fact
           // about the run, so it does not get painted like one.
@@ -422,7 +452,7 @@ function heatGrid(map, opts) {
           grid.appendChild(gap);
           continue;
         }
-        grid.appendChild(cell(ch, layer, strip));
+        grid.appendChild(cell(chs, layer, strip));
       }
     });
     if (o.axis) {
@@ -433,15 +463,33 @@ function heatGrid(map, opts) {
       }
     }
   } else {
+    // No map, no pairing: which channels share a strip is exactly what the
+    // geometry says, and a ribbon is what gets drawn when there is none. One
+    // channel per cell, which is also what leaves `paired` false and keeps
+    // every tile's partner view off.
     grid.classList.add("dqm-heat-ribbon");
     grid.style.gridTemplateColumns =
       `max-content repeat(${o.channels || 0}, minmax(0, 1fr))`;
     grid.appendChild(DQMPage.el("div", { class: "dqm-heat-rowlab" }, "all"));
     for (let ch = 0; ch < (o.channels || 0); ch++) {
-      grid.appendChild(cell(ch, null, null));
+      grid.appendChild(cell([ch], null, null));
     }
   }
-  return { grid: grid, byCh: byCh };
+  return { grid: grid, byCh: byCh, byPos: byPos,
+           paired: byPos.some((p) => p.channels.length > 1) };
+}
+
+/**
+ * A position's channels, named the way the rest of the page names them.
+ *
+ * "ch 4+5" and not "ch 4, 5", because this goes in a table column and in the
+ * first words of a cell's hover, where it is read as one identifier for one
+ * strip rather than as a list of two things. A position with one channel is
+ * "ch 5" exactly as it always was, so nothing that is not ping-pong sees a
+ * change of wording.
+ */
+function chLabel(channels) {
+  return `ch ${channels.join("+")}`;
 }
 
 /** Where a channel sits, in words, for a cell title or a hover readout. */
@@ -488,7 +536,7 @@ function stripLegend(map) {
 }
 
 const ATARGeom = { SETTINGS, load, orientationOf, layerOf, stripOf,
-                   layerColumns, heatGrid, whereText,
+                   layerColumns, heatGrid, chLabel, whereText,
                    stripLegend, heatLegend, diffLegend,
                    colourFor, stripColour, heatColour, diffColour,
                    PALETTE, VIRIDIS, RAMP_TOP,

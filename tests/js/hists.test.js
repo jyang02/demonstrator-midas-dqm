@@ -1118,3 +1118,205 @@ test("a healthy spread is not clipped, so the mark keeps meaning something", asy
   assert.doesNotMatch(key.title, /The top stops at/,
     "the key explains a clip that did not happen");
 });
+
+// --- ping-pong: two channels per strip --------------------------------------
+//
+// The digitiser can be run so that each ATAR strip is wired to two consecutive
+// channels and a deposit above threshold is recorded on whichever of the two
+// was not used last, which buys a second trigger inside what would have been
+// dead time. The ODB's `Channel map channel id` then stops being injective:
+// two entries carry the same pixel id.
+//
+// That used to silently halve the detector. heatGrid inverted the map with
+// `atPos.set(key, ch)` in a loop over ascending channel, so the second of every
+// pair overwrote the first and 128 of 256 channels got no cell at all -- on
+// occupancy and on both map tiles, with every tile still reporting healthily.
+// The first test here is that regression and the rest are the views the mode
+// needs, which is why they are one block.
+
+//: The same geometry as sampicSettings(), wired ping-pong: PER_LAYER strips a
+//: layer, each one appearing twice so that channels 2k and 2k+1 share a pixel.
+function pingPongSettings() {
+  const ids = [], det = [];
+  for (let L = 0; L < N_LAYERS; L++) {
+    for (let s = 0; s < PER_LAYER; s++) {
+      ids.push(BASE + L * STRIDE + s);
+      ids.push(BASE + L * STRIDE + s);
+      det.push("atar");
+      det.push("atar");
+    }
+  }
+  return {
+    "/Equipment/SAMPIC/Settings/Channel map channel id": ids,
+    "/Equipment/SAMPIC/Settings/Channel map detector": det,
+    "/Equipment/SAMPIC/Settings/Atar pixel id base": BASE,
+    "/Equipment/SAMPIC/Settings/Atar strips per layer": STRIDE,
+    "/Equipment/SAMPIC/Settings/Atar n layers": N_LAYERS,
+    "/Equipment/SAMPIC/Settings/Atar first layer orientation": "vertical",
+  };
+}
+
+const PP_NCH = N_LAYERS * PER_LAYER * 2;
+
+test("ping-pong: every channel keeps a cell, and partners share one", async () => {
+  // The regression. Before this, `cells.length` was PP_NCH / 2 and the even
+  // channel of every pair resolved to nothing -- invisible, with no diagnosis
+  // anywhere, which is the one failure these tiles are built not to have.
+  const page = await boot(series(PP_NCH, DEPTH), pingPongSettings(),
+    occupancy(PP_NCH, () => 100));
+
+  const cells = occCells(page);
+  assert.strictEqual(cells.length, N_LAYERS * PER_LAYER,
+    "a cell per strip, not per channel");
+  assert.deepStrictEqual(cells[0].dataset.chs.split(","), ["0", "1"],
+    "the first strip does not carry both of its channels");
+
+  // Both halves resolve, and to the SAME cell: that is what stops a paint loop
+  // over byCh painting one cell twice and calling it two strips.
+  const built = globalThis.ATARGeom.heatGrid(await globalThis.ATARGeom.load(), {});
+  assert.strictEqual(built.byCh.size, PP_NCH, "a channel was dropped");
+  assert.strictEqual(built.byCh.get(0), built.byCh.get(1),
+    "partners were given different cells");
+  assert.strictEqual(built.paired, true);
+  assert.strictEqual(built.byPos.length, N_LAYERS * PER_LAYER);
+});
+
+test("ping-pong: a strip's occupancy is the sum over its two channels", async () => {
+  // The sum is the answer to this tile's question. A cell drawn from one
+  // channel would report half the beam and the scale would be low by two.
+  const page = await boot(series(PP_NCH, DEPTH), pingPongSettings(),
+    occupancy(PP_NCH, (ch) => (ch % 2 === 0 ? 60 : 40)));
+
+  const cell = occCells(page)[0];
+  assert.match(cell.title, /100 hits/, "the strip did not sum its two channels");
+  assert.match(cell.title, /split 60\/40 across 0, 1/,
+    "the cell does not say how the pair divided");
+  assert.strictEqual(page.doc.getElementById("occupancy-grid").dqmScale.hi, 100,
+    "the scale was fitted to the channels rather than to what is drawn");
+});
+
+test("ping-pong: a pair with a dead half is named, and a quiet pair is not", async () => {
+  // The failure the mode makes possible and the map cannot show: the strip's
+  // total is ordinary while one of its two channels has stopped, its partner
+  // covering for it. Ranked by |a-b| / sqrt(a+b), so the busy lopsided pair
+  // beats the quiet one rather than the other way round.
+  const page = await boot(series(PP_NCH, DEPTH), pingPongSettings(),
+    occupancy(PP_NCH, function (ch) {
+      if (ch === 0) return 800;             // strip 0: 800/0, one half dead
+      if (ch === 1) return 0;
+      if (ch === 2) return 2;               // strip 1: 2/0, too quiet to judge
+      if (ch === 3) return 0;
+      return ch % 2 === 0 ? 51 : 49;        // everything else, evenly split
+    }));
+
+  const box = page.doc.getElementById("occupancy-outliers");
+  assert.match(textOf(box), /Most uneven pairs/);
+  const rows = box.byTag("table").pop().byTag("tr").slice(1);
+  assert.strictEqual(rows[0].byTag("td")[0].textContent, "ch 0+1",
+    "the pair with a dead half is not at the top");
+  assert.strictEqual(rows[0].byTag("td")[3].textContent, "800 / 0");
+  // Both of those pairs are 100% lopsided, so a ranking on the raw fraction
+  // would tie them at 1.0 and the tie-break -- document order -- would hand
+  // the top row to the pair that took two hits. Dividing by the spread an even
+  // split should have is what separates 800 from 2 without a cut on the count:
+  // 800/0 is 28 sigma from even and 2/0 is 1.4, which is what half the strips
+  // on a quiet run look like.
+  const named = rows.map((r) => r.byTag("td")[0].textContent);
+  const sigma = rows.map((r) => Number(r.byTag("td")[5].textContent));
+  assert.ok(named.indexOf("ch 2+3") > 0,
+    "a pair of two hits tied with one of eight hundred");
+  assert.ok(sigma[0] > 25 && sigma[named.indexOf("ch 2+3")] < 2,
+    `the two lopsided pairs were not separated: ${sigma.join(", ")}`);
+  assert.ok(sigma.every((z, i) => i === 0 || z <= sigma[i - 1]),
+    "the table is not sorted by how far from even the split is");
+});
+
+test("ping-pong: the maps say which half of the pair they are drawing", async () => {
+  // Every cell above the partner map draws one of two channels. A map that did
+  // not say which one is a map whose reader attributes what they see to the
+  // wrong amplifier.
+  const page = await boot(series(PP_NCH, DEPTH, function (ch) {
+    return ch === 1 ? 0.02 : 0.004;         // ch 1 is the loud half of strip 0
+  }), pingPongSettings());
+
+  const cell = cellFor(page, "noise-map-avg", 0);
+  assert.match(cell.title, /^ch 0\+1 \(showing ch 1, the louder of the pair\)/,
+    "the noise map did not draw the louder half, or did not say so");
+  assert.match(cell.title, /avg 0\.0200 V/);
+
+  // Baseline has no absolute rule to pick by -- the highest baseline means
+  // nothing -- so it draws the first in map order and says that instead.
+  const b = cellFor(page, "baseline-map-avg", 0);
+  assert.match(b.title, /showing ch 0, the first of the pair in map order/);
+});
+
+test("ping-pong: the partner map is the only view of the half not drawn", async () => {
+  const page = await boot(series(PP_NCH, DEPTH, function (ch) {
+    return ch === 1 ? 0.010 : 0.004;        // strip 0's second half sits high
+  }), pingPongSettings());
+
+  const pair = page.doc.getElementById("baseline-map-pair");
+  assert.ok(pair, "no partner map on a ping-pong geometry");
+  const cell = cellFor(page, "baseline-map-pair", 0);
+  assert.match(cell.title, /ch 1 minus ch 0, \+6\.00 mV/,
+    "the partner map does not carry the gap the three maps above hide");
+  // Signed, and against map order rather than against whichever was drawn, so
+  // the colour does not flip when the pick does.
+  assert.strictEqual(cell.style.background,
+    globalThis.ATARGeom.diffColour(1), "a gap at the top of the scale is not "
+    + "at the end of the diverging ramp");
+
+  const box = page.doc.getElementById("baseline-outliers");
+  assert.match(textOf(box), /Partners furthest apart/);
+});
+
+test("ping-pong: a pair with a silent half is blank, not a gap of zero", async () => {
+  // "Nothing to compare" and "the two agree" are opposite readings and a
+  // diverging ramp paints them the same colour, which is why this is a class.
+  const full = series(PP_NCH, DEPTH);
+  const reply = onlyRecent(full, 1, -1);    // ch 1 says nothing at all
+  const page = await boot(reply, pingPongSettings());
+
+  const cell = cellFor(page, "noise-map-pair", 0);
+  assert.ok(cell.className.includes("dqm-heat-single"),
+    "a pair with a silent half was painted as a measured zero");
+  assert.strictEqual(cell.style.background, "");
+  assert.match(cell.title, /only one of the pair reported/);
+});
+
+test("without ping-pong there is no partner map and no partner table", async () => {
+  // The whole of this block has to stay off on a one-channel-per-strip map,
+  // where a partner view would be a grid of blanks asserting that nothing has
+  // a partner.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  assert.strictEqual(page.doc.getElementById("noise-map-pair"), null);
+  assert.strictEqual(page.doc.getElementById("noise-pair-key"), null);
+  assert.doesNotMatch(textOf(page.doc.getElementById("noise-outliers")),
+    /Partners furthest apart/);
+  // And the strip axis stays under the last grid that is actually drawn.
+  assert.ok(page.doc.getElementById("noise-map-diff").byClass("dqm-heat-collab").length,
+    "the strip axis went with the partner map that was never built");
+});
+
+test("ping-pong: the per-channel tables place both halves of a pair", async () => {
+  // These rows come from the series rather than from the grid, so they always
+  // named every channel -- but the layer and strip columns are read off the
+  // cell, and the half with no cell printed an em dash for both. Half the rows
+  // in every ranking claimed to be unplaceable channels on a fully mapped
+  // detector.
+  const page = await boot(series(PP_NCH, DEPTH, function (ch) {
+    return 0.004 + ch * 1e-5;               // every channel distinct, ch 511 loudest
+  }), pingPongSettings());
+
+  const rows = page.doc.getElementById("noise-outliers")
+    .byTag("table")[0].byTag("tr").slice(1);
+  assert.ok(rows.length, "no rows in the loudest table");
+  rows.forEach(function (r) {
+    const td = r.byTag("td");
+    assert.notStrictEqual(td[1].textContent, "—",
+      `${td[0].textContent} is a mapped ATAR channel with no layer`);
+    assert.notStrictEqual(td[2].textContent, "—",
+      `${td[0].textContent} is a mapped ATAR channel with no strip`);
+  });
+});

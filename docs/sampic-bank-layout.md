@@ -89,6 +89,15 @@ It is also the order the ODB's parallel `Channel map detector`,
 `Channel map channel id` and `Channel map is active` arrays use, so bin *i* and
 map entry *i* are the same readout channel.
 
+`Channel map channel id` is **not injective in ping-pong mode**, where a strip
+is wired to two consecutive channels and a deposit is recorded on whichever was
+not used last: two entries then carry the same pixel id. The global channel
+stays unique -- it is the readout channel and there are still 256 of them -- but
+anything inverting the map to ask "which channel is at this position" gets a
+list rather than one answer, and code that assumed one silently drops half the
+detector. See **Ping-pong mode** in the README for what the Channels tab does
+with it.
+
 ## AC00
 
 Exactly one 32-byte record, `<Q6I`: `collector_timestamp_ns` u64, then

@@ -35,7 +35,7 @@ order the questions get asked at 3am rather than the order the data arrives in.
 
 | tab | asks | mechanism | state |
 |---|---|---|---|
-| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise and baseline as three strip-by-layer maps each: a long average, a short one, and the difference |
+| **Channels** | Is every channel behaving? | analyzer | **all four draw** — occupancy as a strip-by-layer map and hits per event beside it at the top, then noise and baseline as three strip-by-layer maps each: a long average, a short one, and the difference. In ping-pong mode each grows a fourth, the partner gap |
 | **Scope** | What does this event look like? | event buffer | **all three draw** — waveforms by layer, the hit-position maps and the charge-depth profile, every one of them off the one event on screen |
 | **Trends** | Is the detector's response holding still? | analyzer | **all three draw**, each behind its own toggle — persistence, charge against amplitude, and amplitude by channel. What they have in common is that they accumulate over the run rather than showing the event in front of you, which is what makes this a tab and not three tiles on Scope |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
@@ -256,7 +256,7 @@ zero is not the bottom of a ramp -- and because 256 of them is nothing beside
 the 26316 rectangles the colormaps here are toggled off to avoid.
 
 Under the occupancy map are **two rankings side by side, quietest and
-busiest**, because a cell carries no label and the channel number is what the
+busiest**, and in ping-pong mode a third under those, because a cell carries no label and the channel number is what the
 ODB, the frontend, the cable map and the elog all speak. The two ends fail
 differently, which is why both are there: the quiet end is a field of dark
 cells in which the channel that took nothing looks like its neighbours that
@@ -271,8 +271,8 @@ five arbitrary rows read as a finding -- which is what a run with the beam off
 looks like.
 
 **Baseline is the same renderer as noise**, `channelMaps`, with a different
-series, its own pair of window keys and its own idea of what "out of family"
-means. It was eight mplot panels of baseline against time until it was this, and
+series, its own pair of window keys, its own idea of what "out of family"
+means, and its own rule for which half of a ping-pong pair to draw. It was eight mplot panels of baseline against time until it was this, and
 the argument for that shape was real: a baseline that has walked is a walk, with
 a direction and a moment it started, and a map of one value per channel could
 only ever show it as a cell that had changed colour. Two windows answer most of
@@ -347,6 +347,76 @@ paints them all as the bottom of the ramp, which is the one reading they must
 not get. Under each pair of maps is a ranking that names the tile's own outliers and the
 channels that moved most, because a cell carries no label and the global channel
 number is what the ODB, the frontend and the cable map all speak.
+
+### Ping-pong mode
+
+The digitiser can be run so that **each ATAR strip is wired to two consecutive
+channels** — 0 and 1, 2 and 3 — and a deposit over threshold is recorded on
+whichever of the two was not used last, which buys a second trigger inside what
+would otherwise have been dead time. The ODB's `Channel map channel id` then
+stops being injective: two entries carry the same pixel id, and a grid position
+holds two channels rather than one.
+
+That used to halve the detector silently. `heatGrid` inverted the map with
+`atPos.set(key, ch)` in a loop over ascending channel, so the second of every
+pair overwrote the first and 128 of 256 channels got no cell at all — on
+occupancy and on both map tiles at once, with every tile still reporting its
+full channel count in the chips above. A position carries a channel **list** for
+that reason, and `byPos` is what the tiles paint from; `byCh` maps both halves
+of a pair to the same cell, so a loop over it would paint that cell twice.
+
+Which of a pair is "first" is **the order the channel map lists them, never the
+parity of the channel number**. Pairs being (2k, 2k+1) is a cabling fact this
+page is in no position to assume — the same refusal that stops it guessing the
+pixel stride — and one non-ATAR channel in the middle of the map shifts the
+parity of everything after it.
+
+What each tile does with the pair differs, because the question does:
+
+- **Occupancy sums.** "Where is the beam landing" is answered by the strip, and
+  splitting the two channels across two maps would make a reader add them back
+  up by eye off two scales fitted separately. The cell says how the pair
+  divided, and a third ranking, **Most uneven pairs**, names the ones that did
+  not divide evenly. Ranked by `|a-b| / sqrt(a+b)` — the number of standard
+  deviations an even split would have — and not by the raw fraction, which
+  cannot tell a strip that took three hits from one that took eight hundred.
+  Dividing by the expected spread is also what lets the table have no threshold:
+  a quiet pair cannot climb it, which is what a cut on the count would be for.
+- **Noise and baseline pick one and draw it**, and grow a fourth map, the
+  **partner gap**, which is the only view of the half they did not draw.
+  Picking rather than averaging is what keeps the three maps subtracting cell by
+  cell: reduce each map separately and the difference map would be one channel's
+  present minus the other's past wherever the two crossed. Two channels on a
+  strip are two amplifiers with their own pedestals, so their mean is a voltage
+  neither of them is sitting at.
+
+Noise picks the **louder** of the pair, which is the rule its own ranking sorts
+by and for the same reason — loud is high and only high, so a ringing channel
+sharing a strip with a quiet one would be hidden by any rule that did not go
+looking for it. Baseline picks the **first in map order**, which is arbitrary
+but stable: there is no absolute rule to pick by, for exactly the reason that
+cost this tile its median ranking, and picking by "furthest out of family" would
+choose the cells that set the scale that decides the choice. The partner map is
+what covers what that leaves out, and **Partners furthest apart** names them.
+
+The partner map has its own diverging scale rather than sharing the time
+difference's. The two answer different questions — how far a strip has moved
+since the run started, and how far its two amplifiers sit apart — and there is
+no reason the sizes should match; sharing one would let whichever spread is
+larger flatten the other to a sheet of white.
+
+None of this is drawn on a one-channel-per-strip map. `heatGrid` reports
+whether any position has two channels, and with none the fourth map and both
+partner tables are absent rather than present and empty — a grid of blanks
+asserting that nothing has a partner is worse than no grid.
+
+**Two things ping-pong changes that are not the DQM's to fix.** Hits per event
+rises, because the recovered triggers are the point, so the `hits_per_event`
+alarm's reference to "near 2.3 hits per event" is a run-108 number that wants
+re-taking. And per-channel statistics halve, because a strip's hits now divide
+across two channels — so the noise and baseline recent windows, at 10 s, are
+averaging half as many values as they were and the "nothing in the last 10 s"
+chip is the number to watch when deciding whether to widen them.
 
 **Every window is a setting**: `Noise Window Seconds` and `Noise Recent
 Seconds` under `/DQM/ATAR`, and `Baseline Window Seconds` and `Baseline Recent
