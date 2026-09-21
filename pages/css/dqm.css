@@ -91,7 +91,27 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    732px inside 1467px, running 14px off the side of the window and clipping
    the right column's toolbar. Same loop the distribution plot hit on the
    Channels tab, one level up the tree. */
-.dqm-layer-col { min-width: 0; }
+/* Every box that WRAPS an mplot plot inside a grid or a flex line. There are
+   two of them -- the Scope tab's per-layer columns and the cells either side of
+   the hit-position row -- and both need the same one-line rule for the same
+   reason, so they are written together.
+
+   A grid item's min-width is auto, which resolves to its min-content, and the
+   min-content of a box containing an mplot graph is the CANVAS's intrinsic
+   width -- the bitmap mplot sized from whatever this box measured last time. So
+   the track cannot shrink to its 1fr share, the tracks total more than the grid
+   box, and every resize ratchets them further out. Setting min-width on the
+   PLOT is not enough and both of these already did: the wrapper is what the
+   grid measures.
+
+   Measured live at a 1600 viewport, both before and after: the layer grid came
+   out 735px + 732px inside 1467px and clipped the right column's toolbar, and
+   the hit-position row came out with tracks of 735px and 732px inside 1479px,
+   putting its right-hand map 2px off the side of the page. Same bug, two
+   places, and the second survived a commit that claimed to have fixed it.
+   Anything else that puts an mplot plot in a grid cell needs to be here too. */
+.dqm-layer-col,
+.dqm-ed-cell { min-width: 0; }
 /* Both plot classes: the Scope tab's traces come in as .dqm-scope-plot and an
    ordinary .dqm-plot is the general case, and inside this block what either of
    them is is a cell of the target. The Channels tab used to put its eight
@@ -382,13 +402,14 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    default content-box that makes the element two pixels wider than the box it
    was measured from, so a plot at width: 100% overflows its container by 2px
    and the page grows a horizontal scrollbar it can be dragged sideways in.
-   Measured on the Scope tab: document scrollWidth 1602 against a 1600 viewport,
-   from the hit maps and the depth profile, none of which is oversized.
-
    border-box costs 0.36% of horizontal scale -- a 560px bitmap drawn into 558px
    of content box -- which is below anything visible, and buys back the two
    pixels. The alternative is overriding mplot's inline border with !important
-   and drawing our own, which is exact and is a bigger thing to own. */
+   and drawing our own, which is exact and is a bigger thing to own.
+
+   This closes the canvas-over-its-host gap and nothing else. It does NOT fix a
+   page that scrolls sideways: that is the min-width rule below, and measuring
+   is what told the two apart. */
 .dqm-scope-plot canvas,
 .dqm-dist-plot canvas,
 .dqm-plot canvas { box-sizing: border-box; }
