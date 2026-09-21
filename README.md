@@ -291,10 +291,14 @@ are painted. Beside and not below, because below is where it was: three grids
 stacked are most of a screen tall, so by the time the plot was on screen the key
 it shares an axis with was off the top of it, and that comparison is the whole
 reason the plot is there. A map is as wide as its strip count and no wider, so
-the column is space the tile already had. The row wraps rather than squeezing —
-flex-wrap, the same choice the tile row above it makes — so under about 1350px
-of tile width with two ping-pong maps, or far less with one, the two go back to
-being stacked and nothing is lost but the adjacency. What it adds over the maps is the *shape* of
+the column is space the tile already had. The maps are what gives way when the window is
+small: they are capped at 58% of the row, so the cells narrow — a cell carries
+no text and can — rather than the column wrapping at the first window that
+cannot hold both at full size. Below about 1010px of tile width even that is
+not enough and the row wraps, flex-wrap and not a media query, the same choice
+the tile row above it makes; the two go back to being stacked and nothing is
+lost but the adjacency. Above the width where 58% is more than the grids want,
+the cells are exactly the size they always were. What it adds over the maps is the *shape* of
 the family: one peak is a detector whose channels agree, two is a set that has
 split into two populations, and a map can only show that as a mixture of
 colours with no way to count the groups. A channel past the fenced end of the

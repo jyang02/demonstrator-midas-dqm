@@ -191,10 +191,17 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-map-row {
   display: flex; flex-wrap: wrap; gap: 0 24px; align-items: flex-start;
 }
-/* Its natural width, shrinkable: the grids inside are minmax(0, 1fr) columns
-   over a 6px min cell, so squeezing narrows the cells rather than overflowing,
-   and min-width: 0 is what lets that happen inside a flex item at all. */
-.dqm-map-row > .dqm-heat-maps { flex: 0 1 auto; min-width: 0; }
+/* Its natural width, capped at a share of the row: the maps are what gives way
+   when the window is small, and they can, because a cell carries no text. At
+   58% a 1200px tile leaves the column its 400 and the cells come down from
+   ~12px to ~9; the alternative was the whole column wrapping back underneath
+   at the first window that could not hold both at full size, which is what it
+   did before this cap and is the one thing the layout exists to avoid.
+
+   A cap and not a basis, so nothing changes on a wide screen: above the width
+   where 58% exceeds what the grids want, the item is its max-content and the
+   cells are exactly the size they have always been. */
+.dqm-map-row > .dqm-heat-maps { flex: 0 1 auto; min-width: 0; max-width: 58%; }
 /* Except for one map, which has to be told its width. A flex item with an auto
    basis is sized from its max-content, and a grid of empty cells has almost
    none -- so the single-column tile, which as a block filled its 640px cap,
@@ -203,16 +210,24 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    already, and did so as a block too, so beside the column it is the same
    width it always was. 640 is .dqm-heat's own cap, not a second geometry. */
 .dqm-map-row > .dqm-heat-maps:not(.dqm-heat-cols) { flex-basis: 640px; }
-/* 500px is the basis because that is what the ranking tables measure at: seven
-   columns of numbers, and at 420 the column heads wrap to two lines and
-   "0.0043 V" breaks after the number. A basis is a wrap threshold rather than a
-   preference -- under it the row stacks and the tile is what it always was, so
-   the number to put here is the width below which the column stops being worth
-   having. With two ping-pong maps beside it that lands near 1350px of tile
-   width; a single-channel map, half as wide, keeps the column much further
-   down. Capped at the 640 the distribution plot is capped at, so a wide window
-   grows the maps rather than stretching one plot across half a screen. */
-.dqm-map-side { flex: 1 1 500px; min-width: 0; max-width: 640px; }
+/* 400px is the basis because that is what the ranking tables measure at once
+   their padding is tightened below: six columns of numbers, and under it the
+   column heads wrap to two lines and "0.0043 V" breaks after the number. A
+   basis here is a wrap threshold rather than a preference -- it is the width
+   below which the column stops being worth having, so under it the row stacks
+   and the tile is what it always was. With the maps capped at 58% that lands
+   near 1010px of tile width. Capped at the 640 the distribution plot is capped
+   at, so a wide window grows the maps rather than stretching one plot across
+   half a screen. */
+.dqm-map-side { flex: 1 1 400px; min-width: 0; max-width: 640px; }
+/* The table padding is what the column's whole width is made of: twelve cell
+   edges at 10px is 120px of the 500 it used to need, spent on air between
+   columns that are already separated by being numbers in tabular figures. At 6
+   it reads the same and the column fits beside the maps on a screen 340px
+   narrower. Scoped here rather than changed on table.dqm-table, which every
+   other tile on every page also uses. */
+.dqm-map-side table.dqm-table td,
+.dqm-map-side table.dqm-table th { padding: 2px 6px; }
 /* Never mid-value. Between the basis and the cap the column does stretch, and
    these are short cells that should use the room rather than break "0.0043 V"
    after the number. */
@@ -229,7 +244,7 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    max-content on the columns keeps each grid at its natural width so the two
    stay the same size as the single-column case rather than stretching. */
 .dqm-heat-cols {
-  display: grid; grid-template-columns: repeat(2, max-content);
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 18px; align-items: start;
 }
 .dqm-heat-cols .dqm-heat-span { grid-column: 1 / -1; }
