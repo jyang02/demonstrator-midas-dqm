@@ -25,10 +25,10 @@ mdqm-register-pages --experiment pim1        # writes the /Custom keys
 
 Then open the experiment's mhttpd and pick **ATAR** from the side menu.
 
-Upgrading a checkout that had the old six pages registered needs nothing extra:
 `register_pages.prune()` runs after every successful registration and removes
 any `/Custom` key pointing into this checkout that the manifest no longer lists,
-which is exactly the six pages and the two renderers that went with them.
+so a checkout that moves, or a page set that changes, heals itself on the next
+run rather than leaving a menu entry that 404s.
 
 One page, **ATAR**, with four tabs. A tab is a spec group, and the tabs are the
 order the questions get asked at 3am rather than the order the data arrives in.
@@ -40,21 +40,15 @@ order the questions get asked at 3am rather than the order the data arrives in.
 | **Trends** | Is the detector's response holding still? | analyzer | **all three draw**, each behind its own toggle — persistence, charge against amplitude, and amplitude by channel. What they have in common is that they accumulate over the run rather than showing the event in front of you, which is what makes this a tab and not three tiles on Scope |
 | **Proposed** | What has been asked for and not built? | — | the backlog, on the screen rather than in a document, each tile naming what it waits for |
 
-It was six pages — Rates, Scope, Channels, Pulses, Physics and SlowControls —
-organised by mechanism: what the panel read from. **Rates and SlowControls are
-gone.** Every panel on Rates waited on a counting equipment nobody has
-specified, and every panel on SlowControls waited on `fecaen_hv` or `featar_sc`
-— and once MIDAS histories those variables, `mhttpd` trends them for free, so it
-was never obvious those tiles should exist here at all. The panels that were not
-about ATAR went with them. Nothing was deleted: the spec's `retired` group holds
-all twenty-five with the reason each one left, so the decision is not re-argued
-in November.
+Panels the page set does not draw are not deleted from the spec: the `retired`
+group holds them with the reason each one left, so a decision is not re-argued a
+month later.
 
-**Every panel that is still empty says why**, naming what it is waiting for.
-That is the point of registering them: a shifter who opens the Proposed tab at
-3am and finds eight titled panels, each explaining its own absence, has been
-told the state of the experiment. One who finds a blank page has not, and stops
-trusting the menu.
+**Every panel that is empty says why**, naming what it is waiting for. That is
+the point of registering them: a shifter who opens the Proposed tab at 3am and
+finds ten titled panels, each explaining its own absence, has been told the
+state of the experiment. One who finds a blank page has not, and stops trusting
+the menu.
 
 Ten of the twenty panels are `ready` and draw real data against a replay
 today: four on Channels (the occupancy map, hits per event, the baseline maps,
@@ -75,24 +69,22 @@ its absence, so the reason they show is about this experiment now. The probe run
 once, at boot, and its answer is cached: a tab opened ten minutes later carries
 the same footnote as the one that was open when the page loaded.
 
-Scope was the first exception, and the reason is below: its bank layout turned
-out to be documented, so the browser decoder is written and tested against real
-bytes. Point it at a replay of an existing run and it draws today — and the
-same bank, decoded again in the analyzer, is what Channels and Trends draw.
+Scope draws without an analyzer because its bank layout is written down.
+`docs/sampic-bank-layout.md` specifies `AD00`/`AT00` — the physics event id,
+both bank names and the full byte layout — and the browser decoder is tested
+against real bytes, so pointing the page at a replay of a recorded run is enough
+to draw. The same bank, decoded again in the analyzer, is what Channels and
+Trends draw.
 
-One blocker has since moved. `docs/sampic-bank-layout.md` is the written
-specification of `AD00`/`AT00`: the physics event id, both bank names and the
-full byte layout, so Scope waits on a frontend rather than on a document. It
-also records what is **not** settled — a recorded run carries no ODB dump, so
-every `/Equipment` path here is still a proposal, which is why they are all
-editable keys.
+That document also records what is **not** settled: a recorded run carries no
+ODB dump, so every `/Equipment` path here is a proposal, which is why they are
+all editable keys.
 
 ## Tabs, and where they come from
 
-There is no tab key in the spec. A **group** was always "one screen's worth of
-panels"; all that changed is that several groups now name the same `page`, and
-`gen-panels.py` collects them into one catalogue entry with a `tabs` array.
-Adding a tab is adding a group.
+There is no tab key in the spec. A **group** is one screen's worth of panels,
+and several groups name the same `page`; `gen-panels.py` collects them into one
+catalogue entry with a `tabs` array. Adding a tab is adding a group.
 
 Tabs are built **lazily**, the first time each is shown, and that is
 load-bearing rather than an optimisation: `mplot` sizes a graph from its host
@@ -106,7 +98,7 @@ The open tab is in the URL as `#tab=<group>`, so "look at the Trends tab" is a
 link that can be pasted into the eLog:
 
 ```
-http://localhost:8088/?cmd=custom&page=ATAR#tab=atar_trends
+http://localhost:8090/?cmd=custom&page=ATAR#tab=atar_trends
 ```
 
 An unknown or absent name opens the first tab rather than nothing.
@@ -171,9 +163,23 @@ button that opens that key in the ODB editor.
 ## Development
 
 ```bash
-python -m pytest                                    # no MIDAS needed
-MDQM_NODE=/path/to/node python -m pytest            # + the JavaScript tests
+PYTHONPATH=src python -m pytest --ignore=tests/test_analyzer.py
+MDQM_NODE=/path/to/node PYTHONPATH=src python -m pytest --ignore=tests/test_analyzer.py
 ```
+
+Both parts of that invocation are load-bearing.
+
+`PYTHONPATH=src` because `import mdqm` may resolve to another checkout of this
+package that happens to be installed — the analyzer is shared infrastructure and
+more than one copy of it exists on the machines it runs on. Without it the
+suite either tests somebody else's code or fails to import, and neither says so.
+
+`--ignore=tests/test_analyzer.py` because that module imports
+`mdqm.dqm.analyzer`, which imports `midas` at module scope. Where the MIDAS
+Python bindings are absent that is a **collection** error, which aborts the
+whole run rather than skipping one file — so without the flag nothing runs at
+all. Everything else needs no MIDAS; run the analyzer suite where the bindings
+are, which is the DAQ machine.
 
 The JS tests run the real page code against fixtures captured verbatim from a
 live ODB, using a small DOM stub in `tests/js/domstub.js` rather than a browser.
@@ -192,7 +198,7 @@ worth knowing before touching a handler:
   only on change. Anything that renders text from a handler is correct for one
   tick and then silently reverts.
 
-Both of those shipped as bugs during development and are now regression tests.
+Both are regression tests, because both are silent when they are wrong.
 
 ### Seeing it run
 
@@ -246,11 +252,10 @@ one-tile-one-plot shape, and two of them are not mplot at all.
 
 **Occupancy and noise are drawn as the target**, on a grid of one `div` per
 channel placed by strip and layer -- `ATARGeom.heatGrid()`, shared between them
-so that a column is the same strip on both tiles. Occupancy is still a
-histogram over `dqm::histogram`; what changed is only how it is drawn, and the
-argument is that its question is "where". Against the global channel a beam
-spot arrives as four disconnected clumps of bars, because that axis is
-`fe_board * 64 + channel` and not a position. Divs rather than an mplot
+so that a column is the same strip on both tiles. Occupancy is a histogram over
+`dqm::histogram`, drawn as a map because its question is "where". Against the
+global channel a beam spot arrives as four disconnected clumps of bars, because
+that axis is `fe_board * 64 + channel` and not a position. Divs rather than an mplot
 colormap because a cell has states a colour scale cannot carry -- a measured
 zero is not the bottom of a ramp -- and because 256 of them is nothing beside
 the 26316 rectangles the colormaps here are toggled off to avoid.
@@ -272,16 +277,17 @@ looks like.
 
 **Baseline is the same renderer as noise**, `channelMaps`, with a different
 series, its own pair of window keys, its own idea of what "out of family"
-means, and its own rule for which half of a ping-pong pair to draw. It was eight mplot panels of baseline against time until it was this, and
-the argument for that shape was real: a baseline that has walked is a walk, with
-a direction and a moment it started, and a map of one value per channel could
-only ever show it as a cell that had changed colour. Two windows answer most of
-that -- the difference map is signed, so which way and how far survive -- and
-what is genuinely gone is *when* it started, and the difference on sight between
-a slope and fattening noise. Traded for a Channels tab where all three tiles are
-the same grid read the same way, a strip is the same cell on every one of them,
-and there is one implementation to be right rather than two. Trending a baseline
-across a run was always a different tile wanting MIDAS history, and still is.
+means, and its own rule for which half of a ping-pong pair to draw.
+
+A map of one value per channel cannot show a baseline *walking* the way a plot
+of value against time can. Two windows recover most of it -- the difference map
+is signed, so which way and how far both survive -- and what a map genuinely
+cannot say is *when* a walk started, or tell a slope from fattening noise on
+sight. What it buys is a Channels tab where all three tiles are the same grid
+read the same way, a strip is the same cell on every one of them, and there is
+one implementation to be right rather than two. The full time history is in
+MIDAS history instead, which the analyzer publishes; see **Trending in MIDAS
+history** below.
 
 Beside the maps in both tiles, in a column of their own, are a **distribution
 of every channel's long-window average** and the rankings. The distribution is
@@ -293,11 +299,11 @@ to are read down one column rather than across two widths that happen to be
 similar. That width is measured from the table each tick rather than set in CSS,
 because sizing the column to its content closes a loop — mplot gives its canvas
 an intrinsic width taken from the column, and the canvas then counts towards the
-column's own content width. Beside and not below, because below is where it was: three grids
-stacked are most of a screen tall, so by the time the plot was on screen the key
-it shares an axis with was off the top of it, and that comparison is the whole
-reason the plot is there. A map is as wide as its strip count and no wider, so
-the column is space the tile already had. The maps are what gives way when the window is
+column's own content width. Beside and not below: three grids stacked are most
+of a screen tall, so a plot underneath them would be a scroll away from the
+colour key it shares an axis with, and comparing a bar to the colour a cell of
+that value is painted is the whole reason the plot is there. A map is as wide as
+its strip count and no wider, so the column is space the tile already has. The maps are what gives way when the window is
 small: they are capped at 58% of the row, so the cells narrow — a cell carries
 no text and can — rather than the column wrapping at the first window that
 cannot hold both at full size. Below about 1010px of tile width even that is
@@ -319,14 +325,12 @@ averaged, so it is part of the shared renderer.
 
 A tile may put a ranking of its own in front of it, and only noise does --
 **Loudest**, the highest RMS, which is what out of family means when loud is
-high and only high. Baseline had one too, ranking each channel by how far its
-average sat from the median of every channel with the signed gap in a column,
-because the highest baseline means nothing: a set of channels all at 0.74 V is a
-healthy detector. It is gone, and what answers that now is the maps. A baseline
-away from where the others sit is a cell that is not the colour of its
-neighbours, on a scale spanning every channel, which is legible without a table.
-What a table adds over a map is the channel number, and Moved most still carries
-it for the channels that have changed.
+high and only high. Baseline carries no equivalent, because the highest baseline
+means nothing: a set of channels all at 0.74 V is a healthy detector. What
+answers that question is the map. A baseline away from where the others sit is a
+cell that is not the colour of its neighbours, on a scale spanning every
+channel, which is legible without a table. What a table adds over a map is the
+channel number, and **Moved most** carries it for the channels that changed.
 
 The map all three tiles lay their cells out by comes from
 `pages/js/dqm-atar-geom.js`, read once from `/Equipment/SAMPIC/Settings` and
@@ -344,31 +348,29 @@ last couple of minutes -- fetched over `dqm::series`. Neither is listed in
 `probeAnalyzer` would report them missing, and each tile says instead whether
 its own series arrived.
 
-The cut is by **time, not by count**. It was the last ten values per channel,
-which is a different amount of history on every channel: ten values is eight
-seconds on a busy channel and four minutes on a quiet one, so the two ends of
-one plot were showing windows differing by a factor of thirty. `recent seconds
-per channel` replaces it, and the page makes its own cut on the axis the reader
-can actually see. The cost now follows the event rate rather than the channel
-count -- about twice the old size at the demonstrator's ~1 Hz, and
-proportionally more if the rate rises, which `RecentByChannel` says out loud.
+The cut is by **time, not by count**, and that is the point of the series. A
+fixed count is a different amount of history on every channel -- ten values is
+eight seconds on a busy channel and four minutes on a quiet one, so the two ends
+of one plot would be showing windows differing by a factor of thirty. `recent
+seconds per channel` is a time, and the page makes its own cut on the axis the
+reader can actually see. The cost follows the event rate rather than the channel
+count, which `RecentByChannel` says out loud.
 
-That pair changed shape because of the question they answer, not only the cost.
-"Is this channel sitting where it should" is about *now*; a colormap summed
-since the run started cannot answer it, and actively hides a channel that has
-walked inside a column still carrying every value it ever had. The depth is
+Time is also what the question wants. "Is this channel sitting where it should"
+is about *now*; a colormap summed since the run started cannot answer it, and
+actively hides a channel that has walked inside a column still carrying every
+value it ever had. The depth is
 `/DQM/Analyzer/Binning/recent seconds per channel`, default 120, and it is the
 whole cost of those tiles. Each point carries its age, which is what lets both
 tiles be honest that their points are not one moment: channels are hit at very
 different rates.
 
-Neither draws against the channel axis any more, and both now draw **against
-the target**: three grids of one cell per channel each, placed by strip and
-layer, showing the quantity averaged over a long window, over a short one, and
-the difference. The old scatter's x axis was the *global
-channel*, so two columns side by side were two channels sharing a cable rather
-than two strips sharing a neighbourhood -- and "which strips are loud" is a
-question about where they are. The three maps stack so a column is one strip
+Both draw **against the target**: three grids of one cell per channel each,
+placed by strip and layer, showing the quantity averaged over a long window,
+over a short one, and the difference. Not against the global channel, which is
+the readout order -- two adjacent columns on that axis are two channels sharing
+a cable rather than two strips sharing a neighbourhood, and "which strips are
+loud" is a question about where they are. The three maps stack so a column is one strip
 read three ways, and they are `div`s rather than an mplot colormap because a
 cell has states no colour scale can carry: no value in the long window, no value
 in the short one, and no older values to compare the short one against, so the
@@ -377,6 +379,58 @@ paints them all as the bottom of the ramp, which is the one reading they must
 not get. Under each pair of maps is a ranking that names the tile's own outliers and the
 channels that moved most, because a cell carries no label and the global channel
 number is what the ODB, the frontend and the cable map all speak.
+
+### Trending in MIDAS history
+
+A map answers "where is this channel now" and cannot answer "when did it start
+moving". The analyzer publishes the numbers for the second question into MIDAS
+history, so `mhttpd`'s own History tab trends them and no tile here has to.
+
+It is **off by default** — writing under `/History` is not something a
+monitoring client should do to an experiment that did not ask for it. Turn it on
+under `/DQM/Analyzer/Sampling`:
+
+| key | default | what it is |
+|---|---|---|
+| `publish history` | `false` | write the values and create the links at all |
+| `history period s` | `60` | seconds between writes, and the whole of what this costs on disk |
+
+Values are written under `/DQM/Analyzer/History` and linked from
+`/History/Links`, not fabricated as an equipment record: `/Equipment` is where
+an operator looks to find out what is actually running, and an equipment there
+would claim a readout that does not exist.
+
+Three events, and the split is not cosmetic:
+
+| event | holds |
+|---|---|
+| `DQM` | the scalars — `Baseline median`, `Baseline spread`, `Baseline channels`, `Baseline quiet`, the same four for `Noise`, plus `Hits per event` and `Events` |
+| `DQMBaseline` | one array of per-channel baselines, one entry per channel |
+| `DQMNoise` | the same for noise |
+
+**A `/History/Links` event is one record**, and mlogger rewrites all of it on
+every ODB write to any tag in it — there is no per-event minimum period, the way
+`Common/Log history` throttles an equipment. With the scalars sharing an event
+with the two per-channel arrays, each scalar write drags the whole of both
+arrays onto disk with it: measured on this experiment's 512 channels at
+**816 MB/day**, against ~11 MB/day for the split above at the 60 s period. **The cost is per name, not per byte** — another scalar is free,
+another array doubles the file. That is the number to check before adding one.
+
+Medians and inter-quartile spread rather than means and sigmas: one channel
+stuck at rail moves a mean and a sigma and leaves the median where the detector
+actually is. It is the same robustness argument the tiles' own fence makes, and
+`_quantile` is the nearest-rank definition `dqm-hists.js` uses, so a median
+quoted in history and one quoted on the page are one statistic.
+
+A channel with nothing in the window is written as exactly `0.0`, which no real
+baseline or RMS can be, so it reads as "nothing here" rather than as a
+measurement — and the `channels` count beside it says how many there are. A
+`NaN` would plot as a gap indistinguishable from the logger having been down.
+
+Histograms are deliberately not published. Occupancy, amplitude and persistence
+are distributions, and a distribution is not a time series: history would store
+one tag per bin, and the bins only mean anything together. Occupancy's counts are monotonic
+besides, so trending them draws a ramp whose slope is the only real content.
 
 ### Ping-pong mode
 
@@ -387,13 +441,12 @@ would otherwise have been dead time. The ODB's `Channel map channel id` then
 stops being injective: two entries carry the same pixel id, and a grid position
 holds two channels rather than one.
 
-That used to halve the detector silently. `heatGrid` inverted the map with
-`atPos.set(key, ch)` in a loop over ascending channel, so the second of every
-pair overwrote the first and 128 of 256 channels got no cell at all — on
-occupancy and on both map tiles at once, with every tile still reporting its
-full channel count in the chips above. A position carries a channel **list** for
-that reason, and `byPos` is what the tiles paint from; `byCh` maps both halves
-of a pair to the same cell, so a loop over it would paint that cell twice.
+Inverting that map naively halves the detector in silence: keyed by position in
+a loop over ascending channel, the second of every pair overwrites the first and
+half the channels get no cell at all, while every tile goes on reporting its
+full channel count in the chips above. So a position carries a channel **list**,
+and `byPos` is what the tiles paint from. `byCh` maps both halves of a pair to
+the same cell, so a loop over it would paint that cell twice.
 
 Which of a pair is "first" is **the order the channel map lists them, never the
 parity of the channel number**. Pairs being (2k, 2k+1) is a cabling fact this
@@ -433,23 +486,24 @@ keys and the per-map headings span both columns for the same reason — one
 scale, one window, and a heading repeated per column would invite reading them
 as two different measurements.
 
-There is no partner-difference map and no partner ranking. Both existed
-briefly and both answered "how far apart are these two channels", which is a
-question about the pair rather than about either channel, and not one these
-tiles are for.
+Neither tile draws a partner difference or a partner ranking. Both would answer
+"how far apart are these two channels", which is a question about the pair
+rather than about either channel, and not one these tiles are for. The pair's
+own health is on the occupancy tile, as **Most uneven pairs**.
 
-None of this is drawn on a one-channel-per-strip map. `heatGrid` reports
-whether any position has two channels, and with none there is one column and
-the tile is exactly what it was before ping-pong — same ids, same layout. The
-second column is built only where there is a second channel to put in it.
+None of this is drawn on a one-channel-per-strip map. `heatGrid` reports whether
+any position has two channels, and with none there is a single column, with the
+same ids and the same layout. The second column is built only where there is a
+second channel to put in it.
 
 **Two things ping-pong changes that are not the DQM's to fix.** Hits per event
 rises, because the recovered triggers are the point, so the `hits_per_event`
 alarm's reference to "near 2.3 hits per event" is a run-108 number that wants
 re-taking. And per-channel statistics halve, because a strip's hits now divide
-across two channels — so the noise and baseline recent windows, at 10 s, are
-averaging half as many values as they were and the "nothing in the last 10 s"
-chip is the number to watch when deciding whether to widen them.
+across two channels — so the noise and baseline recent windows average half as
+many values per channel as a one-channel-per-strip map would, and the "nothing
+in the last 30 s" chip is the number to watch when deciding whether to widen
+them.
 
 **Every window is a setting**: `Noise Window Seconds` and `Noise Recent
 Seconds` under `/DQM/ATAR`, and `Baseline Window Seconds` and `Baseline Recent
@@ -469,15 +523,14 @@ The page clamps the long window to what the analyzer actually keeps, and the
 short one to under the long, and says so in the tile when it has to -- a window
 silently narrowed would be a map labelled with a number it is not drawing.
 
-The short map was a single freshest value per channel until it was a window. A
-demonstrator event is ~35 hits of 256 channels, so one value is one hit: the map
-moved between refreshes by the noise on a single sample, which is more than most
-of what it was there to show, and it needed a per-cell dimming to admit how old
-each value was. A window fixes both at once -- the age is bounded by the window,
-and averaging inside it takes the single-hit scatter out -- so the dimming is
-gone and a channel with nothing inside the short window is simply absent there.
-A chip counts those, which is the number to watch when deciding whether the
-short window is wide enough.
+The short map is an **average over a window**, not each channel's freshest
+value. A demonstrator event is ~35 hits of 256 channels, so a single value is a
+single hit: a map of freshest values moves between refreshes by the noise on one
+sample, which is more than most of what it is there to show, and it can only say
+how old each value is by dimming the cell. A window bounds the age and averages
+the single-hit scatter out, so a channel with nothing inside the short window is
+simply absent there. A chip counts those, which is the number to watch when
+deciding whether the short window is wide enough.
 
 The remaining two -- amplitude by channel and persistence, both on Trends --
 are **colormaps and start off**, listed in `TWO_D` in that file, each with a
@@ -504,12 +557,11 @@ histogram, and the three tiles on the Channels tab each answer one third of it.
 
 `amplitude_recent_by_channel` on the Proposed tab is the one worth reading
 twice. The Scope tab shows amplitude as the accumulated colormap, which
-answers *over the run*; the screenshot this page set was organised from asks for
-the last N events, which is *now*. That is the same argument that already moved
-baseline and noise onto recent-value series, and `RecentByChannel` in
-`sampic_plugin.py` is the class that would carry it, so it is a contained change
--- but nobody has agreed to it, so it sits on Proposed and the tile that ships
-says which question it actually answers.
+answers *over the run*; what is asked for is the last N events, which is *now*.
+That is the same distinction baseline and noise draw as recent-value series, and
+`RecentByChannel` in `sampic_plugin.py` is the class that would carry it, so it
+is a contained change -- but nobody has agreed to it, so it sits on Proposed and
+the tile that ships says which question it actually answers.
 
 With no analyzer running, a claimed panel says so itself rather than throwing:
 it names the client it tried. If the analyzer stops after a plot is drawn, the
@@ -530,7 +582,7 @@ census of tabs rather than of pages: tabs are built when first shown, so
 `#dqm-root .dqm-tile` counts the open tab and nothing else.
 
 ```bash
-B="http://localhost:8088/?cmd=custom&page=ATAR"
+B="http://localhost:8090/?cmd=custom&page=ATAR"
 T="document.querySelectorAll('#dqm-root .dqm-tile').length"
 W="document.querySelectorAll('#dqm-root .dqm-empty-why').length"
 
@@ -558,8 +610,8 @@ something now sits on Proposed, so that tab is 10 of 10, and Channels and Scope
 are both zero. Trends is 3 of 3, which is the one count worth understanding
 before reading it as a gap: `$W` is what is on screen now, and all three Trends
 tiles are ready colormaps sitting behind their `Show plot` toggle, drawing the
-moment anyone asks. Trends is where every colormap on the page now lives, which
-is why it is the only tab whose `$W` is not zero or everything.
+moment anyone asks. Trends holds every colormap on the page, which is why it is
+the only tab whose `$W` is not zero or everything.
 
 `$T` is the tab's panel count exactly -- no renderer adds a tile of its own, and
 the three grids each map tile draws, like the eight waveform panels on Scope,
@@ -567,17 +619,17 @@ are inside their tile rather than beside it.
 
 The tab buttons carry a count too, and it is a different number: it counts
 *panels that are not `ready`*, so it is 0, 0, 0 and 10 -- only Proposed wears
-one. That is now the whole of the status display. Panels no longer carry a
-status chip and tabs no longer carry a strip of status counts, because with the
-backlog gathered onto one tab the tab you are looking at is the status.
+one. That is the whole of the status display: panels carry no status chip and
+tabs carry no strip of status counts, because with the backlog gathered onto one
+tab the tab you are looking at is the status.
 
 Those invocations failing is the signal to update them.
 
 ### Seeing the page without a browser
 
 ```bash
-scripts/shoot.py "http://localhost:8088/?cmd=custom&page=ATAR" out.png \
-    --wait-for "document.querySelectorAll('#dqm-root .dqm-tile').length === 5" --console
+scripts/shoot.py "http://localhost:8090/?cmd=custom&page=ATAR" out.png \
+    --wait-for "document.querySelectorAll('#dqm-root .dqm-tile').length === 4" --console
 ```
 
 `firefox --screenshot` is not usable here: it fires on the load event, which for
@@ -605,11 +657,11 @@ scripts/stamp-assets.py
 ```
 
 Run it after changing any `.js` or `.css`, and commit `pages/atar.html` with the
-change. It was a counter until 2026-09-21, when a layout change rewrote two
-files and left their numbers alone; the deploy was correct, the page came back
-fresh, and every browser that had seen it before went on drawing the old one.
-Nothing errored and nothing logged. A hash cannot be forgotten, only left
-unregenerated, and three things now refuse that: `tests/test_manifest.py`,
+change. A hash is used rather than a counter because a counter has to be
+remembered: when it is not, the deploy is correct, the page comes back fresh,
+and every browser that has seen it before goes on drawing the old assets with
+nothing errored and nothing logged. A hash cannot be forgotten, only left
+unregenerated, and three things refuse that: `tests/test_manifest.py`,
 `scripts/stamp-assets.py --check`, and `mdqm-register-pages`, which prints it
 loudly and makes it fatal under `--check`. Registration itself still goes
 through — an experiment with no pages is worse than one a hard-reload

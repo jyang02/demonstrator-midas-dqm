@@ -58,8 +58,8 @@ Exactly one 56-byte record, `<Q12I`: `fe_timestamp_ns` u64, `nhits` u32,
     sp_prepare_us_max  sp_read_us_max  sp_decode_us_max  sp_total_us_max
     sp_acq_retry_max   sp_acq_retry_sum
 
-`<Q12I` and the `<QII10I` this was previously written as are byte-identical;
-the difference is only that the ten can now be named.
+The struct format is `<Q12I`; `<QII10I` is byte-identical, and naming the ten
+separately is the only difference.
 
 The telemetry is **zero in anything that repackages a recording** — the `.bin`
 and `.root` converters have nothing to put there — and filled with per-chip
@@ -92,10 +92,10 @@ map entry *i* are the same readout channel.
 `Channel map channel id` is **not injective in ping-pong mode**, where a strip
 is wired to two consecutive channels and a deposit is recorded on whichever was
 not used last: two entries then carry the same pixel id. The global channel
-stays unique -- it is the readout channel and there are still 256 of them -- but
-anything inverting the map to ask "which channel is at this position" gets a
-list rather than one answer, and code that assumed one silently drops half the
-detector. See **Ping-pong mode** in the README for what the Channels tab does
+stays unique -- it is the readout channel, and in ping-pong there is one per
+half of every strip rather than one per strip -- but anything inverting the map
+to ask "which channel is at this position" gets a list rather than one answer,
+and code that assumes one silently drops half the detector. See **Ping-pong mode** in the README for what the Channels tab does
 with it.
 
 ## AC00
@@ -204,4 +204,4 @@ under/overflow — and it reads 0.0 on this data.
    wants checking against the cabling. That is what `event_display_position`
    waits on, and why that panel has no renderer while the raw waveforms do.
 
-Neither is a DQM task, and the bank document is no longer one of them.
+Neither is a DQM task.

@@ -15,6 +15,12 @@ judging layout, decoded numbers and empty states, and not for judging the plot.
 
 ## On pionline (192.168.40.106)
 
+**Everything below needs the CENPA VPN.** `192.168.40.106` is not routable from
+outside it, so every `ssh` and `scp` here -- including the tunnel that makes the
+page reachable in a browser -- fails with a timeout rather than a refusal if the
+VPN is down. That is the first thing to check when a command in this document
+hangs.
+
 MIDAS, firefox and geckodriver are all installed there; Python packaging is
 not, which the setup below works around rather than fixes. Three traps first,
 each of which costs an afternoon if you meet it the other way round.
@@ -165,11 +171,16 @@ anything under `src/mdqm/dqm/`.
 
 ### Look at it
 
-`mhttpd` binds localhost, so tunnel:
+`mhttpd` binds localhost only -- `/WebServer/Enable localhost port` is the one
+that is on, and the insecure and https ports are both off -- so
+`http://192.168.40.106:8090/` refuses the connection from anywhere. Tunnel it
+(on the CENPA VPN, as everything here is):
 
 ```bash
 ssh -N -L 8090:localhost:8090 pioneer@192.168.40.106
 ```
+
+Leave that running and open the URL below against your own `localhost`.
 
 Then open <http://localhost:8090/?cmd=custom&page=ATAR#tab=atar_scope>. The
 waveform panel should show a trace per hit, the raw-event table the decoded hit
@@ -186,10 +197,10 @@ With the replay and the analyzer both up:
 
 | tab | on DEMODQM |
 |---|---|
-| `#tab=atar_channels` | **live**: occupancy as a strip-by-layer map of hits per channel, with two rankings under it side by side naming the quietest and the busiest channels, and hits per event beside it at the top of the tab (they share a row above ~1150px of tab width and stack below it, with no media query -- flex-wrap on the tile size the spec already carries), then noise by channel as three strip-by-layer maps -- the RMS averaged over a long window, over a short one, and the difference, both windows settable at `/DQM/ATAR/Noise Window Seconds` and `Noise Recent Seconds` (120 s and 10 s by default, with an Edit button on each chip) and both cut by the page over the one reply, with the distribution of every channel and a ranking naming the loudest and the biggest movers in a column to the right of the maps -- the maps narrow to keep it there, and it wraps back under them below ~1010px of tile width -- and baseline as three more of exactly the same maps, from the same renderer, over its own pair of keys `Baseline Window Seconds` and `Baseline Recent Seconds`; it carries only the shared `Moved most` ranking, where noise puts `Loudest` in front of it (both series are cut by time rather than by count -- the analyzer keeps 120 s per channel, over `dqm::series`, and the page cuts its two windows out of that reply -- so a channel quiet for a minute has nothing on the short map and a chip counts those) |
+| `#tab=atar_channels` | **live**: occupancy as a strip-by-layer map of hits per channel, with two rankings under it side by side naming the quietest and the busiest channels, and hits per event beside it at the top of the tab (they share a row above ~1150px of tab width and stack below it, with no media query -- flex-wrap on the tile size the spec already carries), then noise by channel as three strip-by-layer maps -- the RMS averaged over a long window, over a short one, and the difference, both windows settable at `/DQM/ATAR/Noise Window Seconds` and `Noise Recent Seconds` (120 s and 30 s by default, with an Edit button on each chip) and both cut by the page over the one reply, with the distribution of every channel and a ranking naming the loudest and the biggest movers in a column to the right of the maps -- the maps narrow to keep it there, and it wraps back under them below ~1010px of tile width -- and baseline as three more of exactly the same maps, from the same renderer, over its own pair of keys `Baseline Window Seconds` and `Baseline Recent Seconds`; it carries only the shared `Moved most` ranking, where noise puts `Loudest` in front of it (both series are cut by time rather than by count -- the analyzer keeps 120 s per channel, over `dqm::series`, and the page cuts its two windows out of that reply -- so a channel quiet for a minute has nothing on the short map and a chip counts those) |
 | `#tab=atar_scope` | **live** from the replay: waveforms by layer, the two hit-position maps, and the charge-depth profile with the event total. Three tiles, every one of them off the one event on screen, and every one of them drawing |
 | `#tab=atar_trends` | persistence, charge-against-amplitude and amplitude by channel, all three **live** behind their `Show plot` and all three accumulated over the run rather than taken from the event on screen -- which is what the tab is for, and why amplitude by channel sits here rather than at the end of Scope. Charge is the waveform's integral in V*samples, the same one the Scope tab's charge display takes -- not an energy, because the volts-to-MeV calibration still has no owner |
-| `#tab=atar_proposed` | ten panels, each naming what it waits for -- including the layer hit rate and the two-track rate, which used to sit among the drawing tiles on Scope and Trends. This tab is the backlog, it is where every panel that is waiting for something now lives, and it is expected to be empty of plots |
+| `#tab=atar_proposed` | ten panels, each naming what it waits for. This tab is the backlog -- every panel waiting on something lives here -- and it is expected to be empty of plots |
 
 The first three tabs draw everything on them, which is the point of gathering
 the waiting panels onto Proposed: a tile that is empty on Channels, Scope or

@@ -1,9 +1,14 @@
 # The element contract
 
-What a spec file may contain. `render/model.py` is the authority that enforces this; the two are
-pinned together by `tests/test_schema_doc.py`, which fails if a vocabulary named here is missing
-from the validator or vice versa. The `<!-- vocab: -->` and `<!-- required: -->` comments below are
-what that test reads — leave them in place.
+What a spec file may contain.
+
+**This document and its validator belong to the spec project, not to this repository.**
+`render/model.py` is the authority that enforces the contract and `tests/test_schema_doc.py` pins
+the two together, and neither is checked out here — so nothing in this repository validates a spec
+against what follows. What this repository does check is *drift*: `tests/test_panels.py` fails if
+`pages/js/dqm-panels.js` is not what `scripts/gen-panels.py` generates from `spec/dqm_shifter.json`.
+The `<!-- vocab: -->` and `<!-- required: -->` comments below are what the upstream test reads —
+leave them in place.
 
 A spec describes **one screen**. There is one: `spec/dqm_shifter.json`. What a MIDAS frontend has
 to write before those pages can be drawn is a list rather than a screen, and lives in
