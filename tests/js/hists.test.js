@@ -916,6 +916,32 @@ test("each key sits above what it explains, and says the scale is shared", async
   assert.match(textOf(maps), /one scale for every map below/);
 });
 
+test("the distribution is resized once the tables it is as wide as exist", async () => {
+  // The plot is width: 100% of a column sized to its content, and that content
+  // is the ranking tables -- which do not exist on the tick the graph is
+  // constructed on, because they are built from the same `rows` a few lines
+  // later. mplot reads its host div's width once and never watches it, so
+  // without a re-measure the plot keeps the width of a column holding one
+  // subhead and stops sharing an edge with the tables under it.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+  const g = distOf(page, "noise");
+  const div = page.doc.getElementById("noise-dist-plot");
+  const before = g.resizes;
+
+  // A laid out column: the tables landed and the plot is as wide as they are.
+  div.clientWidth = 436;
+  await settle(page);
+  assert.ok(g.resizes > before,
+    "the plot kept the width it was built at, before the tables existed");
+
+  // And not on every tick after that. resize() plus redraw() is two full
+  // repaints of a 48-bin histogram for a number that has not moved.
+  const settled = g.resizes;
+  await settle(page);
+  assert.strictEqual(g.resizes, settled,
+    "the plot is resized on every tick, not only when its width moves");
+});
+
 test("the distribution and the rankings sit beside the maps, not under", async () => {
   // Three grids stacked are most of a screen tall, and both blocks that
   // DESCRIBE them were below all three -- so the colour key the distribution

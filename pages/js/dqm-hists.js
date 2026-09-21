@@ -1489,7 +1489,7 @@ function channelMaps(spec) {
                    line: { draw: true, width: 1 }, marker: { draw: false } }],
         });
         div.mpg = graph;
-        built.dist = { graph: graph, head: head, div: div };
+        built.dist = { graph: graph, head: head, div: div, width: 0 };
         graph.resize();
       }
 
@@ -1680,6 +1680,27 @@ function channelMaps(spec) {
       dist.graph.redraw();
 
       fillRanks(rows, win);
+
+      // After fillRanks, and this is the one ordering in this function that is
+      // not about data. The plot is width: 100% of a column sized to its
+      // content, and its content is the tables -- which on the first tick do
+      // not exist yet, because they are built from `rows` three lines above.
+      // So the graph was constructed against a column holding one subhead,
+      // measured that, and kept it: mplot takes its size from the host div once
+      // and does not watch it. Re-measuring here catches that first tick, and
+      // also the later ones where the width genuinely moves -- a ranking whose
+      // widest channel goes from "ch 7" to "ch 511" widens the table it is in,
+      // and a plot that did not follow would stop sharing an edge with it.
+      //
+      // Guarded on the width actually changing, because resize() and redraw()
+      // on every tick is two full repaints of a 48-bin histogram for a number
+      // that is the same as it was ten seconds ago.
+      const w = dist.div.clientWidth;
+      if (w && w !== dist.width) {
+        dist.width = w;
+        dist.graph.resize();
+        dist.graph.redraw();
+      }
 
       drawn = true;
       covered.textContent = nChannels ? `${by.size} of ${nChannels}` : String(by.size);

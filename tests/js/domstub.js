@@ -18,6 +18,12 @@ class El {
     this.className = "";
     this.id = "";
     this._text = null;
+    // There is no layout here, so a real width is not on offer. Zero is the
+    // honest answer and is also what a real div reports before it has been laid
+    // out -- which is the state the page already guards for, because MPlotGraph
+    // reads clientWidth in its constructor. A test that wants to model a laid
+    // out div assigns to it.
+    this.clientWidth = 0;
     this.listeners = {};
     this.onchange = null;
     this.onclick = null;
