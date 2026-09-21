@@ -376,6 +376,23 @@ table.dqm-table tr.stale td { opacity: 0.55; }
   .dqm-heat-collab { display: none; }
 }
 
+/* Every mplot canvas, on every tile. mplot.js:1178 sets the bitmap to
+   `this.parentDiv.clientWidth` -- the host's CONTENT width -- and mplot.js:926
+   gives the same canvas `border: 1px solid black` as an inline style. Under the
+   default content-box that makes the element two pixels wider than the box it
+   was measured from, so a plot at width: 100% overflows its container by 2px
+   and the page grows a horizontal scrollbar it can be dragged sideways in.
+   Measured on the Scope tab: document scrollWidth 1602 against a 1600 viewport,
+   from the hit maps and the depth profile, none of which is oversized.
+
+   border-box costs 0.36% of horizontal scale -- a 560px bitmap drawn into 558px
+   of content box -- which is below anything visible, and buys back the two
+   pixels. The alternative is overriding mplot's inline border with !important
+   and drawing our own, which is exact and is a bigger thing to own. */
+.dqm-scope-plot canvas,
+.dqm-dist-plot canvas,
+.dqm-plot canvas { box-sizing: border-box; }
+
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
 
