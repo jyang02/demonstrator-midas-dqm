@@ -59,23 +59,94 @@ const state = {
 
 const STORE = "dqm-scope-settings";
 
-//: The legend's background, and the only thing about the legend there is to
-//: choose. mplot draws it at the top-left corner of the plot area -- hard coded
-//: to (x1, y2) in its draw path, with no placement option anywhere in its
-//: parameters -- and fills it opaque white.
-//:
-//: On these panels that corner is exactly where the pre-pulse baseline sits: a
-//: SAMPIC pulse is negative-going from a high baseline, so the flat run before
-//: the pulse is the top-left of every trace. An opaque legend hides the first
-//: quarter of it, which is the part a shifter reads to answer "is this channel
-//: sitting where it should, and is it quiet". A layer with two traces hides
-//: twice as much, and because the box is a fixed pixel width it covers MORE of
-//: a narrower panel, not less -- 145px of 560 rather than of 735.
-//:
-//: Translucent is the fix that is available. The label still reads at #404040
-//: over this and the trace reads through it. Moving the box is not on offer
-//: without patching mplot.js, which is a MIDAS resource and not ours to fork.
-const LEGEND_BG = "rgba(255, 255, 255, 0.72)";
+//: How far our legend sits inside the corner of the plot area, in CSS pixels.
+const LEGEND_INSET = 4;
+
+/**
+ * The legend, in the bottom-right corner of the plot area, drawn by us.
+ *
+ * mplot's own legend is turned off on these plots and this replaces it, for one
+ * reason: mplot draws it at the TOP-LEFT of the plot area -- hard coded to
+ * (x1, y2) in its draw path, with no placement option anywhere in its
+ * parameters -- and fills it opaque. On a waveform panel that corner is exactly
+ * where the pre-pulse baseline sits, because a SAMPIC pulse is negative-going
+ * from a high baseline: the flat run before the pulse IS the top-left of every
+ * trace, and it is what a shifter reads to answer "is this channel sitting
+ * where it should, and is it quiet". A layer with two traces hid twice as much,
+ * and because the box is a fixed pixel width it covered more of a narrow panel
+ * and not less.
+ *
+ * Bottom-right is empty on these plots for the same reason top-left is not: the
+ * trace lives near the top of its range and comes back there after the pulse.
+ *
+ * A DOM overlay rather than a patched mplot.js, which is a MIDAS resource this
+ * page set is a guest in and must not fork. It is also not a new idea here --
+ * heatLegend, diffLegend and stripLegend are all hand-built -- and it buys a
+ * legend that can be selected and read by a screen reader, which a canvas
+ * cannot. pointer-events: none in the stylesheet keeps drag-to-zoom working
+ * through it.
+ *
+ * Positioned from `graph.x2` and `graph.y1`, the plot-area bounds mplot's
+ * draw() computes, so the box tracks the axis labels rather than guessing an
+ * inset: a y axis that grows a digit moves the plot area, and a legend pinned
+ * to the host would drift out of the corner it is supposed to be in. When those
+ * are not readable -- before the first draw, and under the node suite, which
+ * has no layout -- the stylesheet's own corner is the fallback and the rows are
+ * still built, so what it SAYS is testable even where where it sits is not.
+ */
+function placeLegend(div, graph) {
+  if (!div || !graph) return;
+  const plots = (graph.param.plot || []).filter((p) => p.label);
+  let box = div.dqmLegend;
+  if (!plots.length) {
+    if (box) box.hidden = true;
+    return;
+  }
+  if (!box) {
+    box = el("div", { class: "dqm-plot-legend" });
+    div.appendChild(box);
+    div.dqmLegend = box;
+  }
+  box.hidden = false;
+  box.textContent = "";
+  plots.forEach(function (p) {
+    const swatch = el("span", { class: "dqm-plot-legend-swatch" });
+    swatch.style.background = (p.line && p.line.color) || "#666";
+    box.appendChild(el("div", { class: "dqm-plot-legend-row" },
+      swatch, el("span", {}, p.label)));
+  });
+
+  const cv = graph.canvas;
+  const w = cv ? cv.clientWidth : 0;
+  const h = cv ? cv.clientHeight : 0;
+  // Scaled, because the canvas may be painting a bitmap from the last layout
+  // into a box of a slightly different size -- see the max-width rule on
+  // .dqm-scope-plot canvas. One frame of 0.4%, but the arithmetic is free.
+  if (w && h && cv.width && cv.height
+      && isFinite(graph.x2) && isFinite(graph.y1)) {
+    const sx = w / cv.width;
+    const sy = h / cv.height;
+    box.style.right = `${Math.max(0, Math.round(w - graph.x2 * sx)) + LEGEND_INSET}px`;
+    box.style.bottom = `${Math.max(0, Math.round(h - graph.y1 * sy)) + LEGEND_INSET}px`;
+  } else {
+    box.style.right = "";
+    box.style.bottom = "";
+  }
+}
+
+/**
+ * Run after mplot has actually painted.
+ *
+ * `redraw()` defers to requestAnimationFrame, so the plot-area bounds the
+ * legend is positioned from do not exist yet when it returns. Queuing our own
+ * frame puts us after mplot's in the same queue. Synchronous where there is no
+ * rAF at all, which is the node suite: the callback still runs, and placement
+ * falls back to the stylesheet.
+ */
+function afterDraw(fn) {
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(fn);
+  else fn();
+}
 
 //: Past this many traces at once the plot is a smear with a legend over it, and
 //: the page says so rather than silently dropping any.
@@ -142,7 +213,7 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
     state.graph = new MPlotGraph(plot, {
       title: { text: "" },
       stats: { show: false },
-      legend: { show: true, backgroundColor: LEGEND_BG },
+      legend: { show: false },            // ours instead; see placeLegend
       // False, not for want of wanting it: a tile that keeps the wheel is a
       // tile the page cannot be scrolled past. mplot cancels every wheel
       // event inside the axis window, so with the cursor over a plot the
@@ -239,7 +310,7 @@ function buildLayerPanels(body, firstPlot, map) {
     const g = new MPlotGraph(div, {
       title: { text: "" },
       stats: { show: false },
-      legend: { show: true, backgroundColor: LEGEND_BG },
+      legend: { show: false },            // ours instead; see placeLegend
       // False, not for want of wanting it: a tile that keeps the wheel is a
       // tile the page cannot be scrolled past. mplot cancels every wheel
       // event inside the axis window, so with the cursor over a plot the
@@ -553,6 +624,13 @@ function draw() {
 
   state.busy = drawn.length > BUSY_OVERLAY;
   panels.forEach(function (p) { p.graph.redraw(); });
+  // One frame later, because that is when mplot's own draw has run and the
+  // plot-area bounds the legend is placed from exist.
+  afterDraw(function () {
+    panels.forEach(function (p) {
+      placeLegend(p.div || p.graph.parentDiv, p.graph);
+    });
+  });
 
   // The charge display is the same event, so it is redrawn from here rather
   // than from its own loop. One place decides what is on screen.

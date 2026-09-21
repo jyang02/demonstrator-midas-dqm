@@ -480,32 +480,85 @@ test("a collector that disagrees with the banks it collected is reported", async
 
 // --- one panel per ATAR layer -----------------------------------------------
 
-test("the waveform legend does not hide the baseline it sits on", async () => {
-  // mplot draws the legend at the top-left corner of the plot area -- hard
-  // coded to (x1, y2), with no placement option in its parameters -- and fills
-  // it opaque. On these panels that corner is where the pre-pulse baseline is,
-  // because a SAMPIC pulse is negative-going from a high baseline, so an opaque
-  // box hides the first quarter of the run a shifter reads to judge whether the
-  // channel is sitting where it should. Two traces on a layer hide twice as
-  // much, and the box is a fixed pixel width, so a narrower panel loses more of
-  // its trace and not less.
+test("the waveform legend is ours, in the corner mplot cannot put one", async () => {
+  // mplot draws its legend at the TOP-left of the plot area -- hard coded to
+  // (x1, y2), no placement option in its parameters -- and fills it opaque. On
+  // these panels that corner is where the pre-pulse baseline sits, because a
+  // SAMPIC pulse is negative-going from a high baseline, so an opaque box there
+  // hides the run a shifter reads to judge whether the channel is quiet and
+  // sitting where it should. Two traces on a layer hid twice as much.
   //
-  // Translucency is the whole of what can be done about it here. Pinned because
-  // the value is a claim about mplot's draw path, and because reverting it to
-  // the default is a one-word edit that looks like tidying.
+  // So mplot's is off and this is ours, and both halves of that are pinned:
+  // turning its legend back on would put the old box back without removing this
+  // one, and there would then be two.
   const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
   const page = await boot([ev], null, sampicSettings());
   await pump(page, 3);
-  const panels = page.root.byClass("dqm-scope-plot").filter((d) => d.mpg);
-  assert.ok(panels.length, "no plot to check the legend of");
-  panels.forEach(function (d) {
-    const legend = d.mpg.param.legend || {};
-    if (!legend.show) return;             // the tiles that ask for no legend
-    assert.match(String(legend.backgroundColor), /^rgba\(/,
-      `${d.id} draws an opaque legend over the top-left of its own trace`);
+
+  // The waveform plots only. The hit-position maps share the class and also
+  // ask mplot for no legend, but they are a colormap of one event's deposits
+  // with nothing to name -- placeLegend is not called for them.
+  const hosts = page.root.byClass("dqm-scope-plot")
+    .filter((d) => d.mpg && /^scope-plot(-L\d+)?$/.test(d.id));
+  assert.ok(hosts.length, "no waveform plot to check the legend of");
+  hosts.forEach(function (d) {
+    assert.strictEqual((d.mpg.param.legend || {}).show, false,
+      `${d.id} still lets mplot paint a legend over the top-left of its trace`);
+  });
+
+  // Ours says what mplot's did: one row per trace, the label and its colour.
+  const drew = hosts.filter((d) => d.mpg.param.plot.some((p) => p.xData.length));
+  assert.ok(drew.length, "no panel drew a trace to name");
+  drew.forEach(function (d) {
+    const box = d.byClass("dqm-plot-legend")[0];
+    assert.ok(box, `${d.id} drew a trace and no legend`);
+    const rows = box.byClass("dqm-plot-legend-row");
+    assert.strictEqual(rows.length, d.mpg.param.plot.length,
+      `${d.id} names ${rows.length} of ${d.mpg.param.plot.length} traces`);
+    // Read from the spans and not from box.textContent: the stub's getter
+    // returns an assigned empty string in preference to its children, and
+    // placeLegend clears with textContent = "" the way every tile here does.
+    const said = box.byTag("span").map((s) => s.textContent).join(" ");
+    d.mpg.param.plot.forEach(function (p) {
+      assert.ok(said.includes(p.label), `${d.id} does not name ${p.label} (${said})`);
+    });
+    assert.strictEqual(box.byClass("dqm-plot-legend-swatch")[0].style.background,
+      d.mpg.param.plot[0].line.color, "the swatch is not the trace's colour");
   });
 });
 
+test("the legend is placed from the plot area, not from the host", async () => {
+  // A y axis that grows a digit moves the plot area, and mplot keeps its
+  // toolbar in the right 30px and its labels in the bottom ~34 -- so a legend
+  // pinned to the host drifts out of the corner it is meant to be in. It is
+  // positioned from graph.x2/graph.y1, the bounds mplot's own draw() computes.
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+
+  const host = page.root.byClass("dqm-scope-plot")
+    .filter((d) => d.mpg && /^scope-plot(-L\d+)?$/.test(d.id)
+            && d.mpg.param.plot.some((p) => p.xData.length))[0];
+  assert.ok(host, "no drawn panel");
+
+  // The stub does no layout, so this is what a laid out plot would report: 560
+  // wide and 170 tall, with mplot's plot area ending at x=530 and y=140 -- it
+  // keeps its toolbar in the right 30px and its x labels in the bottom 30.
+  host.mpg.canvas = { clientWidth: 560, clientHeight: 170, width: 560, height: 170 };
+  host.mpg.x2 = 530;
+  host.mpg.y1 = 140;
+  // The legend is placed on a draw, so one more event is what runs placeLegend
+  // against the bounds just set. page.queue is the fixture's own way to feed a
+  // later poll.
+  const before = host.mpg.draws;
+  page.queue.push(ev);
+  await pump(page, 3);
+  assert.ok(host.mpg.draws > before, "the panel never redrew, so nothing was placed");
+
+  const box = host.byClass("dqm-plot-legend")[0];
+  assert.strictEqual(box.style.right, "34px", "legend right edge is not the plot area's");
+  assert.strictEqual(box.style.bottom, "34px", "legend bottom is not the plot area's");
+});
 test("with the map in the ODB, the traces split into one panel per layer", async () => {
   const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
   const page = await boot([ev], null, sampicSettings());

@@ -420,6 +420,33 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-dist-plot canvas,
 .dqm-plot canvas { max-width: 100%; box-sizing: border-box; }
 
+/* Our legend, over the bottom-right corner of a waveform plot's axes.
+   mplot's own is off on those plots: it draws at the TOP-left of the plot area,
+   hard coded, opaque, which on a negative-going pulse from a high baseline is
+   exactly on top of the pre-pulse baseline a shifter reads. Bottom-right is
+   empty on these, because the trace lives near the top of its range.
+
+   `right` and `bottom` are set from the plot-area bounds in placeLegend(); what
+   is here is the fallback for before the first draw, and it has to be a real
+   corner rather than 0 -- mplot keeps its toolbar in the right 30px and its x
+   axis labels in the bottom ~34. position: relative on the host is what these
+   anchor to.
+
+   pointer-events: none so drag-to-zoom still reaches the canvas underneath, and
+   a translucent background so a trace that does reach this corner is not
+   replaced by the thing naming it -- which is the whole complaint against where
+   mplot put it. */
+.dqm-scope-plot { position: relative; }
+.dqm-plot-legend {
+  position: absolute; right: 34px; bottom: 38px;
+  padding: 2px 5px; border: 1px solid #d0d0d0; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 11px; line-height: 1.35; color: #404040; white-space: nowrap;
+  pointer-events: none;
+}
+.dqm-plot-legend-row { display: flex; align-items: center; gap: 5px; }
+.dqm-plot-legend-swatch { width: 18px; height: 2px; flex: none; }
+
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
 
