@@ -140,26 +140,25 @@ const TWO_D = new Set([
 //: mhttpd -- the same process serving run control -- more often than this buys
 //: nothing.
 //:
-//: Ten seconds rather than the two it used to be. Nothing here is a
-//: measurement of the last instant: every one of these is a sum over every
-//: event since the run started or since dqm::clear, so between one fetch and
-//: the next the shape barely moves once there is anything in it. What the old
-//: two seconds bought was a request every two seconds per tile through
-//: whatever sits between the browser and mhttpd, which for anyone on a tunnel
-//: is the part that is felt.
+//: Ten seconds, because nothing here is a measurement of the last instant:
+//: every one of these is a sum over every event since the run started or since
+//: dqm::clear, so between one fetch and the next the shape barely moves once
+//: there is anything in it. A shorter interval buys a request per tile per
+//: interval through whatever sits between the browser and mhttpd, which for
+//: anyone on a tunnel is the part that is felt.
 const REFRESH_MS = 10000;
 
 //: Above this many bins, slow down (see refreshFor).
 const BIG_HIST_CELLS = 8000;
 //: Never slower than this, however large.
 //:
-//: Scaled with REFRESH_MS when that went from 2 s to 10 s, keeping the 7.5x
-//: between them, because the cap is only a backstop and must not become the
-//: rule. At the old 15 s it would have caught every histogram above 12000
-//: bins, which is all of the per-channel ones: refreshFor would have returned
-//: the cap almost every time it was asked and the flat cost-per-second it
-//: exists to hold would have quietly stopped being true. The tests below pin
-//: that property rather than any of these numbers, which is how this surfaced.
+//: 7.5x REFRESH_MS, and that ratio is the point: the cap is a backstop and must
+//: not become the rule. Set much lower -- 15 s, say -- it would catch every
+//: histogram above 12000 bins, which is all of the per-channel ones, so
+//: refreshFor would return the cap almost every time it was asked and the flat
+//: cost-per-second it exists to hold would quietly stop being true. Raising
+//: REFRESH_MS without raising this in step is how that happens. The tests below
+//: pin the property rather than any of these numbers, which is what catches it.
 const MAX_REFRESH_MS = 75000;
 
 /**
@@ -1001,24 +1000,23 @@ function reduceByChannel(s, longS, shortS) {
  * A per-channel quantity as the target: a long average, a short one, and the
  * move between. Both recent-value tiles on the Channels tab are this function.
  *
- * The scatter this replaces put RMS against the *global channel* -- so two
- * columns side by side on the plot were two channels sharing a cable, not two
- * strips sharing a neighbourhood. Its own comment said as much, and said that
- * until there was a channel map they were "not even neighbouring strips". The
- * map exists now, so the tile can be drawn against the detector: a cell per
- * channel, placed where its strip actually sits in its layer.
+ * Drawn against the DETECTOR and not against the global channel. That axis is
+ * the readout order, so two adjacent columns on it are two channels sharing a
+ * cable rather than two strips sharing a neighbourhood -- and "which strips are
+ * loud" is a question about where they are. The channel map is what makes the
+ * alternative available: a cell per channel, placed where its strip sits in its
+ * layer.
  *
- * **One renderer, two tiles.** The baseline was eight mplot panels of value
- * against time until it was this, and the argument for that shape was real:
- * a baseline that has walked is a walk, with a direction and a moment it
- * started, and a map of one value per channel could only show it as a cell that
- * had changed colour. Two windows answer most of it -- the difference map is
- * signed, so which way and how far survive -- and what is genuinely gone is
- * *when* it started and the difference on sight between a slope and fattening
- * noise. Traded for a Channels tab where both tiles are the same grid read the
- * same way, a strip is the same cell on both, and there is one implementation
- * to be right rather than two. Trending a baseline across a run was always a
- * different tile wanting MIDAS history, and still is.
+ * **One renderer, two tiles.** A map of one value per channel cannot show a
+ * baseline *walking* the way a plot of value against time can: a walk has a
+ * direction and a moment it started, and a map can only show it as a cell that
+ * has changed colour. Two windows recover most of it -- the difference map is
+ * signed, so which way and how far both survive -- and what a map genuinely
+ * cannot say is *when* it started, or tell a slope from fattening noise on
+ * sight. What it buys is a Channels tab where both tiles are the same grid read
+ * the same way, a strip is the same cell on both, and there is one
+ * implementation to be right rather than two. The full time history is in MIDAS
+ * history, which the analyzer publishes when `publish history` is set.
  *
  * What the tiles do not share is `spec.rank`: see fillRanks.
  *
@@ -1038,21 +1036,21 @@ function reduceByChannel(s, longS, shortS) {
  *
  * **Neither map is one event.** A demonstrator event is ~35 hits of 256
  * channels, so a literal per-event map would be a seventh full and the
- * difference meaningful only there. The short map used to be each channel's
- * single freshest value whenever it arrived, which was denser but carried the
- * noise on one sample -- the map moved between refreshes by more than most of
- * what it was meant to show, and it had to be dimmed cell by cell to admit how
- * old it was. A window says the same thing without either problem: the age is
- * bounded by the window, and averaging inside it is what takes the single-hit
- * scatter out.
+ * difference meaningful only there. The short map is an average over a window
+ * rather than each channel's freshest value: a single value is denser but
+ * carries the noise on one sample, so such a map moves between refreshes by
+ * more than most of what it is there to show, and it can only admit how old
+ * each cell is by dimming it. A window has neither problem -- the age is
+ * bounded by the window, and averaging inside it takes the single-hit scatter
+ * out.
  *
  * **Divs and not an mplot colormap**, which is the one structural choice here.
  * A cell has states no colour scale can carry -- no value in the long window,
  * no value in the short one, and no older values to compare the short one
  * against -- and a colormap paints them all as the bottom of the ramp, which is
- * exactly the reading they must not get. 768 divs is also
- * nothing next to the 26316 rectangles the colormaps here are toggled off to
- * avoid, and it sidesteps every mplot trap this file has paid for once already.
+ * exactly the reading they must not get. 768 divs is also nothing next to the
+ * 26316 rectangles the colormaps here are toggled off to avoid, and it avoids
+ * the sizing traps an mplot graph brings with it.
  */
 function channelMaps(spec) {
   const name = spec.name;
@@ -1091,11 +1089,12 @@ function channelMaps(spec) {
       + `Capped by what the analyzer keeps, which is its own setting.`;
     const shortChip = chip("recent over", shortChipValue);
     shortChip.appendChild(editButton(SHORT_PATH, "Edit"));
-    // The refresh interval used to be a chip of its own. It is one sentence
-    // about a number nobody tunes, and it was sitting in the row a reader scans
-    // for the two that matter, so it moves here -- onto the chip whose claim it
-    // qualifies. The short map is the one that says "now", and the honest size
-    // of that claim is its own window plus however long since the last fetch.
+    // The refresh interval is named here rather than in a chip of its own: it
+    // is one sentence about a number nobody tunes, and a chip for it would sit
+    // in the row a reader scans for the two that matter. It belongs on the chip
+    // whose claim it qualifies -- the short map is the one that says "now", and
+    // the honest size of that claim is its own window plus however long since
+    // the last fetch.
     shortChip.title = `The short window: where each channel is now. Must be `
       + `under the long one, or there is nothing left for the difference map `
       + `to subtract. The maps are refetched every `
@@ -1169,7 +1168,7 @@ function channelMaps(spec) {
     //: channel number.
     //:
     //: A map with one channel per strip builds the first column only, and it
-    //: is then exactly the tile that existed before ping-pong.
+    //: builds the first column only, with the same ids and the same layout.
     const COLUMNS = [
       { key: "ping", note: "first channel of each pair" },
       { key: "pong", note: "second channel of each pair" },
@@ -1264,12 +1263,12 @@ function channelMaps(spec) {
       }
 
       const v = kind === "now" ? r.recent : r.avg;
-      // The recent map's own absent state, and the reason the staleness dimming
-      // this tile used to carry is gone. That dimming existed because the map
-      // drew each channel's freshest value whenever it arrived, so a cell could
-      // be a minute old while claiming to be now. A window says so outright: a
-      // channel with nothing inside it has no recent value to draw, which is
-      // the same fact without asking anyone to read an opacity.
+      // The recent map's own absent state, and the reason no cell here needs
+      // dimming to say how old it is. A map of freshest values would need that
+      // -- a cell could be a minute old while claiming to be now -- but a
+      // window says it outright: a channel with nothing inside the window has
+      // no recent value to draw, which is the same fact without asking anyone
+      // to read an opacity.
       if (v === null) {
         cell.className = "dqm-heat-cell dqm-heat-nodata";
         cell.style.background = "";
@@ -1641,7 +1640,8 @@ function channelMaps(spec) {
       built.diffKey.textContent = "";
       // A phrase, and the argument behind it on the key's own tooltip. The
       // visible mark is what keeps a clipped scale honest; the explanation of
-      // how it clipped is not, and it was four lines under every draw.
+      // how it clipped is not, and four lines of it under every draw is a wall
+      // a reader stops seeing.
       const seqNote = seq.clipped ? "top clipped" : "";
       const seqDetail = `One scale for both maps, fenced on whichever of the `
         + `two is wider: a mean is narrower than a single value by `
@@ -1807,18 +1807,14 @@ const BASELINE_MAPS = {
   longKey: "Baseline Window Seconds", shortKey: "Baseline Recent Seconds",
   //: No ranking of its own: "Moved most" is the only table under these maps.
   //:
-  //: There was a second one, ranking each channel by how far its average sat
-  //: from the median of every channel, with the signed gap in a column. It
-  //: answered "which baseline is out of family", which the highest-first sort
-  //: the noise tile uses cannot do -- a set of channels all on 0.74 V is a
-  //: healthy detector, and the one worth naming sits away from the rest on
-  //: either side.
-  //:
-  //: What replaces it is the maps themselves. A baseline away from where the
-  //: others sit is a cell that is not the colour of its neighbours, on a scale
-  //: spanning every channel, and that is legible without a table. What a table
-  //: adds over a map is the channel number, and "Moved most" still carries that
-  //: for the channels that have changed.
+  //: The highest-first sort the noise tile uses cannot answer "which baseline
+  //: is out of family" -- a set of channels all on 0.74 V is a healthy
+  //: detector, and the one worth naming sits away from the rest on either side.
+  //: What answers it is the map. A baseline away from where the others sit is a
+  //: cell that is not the colour of its neighbours, on a scale spanning every
+  //: channel, and that is legible without a table. What a table adds over a map
+  //: is the channel number, and "Moved most" carries that for the channels that
+  //: have changed.
   rank: null,
 };
 

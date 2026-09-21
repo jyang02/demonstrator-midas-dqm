@@ -8,16 +8,15 @@ every ``.js`` and ``.css`` is stamped -- so a browser that has loaded the page
 once will serve yesterday's asset off its own disk for a day without asking
 anyone whether it changed.
 
-The ``?v=`` in the page is what defeats that, and it used to be a counter bumped
-by hand. That failed on 2026-09-21 exactly as a hand-maintained number fails:
-two files were rewritten, the numbers beside them were not, and the page came
-back fresh and asked for the tokens the browser already had. Nothing was broken,
-nothing logged, and the dashboard was simply the old one. Diagnosing it took
-longer than the change had.
+The ``?v=`` in the page is what defeats that, and it is the file's **hash**
+rather than a number bumped by hand. A hand-maintained number fails silently:
+the file is rewritten, the number beside it is not, the page comes back fresh
+and asks for the token the browser already has, and the dashboard is quietly not
+the one that was just deployed. Nothing is broken and nothing is logged.
 
-So the token is the file's hash now. It cannot be forgotten, only left
-unregenerated -- and that is a thing a test can see, which a forgotten counter
-never was. Run this after changing any asset:
+A hash cannot be forgotten, only left unregenerated -- and that is a thing a
+test can see, which a forgotten counter is not. Run this after changing any
+asset:
 
     scripts/stamp-assets.py
     scripts/stamp-assets.py --check      # exit 1 if any token is stale

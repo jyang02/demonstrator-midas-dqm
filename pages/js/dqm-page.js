@@ -315,9 +315,8 @@ function showTab(i, page) {
  * Fill one tab: its question, its counts, and a tile per element in spec order.
  *
  * A tab is a spec group, and that is the whole of the mechanism -- there is no
- * tab key in the spec and no second layout concept. A group was always "one
- * screen's worth of panels"; all that changed is that several groups now name
- * the same page.
+ * tab key in the spec and no second layout concept. A group is one screen's
+ * worth of panels, and several groups name the same page.
  */
 function buildTab(tab, page, host) {
   host.appendChild(el("div", { class: "dqm-tile-q" }, tab.question));
@@ -492,9 +491,9 @@ function setAlarm(id, level) {
 }
 
 // Keys are the spec's status vocabulary (spec/schema.md): ready, blocked,
-// proposed, dropped. Panels no longer wear their status -- the tab they are on
-// says it, and the tile's left border keeps the colour -- so a note's rule is
-// the one reader left.
+// proposed, dropped. Panels do not wear their status -- the tab they are on
+// says it, and the tile's left border carries the colour -- so a note is the
+// only thing that reads this.
 const CHIP = { ready: "green", blocked: "yellow", proposed: "blue", dropped: "" };
 
 /**

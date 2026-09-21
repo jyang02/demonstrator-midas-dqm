@@ -97,10 +97,10 @@ DEFAULTS: dict[str, dict[str, object]] = {
         # default averages everything it is sent; the page clamps to that
         # horizon and says so rather than claiming a window it has no data for.
         "Noise Window Seconds": 120.0,
-        # The short one is "where it is now". 10 s at the demonstrator's rate is
-        # a handful of hits on a live channel -- enough to average the single
-        # value that used to be drawn here down to something that does not jump
-        # between refreshes, and short enough that it still answers "now".
+        # The short one is "where it is now". 30 s at the demonstrator's rate
+        # is a handful of hits on a live channel -- enough to average the
+        # single-hit scatter down to something that does not jump between
+        # refreshes, and short enough that it still answers "now".
         # Must be under the long window or the difference map has nothing to
         # subtract; the page clamps and says so.
         "Noise Recent Seconds": 30.0,

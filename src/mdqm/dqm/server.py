@@ -118,8 +118,9 @@ class Server:
         trade and worth stating. The framing wins on size for anything binned;
         this is scattered points, so it would need its own tag, its own decoder
         in the browser and its own tests, to save bytes on a payload whose
-        whole point is that it is small enough not to matter. The cost this
-        replaces was never the wire -- it was 26316 rectangles a repaint.
+        whole point is that it is small enough not to matter. The cost these
+        tiles were ever in danger of is not the wire -- it is 26316 rectangles a
+        repaint, which is why they are not colormaps.
         """
         name = self._name_from(args)
         got = self._series_fn(name)

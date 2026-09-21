@@ -108,10 +108,9 @@ def test_baseline_and_noise_are_series_and_not_histograms(plugin):
 def test_a_series_keeps_every_value_inside_its_window(plugin):
     """No count cap. The cut is by time, and the page makes it on the axis.
 
-    This used to keep the last ten per channel, which is a different amount of
-    history on every channel -- ten values is seconds on a busy channel and
-    minutes on a quiet one -- so the two ends of one plot were showing windows
-    that differed by a factor of thirty.
+    A count cap would be a different amount of history on every channel -- ten
+    values is seconds on a busy channel and minutes on a quiet one -- so the two
+    ends of one plot would be showing windows differing by a factor of thirty.
     """
     n = 40
     for i in range(n):

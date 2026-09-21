@@ -175,10 +175,11 @@ def test_check_reports_unreadable_and_missing(entries, capsys):
 
 
 class TestPruningStaleKeys:
-    """Renaming must not leave the old entries behind.
+    """Renaming must not leave entries behind.
 
-    Changing the menu prefix used to orphan every page key: they still pointed at
-    real files, so they still worked, and the side menu grew a duplicate of each.
+    Without pruning, changing the menu prefix orphans every page key: each one
+    still points at a real file, so it still works, and the side menu grows a
+    duplicate of every page.
     """
 
     def _client_with(self, extra):

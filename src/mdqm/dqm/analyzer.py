@@ -359,11 +359,11 @@ class Analyzer:
             return
 
         # Rebuild rather than add to. Creating links without removing the ones
-        # that are no longer wanted leaves a stale event that mlogger goes on
-        # writing: splitting the arrays into their own events left the old flat
-        # DQM event still holding a link to Baseline, and it kept writing 8 kB
-        # records for a value nothing was publishing there any more. Adding is
-        # not enough; the set has to be made to match.
+        # that are not wanted leaves a stale event that mlogger goes on writing:
+        # a link to a value nothing publishes there any more still costs a full
+        # record every period, so the file grows at the rate a change was meant
+        # to fix while looking as though it had been applied. Adding is not
+        # enough; the set has to be made to match.
         wanted: dict = {}
         for name in names:
             wanted.setdefault(_history_event(name, values[name]), []).append(name)

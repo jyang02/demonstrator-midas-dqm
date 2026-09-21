@@ -114,9 +114,8 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-ed-cell { min-width: 0; }
 /* Both plot classes: the Scope tab's traces come in as .dqm-scope-plot and an
    ordinary .dqm-plot is the general case, and inside this block what either of
-   them is is a cell of the target. The Channels tab used to put its eight
-   baseline panels in a block like this one; it draws the target as a map now,
-   so .dqm-layer-quad and .dqm-layer-cell went with them. */
+   them is is a cell of the target. Only the Scope tab uses this block: the
+   Channels tab draws the target as a map instead. */
 .dqm-layer-grid .dqm-scope-plot,
 .dqm-layer-grid .dqm-plot { height: 170px; width: auto; margin-top: 2px; min-width: 0; }
 .dqm-layer-grid .dqm-col-head {
@@ -225,8 +224,8 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    shares an axis with, which is the single comparison it exists to make.
 
    flex-wrap and not a media query, the same choice .dqm-rank-row makes above:
-   once the side column cannot have its basis the two stack and the tile is
-   exactly what it was before. align-items: flex-start so a short table does
+   once the side column cannot have its basis the two stack, which loses the
+   adjacency and nothing else. align-items: flex-start so a short table does
    not stretch itself to the height of three maps.
 
    Row gap zero: wrapped, the side column is following the maps down the page
@@ -266,13 +265,13 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    Sized by these two numbers and NOT by its content, which was tried and does
    not work: mplot gives its canvas an intrinsic width taken from the div, so a
    max-content column would be sized by a canvas whose size it had itself just
-   set. That loop is not hypothetical -- it settled at 506px of column against
-   427px of table on the live page, which is the mismatch it was meant to fix,
-   slightly worse. The plot is matched to the tables in JS instead; see the
-   width block at the end of channelMaps' tick(). */
+   set. That loop is not hypothetical -- measured on the live page it settles
+   at 506px of column against 427px of table, which is a worse mismatch than
+   leaving the two alone. The plot is matched to the tables in JS instead; see
+   the width block at the end of channelMaps' tick(). */
 .dqm-map-side { flex: 1 1 400px; min-width: 0; max-width: 640px; }
-/* The table padding is what the column's whole width is made of: twelve cell
-   edges at 10px is 120px of the 500 it used to need, spent on air between
+/* The table padding is what the column's whole width is made of: at the 10px
+   these tables carry elsewhere, twelve cell edges is 120px spent on air between
    columns that are already separated by being numbers in tabular figures. At 6
    it reads the same and the column fits beside the maps on a screen 340px
    narrower. Scoped here rather than changed on table.dqm-table, which every
@@ -506,12 +505,11 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 .dqm-tile-l      { max-width: 100%; }
 
 /* Tiles sit side by side when the spec says they are small enough to.
-   `size` had been carried all the way from the spec into a class and then used
-   for a max-width and nothing else, so two half-width tiles still took a full
-   row each and the page was one column however wide the window got. The two
-   tiles that answer "is the beam there at all" -- occupancy and hits per event
-   -- are read together, and a screen height between them is a comparison
-   nobody makes.
+   `size` comes from the spec and has to reach the layout, not just a max-width:
+   used for a width alone, two half-width tiles still take a full row each and
+   the page is one column however wide the window gets. The two tiles that
+   answer "is the beam there at all" -- occupancy and hits per event -- are read
+   together, and a screen height between them is a comparison nobody makes.
 
    No media query, because flex-wrap is the media query: the basis is what a
    tile needs rather than what a laptop has, so two m tiles share a row above

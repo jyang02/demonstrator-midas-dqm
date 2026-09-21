@@ -192,9 +192,10 @@ test("unticking a channel drops its trace and is remembered", async () => {
 });
 
 test("a channel that fires only in a later event still draws", async () => {
-  // The bug this replaces: selection fixed from the first event. SAMPIC is
-  // hit-based, so which channels fire differs every event -- measured over 500
-  // real events, that showed one trace out of three hits and said nothing.
+  // Selection must not be fixed from the first event. SAMPIC is hit-based, so
+  // which channels fire differs every event -- measured over 500 real events,
+  // fixing it from the first shows one trace out of three hits and says
+  // nothing.
   const first = REAL.events[0];          // channels 5, 6
   const later = REAL.events[3];          // channels 3, 4, 5, 6, 7
   const page = await boot([first]);
@@ -398,8 +399,8 @@ test("the shared read pointer is stated on the page, not left to be discovered",
 // first calo_waveforms and event_display_position, then atar_hit_rate_by_layer,
 // which moved to the Proposed tab along with every other panel that is waiting
 // for something. Every tab now either draws everything on it or draws nothing
-// at all, so "a renderer did not clobber the tile next to it" is no longer a
-// question this tab can ask. What it was guarding lives in pages.test.js, which
+// at all, so "a renderer did not clobber the tile next to it" is not a
+// question this tab can ask. That property is guarded in pages.test.js, which
 // walks every tab and checks every blocked panel against its own blocked_by.
 
 test("the hit maps and the depth profile are two tiles off one event", async () => {
@@ -700,9 +701,9 @@ test("with no orientation in the ODB the columns say only which layers they hold
 
 test("the colour ramp runs monotonically across the whole strip range", () => {
   // Loaded directly, with only the globals it touches at load, so the ramp can
-  // be checked across all 32 strips. Driving it through the page instead was
-  // the first attempt and it was worthless: every hit in the fixture event
-  // sits on strip 0, so the check passed with the ramp taken out entirely.
+  // be checked across all 32 strips. Driving it through the page instead is
+  // worthless here: every hit in the fixture event sits on strip 0, so the
+  // check passes with the ramp taken out entirely.
   const saved = { DQMPage: globalThis.DQMPage, document: globalThis.document };
   globalThis.DQMPage = { el: () => ({}), chip: () => ({}), blocked: () => ({}),
                          register: () => {}, editButton: () => ({}) };
@@ -767,7 +768,7 @@ test("the same strip in two layers gets the same colour", async () => {
 });
 
 test("a channel the map cannot place keeps its channel label and colour", async () => {
-  // No settings at all: every trace falls back to the old behaviour.
+  // No settings at all: every trace takes the no-geometry fallback.
   const ev = REAL.events[3];
   const page = await boot([ev]);
   await pump(page, 3);

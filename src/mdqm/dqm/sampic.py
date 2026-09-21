@@ -180,9 +180,9 @@ def encode_at(timestamp_ns: int, nhits: int, nparents: int | None = None,
 def decode_at(blob: bytes) -> dict:
     """All 13 AT00 fields by name.
 
-    The ten telemetry fields used to be discarded here because everything
-    writing this bank left them zero. Generated files fill them, so throwing
-    them away now loses the only per-chip readout timing there is.
+    The ten telemetry fields are kept rather than discarded. Anything that
+    repackages a recording leaves them zero, but generated files fill them, and
+    they are the only per-chip readout timing there is.
     """
     if len(blob) < AT_RECORD.size:
         raise ValueError(f"AT00 payload is {len(blob)} bytes, expected {AT_RECORD.size}")

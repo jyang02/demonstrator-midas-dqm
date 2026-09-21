@@ -4,12 +4,9 @@
 failure modes follow, and each gets a test here:
 
 * the spec changes and this copy does not -- caught by regenerating and
-  comparing. This used to be optional, on the grounds that the spec lived in
-  demonstrator-shifter-ui and must never become a build dependency here. The
-  spec now lives beside the catalogue it generates, so the check always runs,
-  which is what this file already argued for: "a drift test that skips
-  silently is a drift test nobody has". ``DQM_SPEC`` still points it elsewhere
-  for anyone keeping the spec somewhere else;
+  comparing. The spec lives beside the catalogue it generates, so the check
+  always runs -- a drift test that skips silently is a drift test nobody has.
+  ``DQM_SPEC`` points it elsewhere for anyone keeping the spec somewhere else;
 * a field is carried into the shipped asset that nothing reads -- caught
   hermetically by ``test_no_carried_field_is_unread``. An unread field is
   precisely the rot the generator exists to prevent.

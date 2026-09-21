@@ -128,23 +128,16 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("dqm.css", "css/dqm.css", False, "the little that midas.css does not cover"),
 )
 
-# Two pages and their renderers left here in the conversion to one tabbed page,
-# and the reason is in the spec's retired group rather than only in this file:
-# "Rates" (rates.html, dqm-rates.js) waited on a counting equipment nobody has
-# specified, and every panel on "SlowControls" (slowcontrols.html, dqm-slow.js)
-# waited on fecaen_hv or featar_sc -- and once MIDAS histories those variables,
-# mhttpd trends them for free.
+# Keys this page set has registered on an experiment at some point and does not
+# register now. They exist for installations in the field, not for this
+# checkout: `register_pages.prune()` deletes any /Custom key that points into
+# this checkout and is absent from ENTRIES, so an experiment re-registered from
+# here heals itself and another tenant's keys are never candidates.
 #
-# An experiment that has the old set registered heals itself on the next
-# mdqm-register-pages: register_pages.prune() runs after every successful
-# registration and deletes any /Custom key that points into this checkout and is
-# no longer in ENTRIES, which is exactly these eight. Nothing here has to be
-# removed by hand, and another tenant's keys are never candidates.
-#
-# The list is kept because prune() only sees an experiment somebody re-registers.
-# "Scope", "Channels", "Pulses" and "Physics" are page keys that now name tabs;
-# a menu entry of one of those names on an experiment somewhere is this page set
-# before the conversion, not a page anybody should still open.
+# The list is kept beside that because prune() only sees an experiment somebody
+# re-registers, and because four of these names -- "Scope", "Channels",
+# "Pulses", "Physics" -- are also tab names on the one page. A menu entry
+# carrying one of them is a stale registration rather than a page to open.
 RETIRED_KEYS: tuple[str, ...] = (
     "Rates", "Scope", "Channels", "Pulses", "Physics", "SlowControls",
     "dqm-rates.js", "dqm-slow.js",
@@ -182,11 +175,11 @@ def asset_token(path: Path) -> str:
     bumped by whoever changed the file, in a second file, in the same commit --
     and the failure when they do not is silent for a day: mhttpd serves the
     page fresh, the page asks for the token the browser already has, and the
-    browser answers out of its own disk without asking anyone. It happened on
-    2026-09-21 to the two files a layout change had just rewritten, and what
-    made it expensive is that the page looked *fine*; it was simply the old
-    one. A hash cannot be forgotten, only left unregenerated, and unlike a
-    counter that is a thing a test can see.
+    browser answers out of its own disk without asking anyone. What makes that
+    expensive is that the page looks *fine* -- it is simply not the current one
+    -- so there is nothing to notice until somebody wonders why a change did not
+    take. A hash cannot be forgotten, only left unregenerated, and unlike a
+    forgotten counter that is a thing a test can see.
 
     Of the bytes, not of a parse: a comment-only edit changes the token, which
     is correct. What ships is the file, and "did this change matter" is not a

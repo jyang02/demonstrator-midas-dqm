@@ -371,10 +371,11 @@ const LABEL_EVERY = 4;
  * **A position holds however many channels the map puts there, not one.** In
  * ping-pong mode a strip is wired to two consecutive channels and a deposit is
  * recorded on whichever was not used last, so `Channel map channel id` stops
- * being injective. This used to invert the map with `atPos.set(key, ch)` in a
- * loop over ascending channel, which meant the second of every pair silently
- * overwrote the first: half the channels got no cell at all, and the tile went
- * on looking healthy. Positions carry a channel *list* for that reason, and
+ * being injective. Inverting it one channel per position -- `atPos.set(key,
+ * ch)` in a loop over ascending channel -- silently drops half the detector:
+ * the second of every pair overwrites the first, half the channels get no cell
+ * at all, and the tile goes on looking healthy. Positions carry a channel
+ * *list* for that reason, and
  * `byPos` is what a caller paints from -- `byCh` maps every channel to its
  * cell, so both partners of a pair resolve to the same one and iterating it
  * would visit that cell twice.

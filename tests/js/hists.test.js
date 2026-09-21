@@ -253,11 +253,11 @@ for (const tile of MAP_TILES) {
 
   test(`${tile.slug}: the ranking names channels and passes no verdict`, async () => {
     // A cell carries no label, and the channel number is what the ODB, the
-    // frontend, the cable map and the elog all speak. This page set refused to
-    // build channel_health on the grounds that "dead, noisy or drifting" is a
-    // verdict rather than a histogram, and the same reasoning holds here: there
-    // is no threshold, and on a healthy run these are simply the five least
-    // average channels.
+    // frontend, the cable map and the elog all speak. `channel_health` is left
+    // unclaimed on Proposed because "dead, noisy or drifting" is a verdict
+    // rather than a histogram, and the same reasoning holds here: there is no
+    // threshold, and on a healthy run these are simply the five least average
+    // channels.
     const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
       (ch, k) => 0.7 + ch * 0.001), sampicSettings());
 
@@ -316,11 +316,10 @@ test("noise ranks by the highest RMS, because loud is high and only high", async
 });
 
 test("the baseline maps carry one ranking, and it is the shared one", async () => {
-  // A ranking by distance from the median of every channel used to sit in front
-  // of it, answering "which baseline is out of family". The maps answer that
-  // now -- a baseline away from where the others sit is a cell that is not the
-  // colour of its neighbours, on a scale spanning every channel -- so the tile
-  // is down to the one question a table adds a channel number to.
+  // "Which baseline is out of family" is answered by the map, not by a second
+  // table: a baseline away from where the others sit is a cell that is not the
+  // colour of its neighbours, on a scale spanning every channel. That leaves
+  // the one question a table adds a channel number to.
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH,
     (ch, k) => (ch === 200 ? 0.70 : 0.74)), sampicSettings());
 
@@ -386,8 +385,8 @@ test("a tile that draws does not also print why it exists; an empty one does", a
 // --- occupancy as the target ------------------------------------------------
 //
 // The tile answers "is the beam hitting the target where we put it", which the
-// global-channel axis it used to have could not: that axis is the readout
-// order, so a spot in one corner arrives as four disconnected clumps of bars.
+// global-channel axis cannot: that axis is the readout order, so a spot in one
+// corner arrives as four disconnected clumps of bars.
 
 const NCH = N_LAYERS * PER_LAYER;
 
@@ -732,8 +731,8 @@ test("a channel with every value inside the short window has nothing to subtract
 
 test("a channel with nothing in the short window has no recent average at all", async () => {
   // The other empty state, and a different fact: this channel has a standing
-  // average and no present. It replaces the staleness dimming the tile used to
-  // carry -- a window says "nothing here" outright rather than asking anyone to
+  // average and no present. Saying so outright is what makes dimming the cell
+  // unnecessary -- a window states "nothing here" rather than asking anyone to
   // read an opacity.
   const s = seenOnce(series(N_LAYERS * PER_LAYER, DEPTH), 137);  // one value, age 38
   const page = await boot(s, sampicSettings());
@@ -1195,12 +1194,12 @@ test("a healthy spread is not clipped, so the mark keeps meaning something", asy
 // dead time. The ODB's `Channel map channel id` then stops being injective:
 // two entries carry the same pixel id.
 //
-// That used to silently halve the detector. heatGrid inverted the map with
-// `atPos.set(key, ch)` in a loop over ascending channel, so the second of every
-// pair overwrote the first and 128 of 256 channels got no cell at all -- on
-// occupancy and on both map tiles, with every tile still reporting healthily.
-// The first test here is that regression and the rest are the views the mode
-// needs, which is why they are one block.
+// Inverting that naively halves the detector in silence: keyed by position in a
+// loop over ascending channel, the second of every pair overwrites the first and
+// half the channels get no cell at all -- on occupancy and on both map tiles,
+// with every tile still reporting healthily. The first test here holds that
+// off and the rest are the views the mode needs, which is why they are one
+// block.
 
 //: The same geometry as sampicSettings(), wired ping-pong: PER_LAYER strips a
 //: layer, each one appearing twice so that channels 2k and 2k+1 share a pixel.
@@ -1320,7 +1319,8 @@ test("ping-pong: ping and pong each get their own three maps", async () => {
   // in map order -- never by parity of the channel number.
   assert.strictEqual(cellsOf(page, "noise-map-avg")[0].dataset.ch, "0");
   assert.strictEqual(cellsOf(page, "noise-map-avg-pong")[0].dataset.ch, "1");
-  // And the partner comparison is gone: these tiles no longer ask it.
+  // And no partner comparison: how far apart two channels are is a question
+  // about the pair, which these tiles do not ask.
   assert.strictEqual(page.doc.getElementById("noise-map-pair"), null);
   assert.doesNotMatch(textOf(page.doc.getElementById("noise-outliers")),
     /Partners furthest apart/);
