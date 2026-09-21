@@ -18,8 +18,10 @@ from mdqm.install.manifest import (
     FORBIDDEN_CONTENT,
     MAX_KEY_LENGTH,
     RESERVED_SUBSTRINGS,
+    asset_token,
     check_entry,
     check_key,
+    stale_tokens,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -151,6 +153,24 @@ def test_every_asset_reference_carries_a_cache_buster(entry):
         if name not in ours:
             continue                      # a stock MIDAS resource; not ours to bust
         assert "?v=" in ref, f"{entry.path} loads {name} with no ?v= cache buster"
+
+
+def test_every_cache_buster_is_its_file_s_current_hash():
+    """Present is not enough: a token that did not move when the file did is worse.
+
+    The page comes back fresh either way -- its /Custom key has no dot -- so it
+    asks for the token the browser already holds, and the browser answers out of
+    its own disk. Nothing errors, nothing logs, and the dashboard is quietly
+    yesterday's for 24 hours. That is what happened on 2026-09-21 to the two
+    files a layout change had just rewritten.
+
+    A counter could only be checked by remembering to bump it. A hash checks
+    itself, which is the entire reason the token is one.
+    """
+    problems = stale_tokens(REPO / "pages")
+    assert not problems, (
+        "stale ?v= token(s) -- run scripts/stamp-assets.py:\n  "
+        + "\n  ".join(problems))
 
 
 def test_js_and_python_defaults_cover_the_same_roots():

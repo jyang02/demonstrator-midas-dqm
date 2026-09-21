@@ -120,10 +120,10 @@ spec, via a generated asset:
 scripts/gen-panels.py --spec path/to/dqm_shifter.json
 ```
 
-Then bump the `?v=` on `dqm-panels.js` in `pages/atar.html`. `--check`
-diffs without writing and exits non-zero when the committed file is stale;
-`tests/test_panels.py` calls the same code path, and skips when that checkout is
-not present.
+Then run `scripts/stamp-assets.py`, which restamps the `?v=` on every asset
+`pages/atar.html` loads. `--check` diffs without writing and exits non-zero when
+the committed file is stale; `tests/test_panels.py` calls the same code path,
+and skips when that checkout is not present.
 
 `--list` shows what would be registered, `--dry-run` says what would change,
 `--check` verifies every registered key still resolves to a readable file, and
@@ -586,8 +586,28 @@ never becomes true, so it works as a test and not only as a camera.
 mhttpd stamps `Expires: <now + 24 h>` on anything served through `send_fp()`,
 with no `ETag` and no `Last-Modified`. Pages are exempt because their `/Custom`
 key contains no dot, which routes them through `show_custom_page()` instead —
-but **assets are not**. Bump the `?v=` on the `<script src>` and `<link href>`
-when you change a `.js` or `.css` file, or hard-reload (Ctrl-Shift-R).
+but **assets are not**. So a browser that has opened the page once will serve
+yesterday's `.js` and `.css` off its own disk for a day without asking anyone,
+and the page it builds out of them looks completely normal.
+
+The `?v=` on each `<script src>` and `<link href>` is what defeats that, and it
+is **the file's sha256, first eight characters** — not a number, and not
+something to edit by hand:
+
+```bash
+scripts/stamp-assets.py
+```
+
+Run it after changing any `.js` or `.css`, and commit `pages/atar.html` with the
+change. It was a counter until 2026-09-21, when a layout change rewrote two
+files and left their numbers alone; the deploy was correct, the page came back
+fresh, and every browser that had seen it before went on drawing the old one.
+Nothing errored and nothing logged. A hash cannot be forgotten, only left
+unregenerated, and three things now refuse that: `tests/test_manifest.py`,
+`scripts/stamp-assets.py --check`, and `mdqm-register-pages`, which prints it
+loudly and makes it fatal under `--check`. Registration itself still goes
+through — an experiment with no pages is worse than one a hard-reload
+(Ctrl-Shift-R) fixes.
 
 ## Troubleshooting
 

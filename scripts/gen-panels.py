@@ -18,8 +18,8 @@ Why a ``<script src>`` rather than a JSON file the page fetches
 mhttpd would serve a registered ``.json`` key perfectly well, but it stamps
 ``Expires: <now + 24 h>`` on it with no ETag and no Last-Modified, so the
 catalogue would be a day stale after every edit unless the fetch URL carried a
-``?v=`` maintained by hand -- strictly worse than a script tag, where the token
-sits next to the file it busts. And a fetch puts a network round trip *before*
+``?v=`` of its own -- strictly worse than a script tag, where the token sits
+next to the file it busts and ``scripts/stamp-assets.py`` keeps it honest. And a fetch puts a network round trip *before*
 first paint: the page could not render a single panel until it landed, which is
 the blank-page-at-3am failure this whole design exists to avoid.
 

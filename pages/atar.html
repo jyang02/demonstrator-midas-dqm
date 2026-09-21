@@ -15,28 +15,35 @@
 
   <!-- Ours. The ?v= is not decoration: mhttpd stamps Expires:+24h on anything
        served through send_fp(), with no ETag and no Last-Modified, so without a
-       version token an edit to these files is invisible for a day. Bump it when
-       you change them. (The page itself is exempt: its /Custom key has no dot,
-       so it routes through show_custom_page(), which sets no cache headers.) -->
-  <link rel="stylesheet" href="dqm.css?v=24">
-  <script src="dqm-common.js?v=11"></script>
-  <script src="dqm-panels.js?v=16"></script>
-  <script src="dqm-page.js?v=7"></script>
+       version token an edit to these files is invisible for a day. (The page
+       itself is exempt: its /Custom key has no dot, so it routes through
+       show_custom_page(), which sets no cache headers.)
+
+       Each token is its file's sha256, first 8 -- do not edit them by hand.
+       Run scripts/stamp-assets.py after changing any .js or .css; the suite and
+       mdqm-register-pages both refuse a page whose tokens have gone stale. It
+       was a counter bumped by hand until 2026-09-21, when a layout change moved
+       two files and not their numbers, and every browser that had ever opened
+       this page served the old ones back for a day without a word. -->
+  <link rel="stylesheet" href="dqm.css?v=49415b56">
+  <script src="dqm-common.js?v=08eea81b"></script>
+  <script src="dqm-panels.js?v=d843c1fc"></script>
+  <script src="dqm-page.js?v=e15c904f"></script>
 
   <!-- One page now, so it loads every renderer the four tabs need rather than
        the two or three a single-question page used to. The tabs themselves are
        built lazily -- see showTab() in dqm-page.js -- so loading a renderer is
        not the same as running it: nothing on the Scope tab polls, and no
        histogram is fetched, until somebody opens the tab it is on. -->
-  <script src="dqm-brpc.js?v=6"></script>
+  <script src="dqm-brpc.js?v=fbe63600"></script>
   <!-- The ATAR channel map, after dqm-page.js because it builds DOM with its
        el() helper, and before the two renderers that ask for the map: the
        baselines on Channels and the waveforms on Scope are the same eight
        layers in the same two columns, read once between them. -->
-  <script src="dqm-atar-geom.js?v=8"></script>
-  <script src="dqm-hists.js?v=45"></script>
-  <script src="dqm-adbanks.js?v=4"></script>
-  <script src="dqm-scope.js?v=16"></script>
+  <script src="dqm-atar-geom.js?v=f78743f6"></script>
+  <script src="dqm-hists.js?v=3ddb3da3"></script>
+  <script src="dqm-adbanks.js?v=8b4901a6"></script>
+  <script src="dqm-scope.js?v=cfaff58c"></script>
 </head>
 
 <body class="mcss">

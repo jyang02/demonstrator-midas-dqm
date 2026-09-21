@@ -95,8 +95,8 @@ def _elements(kind: str | None = None):
 def test_the_generated_catalogue_matches_the_spec():
     want = _gen().render(SPEC.read_text(encoding="utf-8"))
     assert CATALOGUE.read_text(encoding="utf-8") == want, (
-        "pages/js/dqm-panels.js is stale. Re-run scripts/gen-panels.py, bump the "
-        "?v= on every page that loads it, and read the diff -- a blocked_by that "
+        "pages/js/dqm-panels.js is stale. Re-run scripts/gen-panels.py, then "
+        "scripts/stamp-assets.py, and read the diff -- a blocked_by that "
         "changed is a sentence a shifter reads at 3am.")
 
 

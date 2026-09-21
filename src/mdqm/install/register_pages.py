@@ -31,7 +31,9 @@ import os
 import sys
 from pathlib import Path
 
-from mdqm.install.manifest import CONFIG_ROOT, check_entry, check_key, pages
+from mdqm.install.manifest import (
+    CONFIG_ROOT, PAGES_DIR, check_entry, check_key, pages, stale_tokens,
+)
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -52,6 +54,31 @@ def validate(entries) -> list[str]:
             problems.append(f"{entry.key}: no such file: {path}")
         elif not os.access(path, os.R_OK):
             problems.append(f"{entry.key}: not readable: {path}")
+    return problems
+
+
+def report_stale_tokens(pages_root: Path) -> list[str]:
+    """Print any ``?v=`` that is no longer its file's hash. Returns the problems.
+
+    Not fatal to registration, and that split is deliberate. An experiment with
+    no pages registered is worse than one serving a day-old stylesheet, so a
+    stale token must not stop the keys being written -- but it *is* the reason a
+    deploy that looks entirely correct shows the previous version to everyone
+    who has opened the page before, for up to 24 hours, with nothing logged
+    anywhere. So it is said loudly here and it is fatal under --check.
+
+    This is the last of the three places the same check is made. The other two
+    are the test suite and ``scripts/stamp-assets.py --check``, and both run
+    before anything reaches a box; this one catches the case they cannot, which
+    is somebody editing an asset directly in the checkout on the machine.
+    """
+    problems = stale_tokens(pages_root)
+    for s in problems:
+        print(f"  ! {s}", file=sys.stderr)
+    if problems:
+        _fail(f"{len(problems)} stale cache buster(s). Run scripts/stamp-assets.py "
+              f"and commit the page, or every browser that has opened it will go "
+              f"on serving the old assets for up to 24 hours.")
     return problems
 
 
@@ -230,6 +257,10 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     pages_dir = Path(args.pages_dir).resolve() if args.pages_dir else None
+    # The pages/ directory itself, which is NOT what `pages_dir` becomes below:
+    # that one is widened to the checkout root for _is_ours(), and resolving a
+    # manifest path against it would look for pages/atar.html one level too high.
+    pages_root = pages_dir or PAGES_DIR
     entries = pages(pages_dir)
     if not entries:
         print("the manifest is empty; there is nothing to register", file=sys.stderr)
@@ -259,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
             _fail(p)
         return EXIT_BAD_MANIFEST
 
+    stale = report_stale_tokens(pages_root)
+
     if not args.experiment:
         _fail("no experiment: pass --experiment or set MIDAS_EXPT_NAME")
         return EXIT_BAD_MANIFEST
@@ -267,7 +300,8 @@ def main(argv: list[str] | None = None) -> int:
 
     with midas.client.MidasClient(args.client_name, expt_name=args.experiment) as client:
         if args.check:
-            return check(client, entries)
+            rc = check(client, entries)
+            return EXIT_REFUSED if stale else rc
         if args.remove:
             return unregister(client, entries, pages_dir, args.dry_run)
         rc = register(client, entries, pages_dir, args.replace, args.dry_run)
