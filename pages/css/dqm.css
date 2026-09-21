@@ -407,12 +407,18 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    pixels. The alternative is overriding mplot's inline border with !important
    and drawing our own, which is exact and is a bigger thing to own.
 
-   This closes the canvas-over-its-host gap and nothing else. It does NOT fix a
-   page that scrolls sideways: that is the min-width rule below, and measuring
-   is what told the two apart. */
+   max-width is the other half and the one that actually stops the page
+   scrolling. A canvas has no CSS width, so its used width is its INTRINSIC
+   width -- the bitmap attribute mplot last wrote -- and nothing about the host
+   constrains it. A stale bitmap of 735 therefore paints 735 wide inside a 732
+   host and hangs over the edge, which is what was still on the page after
+   min-width: 0 had fixed the tracks. Capped at 100% it paints at the host's
+   width until the next resize writes the bitmap to match, so the canvas can
+   never push anything wider than itself -- which is the ratchet, cut at the
+   source rather than at each box that would otherwise carry it upwards. */
 .dqm-scope-plot canvas,
 .dqm-dist-plot canvas,
-.dqm-plot canvas { box-sizing: border-box; }
+.dqm-plot canvas { max-width: 100%; box-sizing: border-box; }
 
 /* Accumulated-plot grid: wide enough for a 256-bin colormap to be legible. */
 .dqm-grid > div > .dqm-plot { width: 560px; height: 330px; }
