@@ -66,8 +66,32 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    shifter comparing the two should be moving their eye between two grids of
    the same shape rather than translating between two layouts. Both hosts keep
    their own id for the tests and for anything that wants one of them. */
-.dqm-layer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-@media (max-width: 1500px) { .dqm-layer-grid { grid-template-columns: 1fr; } }
+.dqm-layer-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 560px)); gap: 0 14px;
+}
+@media (max-width: 1500px) {
+  .dqm-layer-grid { grid-template-columns: minmax(0, 560px); }
+}
+/* Capped rather than 1fr, which is what these were. A layer panel is 170px
+   tall, so a full-width tile drew a 40 ns waveform across 735px at better than
+   four to one -- a pulse 3 ns wide stretched into a shallow ramp, and eight of
+   them side by side saying less than they could. 560 is the width the other
+   plot in this stylesheet already uses. The slack goes to the right of the
+   whole block rather than between the columns, which is why the cap is on the
+   TRACK and not a max-width on the plot: capping the plot inside a 1fr track
+   would leave the left column's panel floating a hundred pixels from its
+   neighbour with no gutter to explain it.
+
+   The columns are the grid's items and have nothing else on them, but they do
+   need this: a grid item's min-width is auto, which resolves to min-content,
+   and the min-content of a column holding an mplot graph is the CANVAS's
+   intrinsic width -- which mplot set from the width this column had last time.
+   So the track could not shrink to its share, the grid came out wider than its
+   container, and every resize ratcheted it further: measured live at 735px +
+   732px inside 1467px, running 14px off the side of the window and clipping
+   the right column's toolbar. Same loop the distribution plot hit on the
+   Channels tab, one level up the tree. */
+.dqm-layer-col { min-width: 0; }
 /* Both plot classes: the Scope tab's traces come in as .dqm-scope-plot and an
    ordinary .dqm-plot is the general case, and inside this block what either of
    them is is a cell of the target. The Channels tab used to put its eight

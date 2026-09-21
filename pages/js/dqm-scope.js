@@ -59,6 +59,24 @@ const state = {
 
 const STORE = "dqm-scope-settings";
 
+//: The legend's background, and the only thing about the legend there is to
+//: choose. mplot draws it at the top-left corner of the plot area -- hard coded
+//: to (x1, y2) in its draw path, with no placement option anywhere in its
+//: parameters -- and fills it opaque white.
+//:
+//: On these panels that corner is exactly where the pre-pulse baseline sits: a
+//: SAMPIC pulse is negative-going from a high baseline, so the flat run before
+//: the pulse is the top-left of every trace. An opaque legend hides the first
+//: quarter of it, which is the part a shifter reads to answer "is this channel
+//: sitting where it should, and is it quiet". A layer with two traces hides
+//: twice as much, and because the box is a fixed pixel width it covers MORE of
+//: a narrower panel, not less -- 145px of 560 rather than of 735.
+//:
+//: Translucent is the fix that is available. The label still reads at #404040
+//: over this and the trace reads through it. Moving the box is not on offer
+//: without patching mplot.js, which is a MIDAS resource and not ours to fork.
+const LEGEND_BG = "rgba(255, 255, 255, 0.72)";
+
 //: Past this many traces at once the plot is a smear with a legend over it, and
 //: the page says so rather than silently dropping any.
 const BUSY_OVERLAY = 8;
@@ -124,7 +142,7 @@ DQMPage.register("atar_raw_waveforms", function (ctx) {
     state.graph = new MPlotGraph(plot, {
       title: { text: "" },
       stats: { show: false },
-      legend: { show: true },
+      legend: { show: true, backgroundColor: LEGEND_BG },
       // False, not for want of wanting it: a tile that keeps the wheel is a
       // tile the page cannot be scrolled past. mplot cancels every wheel
       // event inside the axis window, so with the cursor over a plot the
@@ -221,7 +239,7 @@ function buildLayerPanels(body, firstPlot, map) {
     const g = new MPlotGraph(div, {
       title: { text: "" },
       stats: { show: false },
-      legend: { show: true },
+      legend: { show: true, backgroundColor: LEGEND_BG },
       // False, not for want of wanting it: a tile that keeps the wheel is a
       // tile the page cannot be scrolled past. mplot cancels every wheel
       // event inside the axis window, so with the cursor over a plot the

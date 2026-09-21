@@ -480,6 +480,32 @@ test("a collector that disagrees with the banks it collected is reported", async
 
 // --- one panel per ATAR layer -----------------------------------------------
 
+test("the waveform legend does not hide the baseline it sits on", async () => {
+  // mplot draws the legend at the top-left corner of the plot area -- hard
+  // coded to (x1, y2), with no placement option in its parameters -- and fills
+  // it opaque. On these panels that corner is where the pre-pulse baseline is,
+  // because a SAMPIC pulse is negative-going from a high baseline, so an opaque
+  // box hides the first quarter of the run a shifter reads to judge whether the
+  // channel is sitting where it should. Two traces on a layer hide twice as
+  // much, and the box is a fixed pixel width, so a narrower panel loses more of
+  // its trace and not less.
+  //
+  // Translucency is the whole of what can be done about it here. Pinned because
+  // the value is a claim about mplot's draw path, and because reverting it to
+  // the default is a one-word edit that looks like tidying.
+  const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
+  const page = await boot([ev], null, sampicSettings());
+  await pump(page, 3);
+  const panels = page.root.byClass("dqm-scope-plot").filter((d) => d.mpg);
+  assert.ok(panels.length, "no plot to check the legend of");
+  panels.forEach(function (d) {
+    const legend = d.mpg.param.legend || {};
+    if (!legend.show) return;             // the tiles that ask for no legend
+    assert.match(String(legend.backgroundColor), /^rgba\(/,
+      `${d.id} draws an opaque legend over the top-left of its own trace`);
+  });
+});
+
 test("with the map in the ODB, the traces split into one panel per layer", async () => {
   const ev = DEMO.events.find((e) => e.decoded.boards.length >= 3);
   const page = await boot([ev], null, sampicSettings());
