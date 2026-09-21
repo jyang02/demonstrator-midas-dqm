@@ -916,23 +916,26 @@ test("each key sits above what it explains, and says the scale is shared", async
   assert.match(textOf(maps), /one scale for every map below/);
 });
 
-test("the distribution is resized once the tables it is as wide as exist", async () => {
-  // The plot is width: 100% of a column sized to its content, and that content
-  // is the ranking tables -- which do not exist on the tick the graph is
-  // constructed on, because they are built from the same `rows` a few lines
-  // later. mplot reads its host div's width once and never watches it, so
-  // without a re-measure the plot keeps the width of a column holding one
-  // subhead and stops sharing an edge with the tables under it.
+test("the distribution is drawn at the width of the tables under it", async () => {
+  // A bar and the row naming the channel it belongs to are the same numbers
+  // asked two questions, and they are read against each other down one pair of
+  // edges. The width has to come from the tables: they size to their own
+  // content, and the column cannot be sized to ITS content without mplot's
+  // canvas -- whose width came from the column -- counting towards it.
   const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
   const g = distOf(page, "noise");
   const div = page.doc.getElementById("noise-dist-plot");
+  assert.ok(page.doc.getElementById("noise-outliers").byTag("table")[0],
+    "no ranking table to take a width from");
   const before = g.resizes;
 
-  // A laid out column: the tables landed and the plot is as wide as they are.
-  div.clientWidth = 436;
+  // A laid out table. Declared per tag rather than set on the element, because
+  // fillRanks empties the ranking box and rebuilds both tables every tick.
+  page.doc.widths = { TABLE: 427 };
   await settle(page);
-  assert.ok(g.resizes > before,
-    "the plot kept the width it was built at, before the tables existed");
+  assert.strictEqual(div.style.width, "427px",
+    "the plot did not take the width of the table under it");
+  assert.ok(g.resizes > before, "the plot was resized without being redrawn at it");
 
   // And not on every tick after that. resize() plus redraw() is two full
   // repaints of a 48-bin histogram for a number that has not moved.
@@ -940,6 +943,13 @@ test("the distribution is resized once the tables it is as wide as exist", async
   await settle(page);
   assert.strictEqual(g.resizes, settled,
     "the plot is resized on every tick, not only when its width moves");
+
+  // A table that grows -- "ch 7" becoming "ch 511" widens its column -- takes
+  // the plot with it, which is the whole reason this is measured every tick.
+  page.doc.widths = { TABLE: 464 };
+  await settle(page);
+  assert.strictEqual(div.style.width, "464px",
+    "the plot did not follow the table when the table grew");
 });
 
 test("the distribution and the rankings sit beside the maps, not under", async () => {

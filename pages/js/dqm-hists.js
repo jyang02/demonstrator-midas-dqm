@@ -894,6 +894,21 @@ function distHistogram(values, lo, hi, nBins) {
            entries: values.length, data: data };
 }
 
+/**
+ * The first ``<table>`` directly inside a host, or null.
+ *
+ * A loop over children rather than querySelector: the node suite's element stub
+ * models children and not selectors, and a helper that works in a browser and
+ * throws under test is the asymmetry this file has already refused once.
+ */
+function firstTable(host) {
+  const kids = (host && host.children) || [];
+  for (let i = 0; i < kids.length; i++) {
+    if (kids[i].tagName === "TABLE") return kids[i];
+  }
+  return null;
+}
+
 /** The smallest and largest of a list, without apply(). Null on empty. */
 function span(values) {
   if (!values.length) return null;
@@ -1681,23 +1696,29 @@ function channelMaps(spec) {
 
       fillRanks(rows, win);
 
-      // After fillRanks, and this is the one ordering in this function that is
-      // not about data. The plot is width: 100% of a column sized to its
-      // content, and its content is the tables -- which on the first tick do
-      // not exist yet, because they are built from `rows` three lines above.
-      // So the graph was constructed against a column holding one subhead,
-      // measured that, and kept it: mplot takes its size from the host div once
-      // and does not watch it. Re-measuring here catches that first tick, and
-      // also the later ones where the width genuinely moves -- a ranking whose
-      // widest channel goes from "ch 7" to "ch 511" widens the table it is in,
-      // and a plot that did not follow would stop sharing an edge with it.
+      // The plot is drawn at the width of the TABLES, not of the column, and
+      // after fillRanks because that is when there is a table to measure. A bar
+      // and the row naming the channel it belongs to are the same numbers asked
+      // two questions, and they are read against each other down one pair of
+      // edges -- which only works if the two blocks are the same width rather
+      // than two widths that happen to be near each other.
       //
-      // Guarded on the width actually changing, because resize() and redraw()
-      // on every tick is two full repaints of a 48-bin histogram for a number
-      // that is the same as it was ten seconds ago.
-      const w = dist.div.clientWidth;
-      if (w && w !== dist.width) {
-        dist.width = w;
+      // Measured here and not done in CSS, which was tried. Sizing the column
+      // to its content looks like the obvious answer and quietly closes a loop:
+      // mplot gives its canvas an intrinsic width taken from the host div, the
+      // canvas then counts towards the max-content of the column, and the
+      // column is sized by a number it had itself just produced. On the live
+      // page that settled at a 506px column against a 427px table.
+      //
+      // Guarded on the width actually moving, because resize() plus redraw() is
+      // two full repaints of a 48-bin histogram, and because the honest later
+      // case is rare: a ranking whose widest channel goes from "ch 7" to
+      // "ch 511" widens its table, and the plot has to follow it.
+      const ranked = firstTable(rankBox);
+      const tw = ranked ? ranked.clientWidth : 0;
+      if (tw && tw !== dist.width) {
+        dist.width = tw;
+        dist.div.style.width = `${tw}px`;
         dist.graph.resize();
         dist.graph.redraw();
       }

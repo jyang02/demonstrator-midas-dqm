@@ -88,7 +88,22 @@ class TextNode extends El {
 function makeDocument() {
   const doc = {
     _byId: new Map(),
-    createElement: (t) => new El(t),
+    // There is no layout here, so every element reports clientWidth 0 -- which
+    // is honest, and is also what a real element reports before it has been
+    // laid out. A test that needs a width declares one per tag:
+    //
+    //     page.doc.widths = { TABLE: 427 };
+    //
+    // Per tag and applied at creation, because page code that rebuilds a block
+    // every tick (fillRanks does) would otherwise lose a width assigned to the
+    // element that happened to exist when the test set it.
+    widths: {},
+    createElement(t) {
+      const made = new El(t);
+      const w = this.widths[made.tagName];
+      if (w) made.clientWidth = w;
+      return made;
+    },
     createTextNode: (t) => new TextNode(t),
     getElementById(id) {
       if (this._byId.has(id)) return this._byId.get(id);

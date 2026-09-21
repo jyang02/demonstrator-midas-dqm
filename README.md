@@ -287,17 +287,20 @@ Beside the maps in both tiles, in a column of their own, are a **distribution
 of every channel's long-window average** and the rankings. The distribution is
 binned over the same range as the colour key — so the plot's x axis and the
 maps' scale are one axis, and a bar sits at the colour the cells of that value
-are painted. It is also exactly the width of the tables under it, sharing their
-left and right edges: the column is sized to the tables and the plot is 100% of
-that, so a bar and the row naming the channel it belongs to are read down one
-column rather than across two widths that happen to be similar. Beside and not below, because below is where it was: three grids
+are painted. It is also drawn at exactly the width of the tables under
+it, sharing both their edges, so a bar and the row naming the channel it belongs
+to are read down one column rather than across two widths that happen to be
+similar. That width is measured from the table each tick rather than set in CSS,
+because sizing the column to its content closes a loop — mplot gives its canvas
+an intrinsic width taken from the column, and the canvas then counts towards the
+column's own content width. Beside and not below, because below is where it was: three grids
 stacked are most of a screen tall, so by the time the plot was on screen the key
 it shares an axis with was off the top of it, and that comparison is the whole
 reason the plot is there. A map is as wide as its strip count and no wider, so
 the column is space the tile already had. The maps are what gives way when the window is
 small: they are capped at 58% of the row, so the cells narrow — a cell carries
 no text and can — rather than the column wrapping at the first window that
-cannot hold both at full size. Below about 1095px of tile width even that is
+cannot hold both at full size. Below about 1010px of tile width even that is
 not enough and the row wraps, flex-wrap and not a media query, the same choice
 the tile row above it makes; the two go back to being stacked and nothing is
 lost but the adjacency. Above the width where 58% is more than the grids want,

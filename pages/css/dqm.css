@@ -210,21 +210,23 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    already, and did so as a block too, so beside the column it is the same
    width it always was. 640 is .dqm-heat's own cap, not a second geometry. */
 .dqm-map-row > .dqm-heat-maps:not(.dqm-heat-cols) { flex-basis: 640px; }
-/* Exactly as wide as what is in it, which in practice is the ranking tables:
-   they are six columns of numbers and the widest thing here, and the
-   distribution plot is width: 100% of whatever they make. So the plot and the
-   tables under it share an edge, which is the point -- a bar and the row that
-   names the channel it belongs to are read against each other, and they only
-   line up if the two blocks are one column rather than two widths that happen
-   to be near each other.
+/* 400px is the basis because that is what the ranking tables measure at once
+   their padding is tightened below: six columns of numbers, and under it the
+   column heads wrap to two lines and "0.0043 V" breaks after the number. A
+   basis here is a wrap threshold rather than a preference -- it is the width
+   below which the column stops being worth having, so under it the row stacks
+   and the tile is what it always was. With the maps capped at 58% that lands
+   near 1010px of tile width. Capped at 640 so a wide window grows the maps
+   rather than stretching this column across half a screen.
 
-   max-content as the BASIS and no shrinking, so the column is never narrower
-   than the tables want: it either fits beside the maps at its natural width or
-   wraps underneath at that same width. Shrinking it would break the numbers
-   across lines, which is what the padding rule below exists to prevent. With
-   the maps capped at 58% the wrap lands near 1095px of tile width. The 640 cap
-   is a backstop for a pathological table, not a size anything aims at. */
-.dqm-map-side { flex: 0 0 max-content; min-width: 0; max-width: 640px; }
+   Sized by these two numbers and NOT by its content, which was tried and does
+   not work: mplot gives its canvas an intrinsic width taken from the div, so a
+   max-content column would be sized by a canvas whose size it had itself just
+   set. That loop is not hypothetical -- it settled at 506px of column against
+   427px of table on the live page, which is the mismatch it was meant to fix,
+   slightly worse. The plot is matched to the tables in JS instead; see the
+   width block at the end of channelMaps' tick(). */
+.dqm-map-side { flex: 1 1 400px; min-width: 0; max-width: 640px; }
 /* The table padding is what the column's whole width is made of: twelve cell
    edges at 10px is 120px of the 500 it used to need, spent on air between
    columns that are already separated by being numbers in tabular figures. At 6
@@ -258,12 +260,10 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    and a div with no height measures zero, which paints a blank white box with
    no error anywhere.
 
-   Width 100% and no cap of its own: in the side column that makes it exactly
-   the width of the ranking tables beside it (see .dqm-map-side), and a
-   percentage width contributes nothing to its parent's max-content, so it
-   follows the tables rather than arguing with them. A 640 cap here would have
-   won that argument on any window wide enough, which is the mismatch this
-   removes. */
+   Width 100% is the starting point only: in the side column tick() overwrites
+   it with the measured width of the ranking tables, so the plot and the table
+   under it share both edges. Left as 100% here for the tick before the tables
+   exist, and for any host that is not that column. */
 .dqm-dist { margin: 6px 0 8px 0; }
 .dqm-dist-plot { width: 100%; height: 180px; }
 .dqm-heat {
