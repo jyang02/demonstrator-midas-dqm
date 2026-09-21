@@ -916,6 +916,32 @@ test("each key sits above what it explains, and says the scale is shared", async
   assert.match(textOf(maps), /one scale for every map below/);
 });
 
+test("the distribution and the rankings sit beside the maps, not under", async () => {
+  // Three grids stacked are most of a screen tall, and both blocks that
+  // DESCRIBE them were below all three -- so the colour key the distribution
+  // shares an axis with was off the top by the time the plot was on it, and
+  // comparing a bar to the colour a cell of that value is painted is the one
+  // thing that plot is for. Pinned by containment and not by CSS, which this
+  // suite does not run: what the stylesheet can only widen or wrap is the DOM
+  // putting the two in a column of their own beside the maps.
+  const page = await boot(series(N_LAYERS * PER_LAYER, DEPTH), sampicSettings());
+
+  ["noise", "baseline"].forEach(function (slug) {
+    const row = page.doc.getElementById(`${slug}-row`);
+    const side = page.doc.getElementById(`${slug}-side`);
+    assert.ok(row && side, `${slug} has no map row`);
+    assert.strictEqual(page.doc.getElementById(`${slug}-maps`).parentNode, row,
+      `${slug}'s maps left the row`);
+    assert.strictEqual(side.parentNode, row, `${slug}'s side column left the row`);
+    // Reading order down the column is the order the three are read in: the
+    // maps say where, the distribution says what the family looks like, the
+    // tables say which channel.
+    assert.deepStrictEqual(side.children.map((e) => e.id),
+      [`${slug}-dist`, `${slug}-outliers`],
+      `${slug}'s side column is not the distribution then the rankings`);
+  });
+});
+
 test("hovering a cell names the channel, its layer and its strip", async () => {
   // A 19px cell carries no label, so the identity has to be reachable. The
   // global channel number is what the ODB, the frontend and the cable map all

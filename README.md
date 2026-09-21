@@ -283,10 +283,18 @@ the same grid read the same way, a strip is the same cell on every one of them,
 and there is one implementation to be right rather than two. Trending a baseline
 across a run was always a different tile wanting MIDAS history, and still is.
 
-Under the maps in both tiles is a **distribution of every channel's long-window
-average**, binned over the same range as the colour key above it — so the plot's
-x axis and the maps' scale are one axis, and a bar sits under the colour the
-cells of that value are painted. What it adds over the maps is the *shape* of
+Beside the maps in both tiles, in a column of their own, are a **distribution
+of every channel's long-window average** and the rankings. The distribution is
+binned over the same range as the colour key — so the plot's x axis and the
+maps' scale are one axis, and a bar sits at the colour the cells of that value
+are painted. Beside and not below, because below is where it was: three grids
+stacked are most of a screen tall, so by the time the plot was on screen the key
+it shares an axis with was off the top of it, and that comparison is the whole
+reason the plot is there. A map is as wide as its strip count and no wider, so
+the column is space the tile already had. The row wraps rather than squeezing —
+flex-wrap, the same choice the tile row above it makes — so under about 1350px
+of tile width with two ping-pong maps, or far less with one, the two go back to
+being stacked and nothing is lost but the adjacency. What it adds over the maps is the *shape* of
 the family: one peak is a detector whose channels agree, two is a set that has
 split into two populations, and a map can only show that as a mixture of
 colours with no way to count the groups. A channel past the fenced end of the
@@ -294,8 +302,9 @@ scale lands in the outermost bin rather than stretching the axis and squashing
 everything else into three bins. It is built from the series the tile already
 has, so it costs no extra fetch and no analyzer change.
 
-One table sits under both: **Moved most**, the channels whose short average is
-furthest from their own long one. That question is the same whatever is being
+One table is common to both, under the distribution in that column:
+**Moved most**, the channels whose short average is furthest from their own long
+one. That question is the same whatever is being
 averaged, so it is part of the shared renderer.
 
 A tile may put a ranking of its own in front of it, and only noise does --

@@ -1113,16 +1113,27 @@ function channelMaps(spec) {
     ctx.body.appendChild(readout);
 
     const maps = el("div", { class: "dqm-heat-maps", id: `${spec.slug}-maps` });
-    ctx.body.appendChild(maps);
 
-    // Between the maps and the rankings, because it is the same numbers read a
-    // third way: the maps say where, this says what the family looks like, and
-    // the tables say which channel. A reader works down that order.
+    // Beside the maps rather than under them, and the reading order survives
+    // the move: the maps say where, the distribution says what the family
+    // looks like, the tables say which channel. Down a column to the right is
+    // the same order a reader works in, and it is the order these three keep.
+    //
+    // Under them, the two that describe the maps were a scroll away from the
+    // maps. Three grids stacked are most of a screen tall, so by the time the
+    // distribution was on it the colour key it shares an axis with was off the
+    // top -- and comparing a bar to the colour a cell of that value is painted
+    // is the one thing that plot is for. The width was there: a map is as wide
+    // as its strip count and no wider, and the rest of an l tile was margin.
+    //
+    // The row wraps rather than squeezing (see .dqm-map-row), so a narrow
+    // window puts them back underneath and nothing is lost but the adjacency.
     const distHost = el("div", { class: "dqm-dist", id: `${spec.slug}-dist` });
-    ctx.body.appendChild(distHost);
-
     const rankBox = el("div", { class: "dqm-outliers", id: `${spec.slug}-outliers` });
-    ctx.body.appendChild(rankBox);
+    ctx.body.appendChild(el("div", { class: "dqm-map-row", id: `${spec.slug}-row` },
+      maps,
+      el("div", { class: "dqm-map-side", id: `${spec.slug}-side` },
+        distHost, rankBox)));
 
     //: The three maps, in the order they are read. `kind` is what paint()
     //: switches on and what the tests name. The headings are written each tick

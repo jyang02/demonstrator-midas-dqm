@@ -174,6 +174,54 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    channel map, and a number typed into this file would be a geometry invented
    in a stylesheet. */
 .dqm-heat-maps { margin: 4px 0 8px 0; }
+/* Maps on the left, the two blocks that describe them in a column on the
+   right. Three grids stacked are most of a screen tall while being no wider
+   than their strip count, so the column beside them is space the tile already
+   had -- and under them the distribution sat a scroll below the colour key it
+   shares an axis with, which is the single comparison it exists to make.
+
+   flex-wrap and not a media query, the same choice .dqm-rank-row makes above:
+   once the side column cannot have its basis the two stack and the tile is
+   exactly what it was before. align-items: flex-start so a short table does
+   not stretch itself to the height of three maps.
+
+   Row gap zero: wrapped, the side column is following the maps down the page
+   and wants the margins those blocks already carry, not a second gap on top of
+   them. */
+.dqm-map-row {
+  display: flex; flex-wrap: wrap; gap: 0 24px; align-items: flex-start;
+}
+/* Its natural width, shrinkable: the grids inside are minmax(0, 1fr) columns
+   over a 6px min cell, so squeezing narrows the cells rather than overflowing,
+   and min-width: 0 is what lets that happen inside a flex item at all. */
+.dqm-map-row > .dqm-heat-maps { flex: 0 1 auto; min-width: 0; }
+/* Except for one map, which has to be told its width. A flex item with an auto
+   basis is sized from its max-content, and a grid of empty cells has almost
+   none -- so the single-column tile, which as a block filled its 640px cap,
+   would shrink to whatever the colour key's text happens to measure. The
+   paired tile is immune: .dqm-heat-cols sizes its two grids at max-content
+   already, and did so as a block too, so beside the column it is the same
+   width it always was. 640 is .dqm-heat's own cap, not a second geometry. */
+.dqm-map-row > .dqm-heat-maps:not(.dqm-heat-cols) { flex-basis: 640px; }
+/* 500px is the basis because that is what the ranking tables measure at: seven
+   columns of numbers, and at 420 the column heads wrap to two lines and
+   "0.0043 V" breaks after the number. A basis is a wrap threshold rather than a
+   preference -- under it the row stacks and the tile is what it always was, so
+   the number to put here is the width below which the column stops being worth
+   having. With two ping-pong maps beside it that lands near 1350px of tile
+   width; a single-channel map, half as wide, keeps the column much further
+   down. Capped at the 640 the distribution plot is capped at, so a wide window
+   grows the maps rather than stretching one plot across half a screen. */
+.dqm-map-side { flex: 1 1 500px; min-width: 0; max-width: 640px; }
+/* Never mid-value. Between the basis and the cap the column does stretch, and
+   these are short cells that should use the room rather than break "0.0043 V"
+   after the number. */
+.dqm-map-side .dqm-outliers table.dqm-table td,
+.dqm-map-side .dqm-outliers table.dqm-table th { white-space: nowrap; }
+/* Level with the maps, which start straight after the readout. The first thing
+   in this column is a subhead and the first thing beside it is a colour key,
+   so the default top margins would set the two blocks off by a line. */
+.dqm-map-side > .dqm-dist:first-child { margin-top: 0; }
 /* Two ping-pong columns side by side, one per channel of a pair. A grid and
    not two floated blocks: the colour keys and the per-map headings have to
    span both columns, because both are drawn on one scale over one window and a
