@@ -48,7 +48,12 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 
 .dqm-histtitle   { font-weight: 600; margin: 4px 0 2px 2px; }
 
-.dqm-scope-plot  { width: 100%; min-width: 640px; height: 480px; margin-top: 6px; }
+/* min-width: 0 and not simply absent: the initial `auto` resolves to
+   min-content, and the min-content of a box holding an mplot graph is the
+   CANVAS's intrinsic width -- the bitmap mplot sized from whatever this box
+   measured last time. Zero is what lets one of these shrink when its container
+   does; the comment above .dqm-layer-col has the whole of that story. */
+.dqm-scope-plot  { width: 100%; min-width: 0; height: 480px; margin-top: 6px; }
 
 /* One panel per ATAR layer: eight of these stack, and at the full 480px the
    layer holding the hits is four screens below the one you are looking at.
@@ -58,39 +63,53 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    Two columns: even layers left, odd right. Layers alternate orientation, so
    each column holds one strip direction -- even first puts the vertical strips,
    the x coordinate, on the left, which is the order the energy display below
-   uses. Collapses to one column when there is not room for two side by side
-   rather than squeezing both.
+   uses.
 
-   A class rather than the one id it started as: the waveforms on the Scope tab
-   and the baselines on the Channels tab are both read as this block, and a
-   shifter comparing the two should be moving their eye between two grids of
-   the same shape rather than translating between two layouts. Both hosts keep
-   their own id for the tests and for anything that wants one of them. */
+   A column is 560px, and fixed rather than 1fr. A layer panel is 170px tall,
+   so at full width it drew a 40 ns waveform across 735px at better than four
+   to one -- a pulse 3 ns wide stretched into a shallow ramp, and eight of them
+   side by side saying less than they could. 560 is the width the other plot in
+   this stylesheet already uses. The slack goes to the right of the whole block
+   rather than between the columns, which is why the width is on the TRACK and
+   not a max-width on the plot: capping the plot inside a 1fr track would leave
+   the left column's panel floating a hundred pixels from its neighbour with no
+   gutter to explain it.
+
+   No media query, because the track list is the media query. Two columns and
+   the gutter need
+
+       560 + 14 + 560 = 1134px
+
+   and that is exactly what auto-fit spends: the repetition count is the
+   largest number of tracks that fit the grid's OWN content box, so the second
+   column appears at 1134px of this box and not a pixel earlier. The threshold
+   is a consequence of the column width rather than a number written beside it,
+   so changing 560 moves it and nothing else has to be found. The alternative
+   is a viewport media query, which cannot see this box at all: the grid sits
+   inside #mmain beside mhttpd's sidenav, inside a tile that spends 13 more
+   pixels on border and padding, and that chrome measured 121px (a 1467px grid
+   inside a 1588px document). Those 121 pixels are midas.css's and can change
+   without the viewport changing, so a constant here is a copy of a number
+   nothing keeps true. Same choice .dqm-rank-row and .dqm-tabpanel make with
+   flex-wrap, for the same reason.
+
+   min(100%, 560px) rather than a bare 560px is what a window narrower than one
+   column does: the lone track is then the window, instead of 560px of overflow.
+
+   Both sizing functions being fixed is also what keeps a stale canvas bitmap
+   out of the layout. Content cannot grow a fixed track, so an oversized bitmap
+   can at worst overflow its own cell -- where max-width: 100% catches it --
+   rather than widening the column, and the repetition count is read from the
+   track list and never from content, so no bitmap can change how many columns
+   there are either.
+
+   A class rather than the one id it started as: #scope-layer-panels is what
+   the tests take hold of, and the class is what carries the layout. */
 .dqm-layer-grid {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 560px)); gap: 0 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, min(100%, 560px));
+  gap: 0 14px;
 }
-@media (max-width: 1500px) {
-  .dqm-layer-grid { grid-template-columns: minmax(0, 560px); }
-}
-/* Capped rather than 1fr, which is what these were. A layer panel is 170px
-   tall, so a full-width tile drew a 40 ns waveform across 735px at better than
-   four to one -- a pulse 3 ns wide stretched into a shallow ramp, and eight of
-   them side by side saying less than they could. 560 is the width the other
-   plot in this stylesheet already uses. The slack goes to the right of the
-   whole block rather than between the columns, which is why the cap is on the
-   TRACK and not a max-width on the plot: capping the plot inside a 1fr track
-   would leave the left column's panel floating a hundred pixels from its
-   neighbour with no gutter to explain it.
-
-   The columns are the grid's items and have nothing else on them, but they do
-   need this: a grid item's min-width is auto, which resolves to min-content,
-   and the min-content of a column holding an mplot graph is the CANVAS's
-   intrinsic width -- which mplot set from the width this column had last time.
-   So the track could not shrink to its share, the grid came out wider than its
-   container, and every resize ratcheted it further: measured live at 735px +
-   732px inside 1467px, running 14px off the side of the window and clipping
-   the right column's toolbar. Same loop the distribution plot hit on the
-   Channels tab, one level up the tree. */
 /* Every box that WRAPS an mplot plot inside a grid or a flex line. There are
    two of them -- the Scope tab's per-layer columns and the cells either side of
    the hit-position row -- and both need the same one-line rule for the same
@@ -454,11 +473,22 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    profile is its own tile directly below, at full width: its x axis is the
    layer number, the same axis the maps use vertically, so the two tiles in
    catalogue order keep that axis shared down the page. */
+/* Side by side while each map has the 480px below which its strip labels stop
+   being readable, and stacked below that: 480 + 14 + 480 = 974px of this row's
+   own content box, counted by auto-fit the way .dqm-layer-grid counts its
+   columns, and for the same reason -- a viewport number cannot see the sidenav
+   and the tile chrome between it and this box, measured at 121px. 1fr and not
+   a fixed width, unlike the layer grid: these two are the whole of the event,
+   so they take the tab rather than leaving slack to the right of it. With two
+   cells the third track auto-fit finds above 1468px is empty and collapses, so
+   this is two columns or one and never three. */
 #scope-ed-panels .dqm-ed-row {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+  gap: 0 14px;
 }
 #scope-ed-panels .dqm-scope-plot,
-#scope-depth-panels .dqm-scope-plot { height: 300px; margin-top: 2px; min-width: 0; }
+#scope-depth-panels .dqm-scope-plot { height: 300px; margin-top: 2px; }
 #scope-depth-panels .dqm-ed-profile { margin-top: 4px; }
 /* Shorter than a map: it carries one curve and needs the width far more than
    the height. */
@@ -470,9 +500,6 @@ table.dqm-table tr.stale td { opacity: 0.55; }
 #scope-ed-panels .dqm-subhead,
 #scope-depth-panels .dqm-subhead { margin-top: 8px; font-weight: 600; }
 #scope-depth-totals { margin: 6px 0 4px 0; }
-@media (max-width: 1100px) {
-  #scope-ed-panels .dqm-ed-row { grid-template-columns: 1fr; }
-}
 
 /* Event display. The asymmetry is deliberate: the first few channels carry
    pulses you read, the rest tell you whether something fired. */
@@ -498,7 +525,14 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    What carries over is the size the design asked for, as a maximum width.
    -------------------------------------------------------------------------- */
 
-.dqm-tile        { border-left: 3px solid var(--mgray, #ddd); padding-left: 10px;
+/* border-box because the 3px rule and the 10px gutter are part of what a tile
+   costs a row, not an extra on top of it. flex-basis sizes the CONTENT box, so
+   under content-box two m tiles ask for 560 + 13 each and need 1162px to share
+   a row while their basis says 1136 -- 26 pixels of chrome that nothing in the
+   flex line accounts for, spent again by every tile. It is also what makes the
+   max-width below the width a tile actually occupies. */
+.dqm-tile        { box-sizing: border-box;
+                   border-left: 3px solid var(--mgray, #ddd); padding-left: 10px;
                    margin-bottom: 18px; }
 .dqm-tile-s      { max-width: 420px; }
 .dqm-tile-m      { max-width: 660px; }
