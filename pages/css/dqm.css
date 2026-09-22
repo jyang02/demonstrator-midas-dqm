@@ -65,49 +65,35 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    the x coordinate, on the left, which is the order the energy display below
    uses.
 
-   A column is 560px, and fixed rather than 1fr. A layer panel is 170px tall,
-   so at full width it drew a 40 ns waveform across 735px at better than four
-   to one -- a pulse 3 ns wide stretched into a shallow ramp, and eight of them
-   side by side saying less than they could. 560 is the width the other plot in
-   this stylesheet already uses. The slack goes to the right of the whole block
-   rather than between the columns, which is why the width is on the TRACK and
-   not a max-width on the plot: capping the plot inside a 1fr track would leave
-   the left column's panel floating a hundred pixels from its neighbour with no
-   gutter to explain it.
+   The columns follow the window: two at least 480px wide, sharing whatever
+   width the tile has, and one below 480 + 14 + 480 = 974px of this box. That
+   is the same track list the hit-position row under this tile uses, so the
+   waveforms and the two maps go from two columns to one at the same width
+   and each column of waveforms sits over the map for its own coordinate.
 
-   No media query, because the track list is the media query. Two columns and
-   the gutter need
+   No media query, because the track list is the media query: auto-fit counts
+   the tracks that fit the grid's OWN content box, so the threshold follows
+   from the 480 rather than being written beside it. A viewport query cannot
+   see this box -- it sits inside #mmain beside mhttpd's sidenav and inside a
+   tile's border and padding, 121px of chrome measured live that belongs to
+   midas.css and can change without the viewport changing. Same choice
+   .dqm-rank-row and .dqm-tabpanel make with flex-wrap. There are only ever
+   two columns to place, so the third track auto-fit finds on a wide window
+   is empty and collapses.
 
-       560 + 14 + 560 = 1134px
+   min(100%, 480px) is what a window narrower than one column does: the lone
+   track is then the window, instead of 480px of overflow.
 
-   and that is exactly what auto-fit spends: the repetition count is the
-   largest number of tracks that fit the grid's OWN content box, so the second
-   column appears at 1134px of this box and not a pixel earlier. The threshold
-   is a consequence of the column width rather than a number written beside it,
-   so changing 560 moves it and nothing else has to be found. The alternative
-   is a viewport media query, which cannot see this box at all: the grid sits
-   inside #mmain beside mhttpd's sidenav, inside a tile that spends 13 more
-   pixels on border and padding, and that chrome measured 121px (a 1467px grid
-   inside a 1588px document). Those 121 pixels are midas.css's and can change
-   without the viewport changing, so a constant here is a copy of a number
-   nothing keeps true. Same choice .dqm-rank-row and .dqm-tabpanel make with
-   flex-wrap, for the same reason.
-
-   min(100%, 560px) rather than a bare 560px is what a window narrower than one
-   column does: the lone track is then the window, instead of 560px of overflow.
-
-   Both sizing functions being fixed is also what keeps a stale canvas bitmap
-   out of the layout. Content cannot grow a fixed track, so an oversized bitmap
-   can at worst overflow its own cell -- where max-width: 100% catches it --
-   rather than widening the column, and the repetition count is read from the
-   track list and never from content, so no bitmap can change how many columns
-   there are either.
+   A stale canvas bitmap cannot widen a column: the track's minimum is a fixed
+   length, the columns carry min-width: 0 below, and max-width: 100% on the
+   canvas caps an oversized bitmap at its cell until mplot's own window-resize
+   handler rewrites it.
 
    A class rather than the one id it started as: #scope-layer-panels is what
    the tests take hold of, and the class is what carries the layout. */
 .dqm-layer-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, min(100%, 560px));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
   gap: 0 14px;
 }
 /* Every box that WRAPS an mplot plot inside a grid or a flex line. There are
@@ -475,13 +461,10 @@ table.dqm-table tr.stale td { opacity: 0.55; }
    catalogue order keep that axis shared down the page. */
 /* Side by side while each map has the 480px below which its strip labels stop
    being readable, and stacked below that: 480 + 14 + 480 = 974px of this row's
-   own content box, counted by auto-fit the way .dqm-layer-grid counts its
-   columns, and for the same reason -- a viewport number cannot see the sidenav
-   and the tile chrome between it and this box, measured at 121px. 1fr and not
-   a fixed width, unlike the layer grid: these two are the whole of the event,
-   so they take the tab rather than leaving slack to the right of it. With two
-   cells the third track auto-fit finds above 1468px is empty and collapses, so
-   this is two columns or one and never three. */
+   own content box, counted by auto-fit exactly as .dqm-layer-grid counts its
+   columns, so the waveforms above and these two maps change layout together.
+   With two cells the third track auto-fit finds above 1468px is empty and
+   collapses, so this is two columns or one and never three. */
 #scope-ed-panels .dqm-ed-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));

@@ -857,8 +857,13 @@ function buildHitMaps(host, map) {
     });
     div.mpg = g;
     state.chargeMaps.push({ coord: coord, layers: layers, graph: g, div: div });
-    g.resize();
   });
+  // Sized only once both cells are in the row. auto-fit collapses a track with
+  // nothing in it, so while the x cell is the row's only child it spans the
+  // whole row; sized then, its bitmap is twice its final width, and the canvas's
+  // max-width scales that down with the aspect ratio kept -- a map drawn at half
+  // the height of the y view beside it, until the window next resizes.
+  state.chargeMaps.forEach(function (m) { m.graph.resize(); });
 }
 
 /**
